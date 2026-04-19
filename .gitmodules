@@ -1,0 +1,39 @@
+[submodule "algebra"]
+	path = algebra
+	url = https://github.com/teatime77/algebra.git
+[submodule "diagram"]
+	path = diagram
+	url = https://github.com/teatime77/diagram.git
+[submodule "firebase"]
+	path = firebase
+	url = https://github.com/teatime77/firebase.git
+[submodule "game"]
+	path = game
+	url = https://github.com/teatime77/game.git
+[submodule "i18n"]
+	path = i18n
+	url = https://github.com/teatime77/i18n.git
+[submodule "layout"]
+	path = layout
+	url = https://github.com/teatime77/layout.git
+[submodule "lesson"]
+	path = lesson
+	url = https://github.com/teatime77/lesson.git
+[submodule "media"]
+	path = media
+	url = https://github.com/teatime77/media.git
+[submodule "movie"]
+	path = movie
+	url = https://github.com/teatime77/movie.git
+[submodule "parser"]
+	path = parser
+	url = https://github.com/teatime77/parser.git
+[submodule "plane"]
+	path = plane
+	url = https://github.com/teatime77/plane.git
+[submodule "plot"]
+	path = plot
+	url = https://github.com/teatime77/plot.git
+[submodule "webgpu"]
+	path = webgpu
+	url = https://github.com/teatime77/webgpu.git
