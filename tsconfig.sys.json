@@ -1,0 +1,18 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./i18n" },
+    { "path": "./parser" },
+    { "path": "./algebra" },
+    { "path": "./layout" },
+    { "path": "./diagram" },
+    { "path": "./media" },
+    { "path": "./firebase" },
+    { "path": "./lesson" },
+    { "path": "./plot" },
+    { "path": "./plane" },
+    { "path": "./game" },
+    { "path": "./movie" },
+    { "path": "./webgpu" }
+  ]
+}

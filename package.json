@@ -1,0 +1,19 @@
+{
+  "name": "uroa-stem",
+  "private": true,
+  "scripts": {
+    "build:all": "tsc -b tsconfig.sys.json && git submodule foreach \"npm run build\"",
+    "install:all": "git submodule foreach \"npm install\""
+  },
+  "devDependencies": {
+    "@types/katex": "^0.16.8",
+    "@types/node": "^25.2.2",
+    "madge": "^8.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-tsconfig-paths": "^6.1.1"
+  },
+  "dependencies": {
+    "firebase": "^10.14.1"
+  }
+}

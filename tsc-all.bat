@@ -1,0 +1,1 @@
+tsc -b i18n parser algebra layout plane firebase webgpu lesson media movie game diagram plot

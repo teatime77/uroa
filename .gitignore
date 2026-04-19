@@ -1,0 +1,35 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependency directories
+node_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Build output
+dist/
+**/dist/
+tmp/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# dotenv environment variable files
+.env
+.env.*
+!.env.example
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Firebase cache directory
+.firebase/
+
+# IDE settings
+.vscode/
+.cursor/
