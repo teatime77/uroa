@@ -1,0 +1,227 @@
+0:seleção
+
+1:intervalo
+
+2:ponto
+
+3:ponto médio
+
+4:interseção
+
+5:segmento de reta
+
+6:polígono
+
+7:perpendicular
+
+8:reta paralela
+
+9:círculo por ponto
+
+10:círculo por raio
+
+11:arco por ponto
+
+12:arco por raio
+
+13:elipse
+
+14:ponto tangente
+
+15:círculos tangentes
+
+16:ângulo
+
+17:linha de dimensão
+
+18:símbolo de comprimento
+
+19:texto
+
+20:declaração
+
+21:congruência de triângulo
+
+22:animação
+
+23:Suponha que duas retas se cruzem.
+
+24:Existem quatro ângulos ao redor da interseção.
+
+25:Esses dois ângulos são chamados de ângulos verticais.
+
+26:Esses dois ângulos também são chamados de ângulos verticais.
+
+27: Os ângulos verticais são iguais entre si.
+
+28: Provamos isso.
+
+29: Seja esse ângulo gama.
+
+30: Portanto
+
+31: Isso completa a prova de que os ângulos verticais são iguais.
+
+32: A soma dos ângulos internos de um triângulo é 180 graus.
+
+33: Vamos provar isso.
+
+34: Desenhe uma linha paralela a um lado do triângulo e através do vértice.
+
+35: Como essas duas linhas são paralelas
+
+36: Esses dois ângulos alternados são iguais.
+
+37: Da mesma forma, como essas duas linhas são paralelas
+
+38: A soma desses três ângulos é 180 graus.
+
+39: Portanto, a soma desses ângulos em um triângulo é 180 graus.
+
+40: Isso completa a prova.
+
+41: Vamos desenhar a bissetriz do ângulo.
+
+42: Desenhe um arco.
+
+43: Encontre a intersecção do arco e da reta.
+
+44: Desenhe um arco com o mesmo raio.
+
+45: Encontre a intersecção de dois arcos.
+
+46: Desenhe uma meia reta.
+
+47: Provamos que esta reta é uma bissetriz de ângulo.
+
+48: Estes são os raios do mesmo arco, então eles têm o mesmo comprimento.
+
+49: Como os raios destes dois arcos são os mesmos,
+
+50: As duas retas têm o mesmo comprimento.
+
+51: Os dois triângulos são congruentes porque têm lados iguais.
+
+52: Como os dois triângulos são congruentes, os ângulos correspondentes são iguais.
+
+53: Isso completa a prova de que esta reta é uma bissetriz de ângulo.
+
+54: Desenhamos uma reta perpendicular de um ponto em uma reta
+
+55: Desenhamos um arco centralizado neste ponto.
+
+56: Desenhamos um arco centralizado na interseção.
+
+57: Desenhamos um arco do mesmo raio centralizado em outra interseção.
+
+58: Desenhamos uma reta da interseção dos arcos até um ponto na reta.
+
+59: Este ângulo é um ângulo reto.
+
+60: Estas duas retas são perpendiculares entre si.
+
+61: Isto conclui o desenho.
+
+62: Desenharemos a bissetriz perpendicular.
+
+63: Desenhamos um círculo centralizado neste ponto.
+
+64: Desenhamos um círculo do mesmo raio com o centro em outro ponto.
+
+65: Encontramos a interseção de dois círculos.
+
+66: Desenhamos uma reta conectando as duas interseções.
+
+67: Há uma interseção entre as duas retas.
+
+68: Portanto, esta linha é uma bissetriz perpendicular.
+
+69: Desenhamos linhas paralelas.
+
+70: Desenhamos uma linha perpendicular à linha.
+
+71: Desenhamos uma linha perpendicular a esta linha perpendicular.
+
+72: Diz-se que estas duas linhas são paralelas.
+
+73: Suponha que existam duas linhas paralelas.
+
+74: Solte uma linha perpendicular de uma linha paralela para a outra.
+
+75: Solte uma linha perpendicular de uma posição diferente.
+
+76: Os comprimentos destas linhas perpendiculares são sempre iguais.
+
+77: Isto é chamado de axioma das linhas paralelas.
+
+78: Suponha que existam duas linhas paralelas e uma linha que as intercepta.
+
+79: Estes dois ângulos são chamados ângulos alternos.
+
+80: Estes dois ângulos também são ângulos alternos.
+
+81: Os ângulos alternos de linhas paralelas são iguais entre si.
+
+82: Desenhe uma reta perpendicular da intersecção até outra reta paralela.
+
+83: Desenhe outra reta perpendicular da intersecção até a reta.
+
+84: Este ângulo também é um ângulo reto.
+
+85: Já que essas retas são paralelas.
+
+86: Os comprimentos desses segmentos são iguais.
+
+87: Da mesma forma, já que essas retas são paralelas.
+
+88: Os dois triângulos são congruentes porque os comprimentos dos lados correspondentes são iguais e os ângulos entre os dois lados são ângulos retos.
+
+89: Provamos que as duas retas são perpendiculares entre si.
+
+90: Esses são os raios do mesmo arco.
+
+91: Então eles têm o mesmo comprimento.
+
+92: Mostramos que os dois triângulos são congruentes.
+
+93: Esses dois lados são iguais.
+
+94: Esse lado é comum.
+
+95:Como os três lados correspondentes são iguais,
+
+96:os dois triângulos são congruentes.
+
+97:Esses ângulos correspondentes são iguais.
+
+98:A soma dos dois ângulos é 180 graus.
+
+99:Então cada ângulo é um ângulo reto.
+
+100:Portanto, as duas linhas são perpendiculares entre si.
+
+101:Diferenciação
+
+102:Definição de ângulos verticais
+
+103:Os ângulos verticais são iguais
+
+104: Soma dos ângulos internos de um triângulo
+
+105: Mediatriz do ângulo (construção)
+
+106: Mediatriz do ângulo (prova)
+
+107:Linha perpendicular (construção)
+
+108: Mediatriz perpendicular (construção)
+
+109: Linhas paralelas (construção)
+
+110: Axioma da linha paralela
+
+111:Ângulo alternativo (definição)
+
+112: Ângulo alternativo (prova)
+
+113:Linha perpendicular (prova)

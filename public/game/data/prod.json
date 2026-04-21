@@ -1,0 +1,16 @@
+{
+    "target" : "stage.stage-4"
+    ,
+    "uis" : [
+        {
+            "className" : "SymbolRef",
+            "path"  : "main-stage"
+        }
+    ]
+    ,
+    "menus" : [
+    ]
+    ,
+    "actions" : [
+    ]
+}

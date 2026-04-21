@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Expires" content="0">
+
+<title>Free STEM for All</title>
+<link rel="icon" href="favicon.ico" type="image/x-icon">
+<!------------------------------------ katex start   -------------------------------------->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.css" integrity="sha384-Wsr4Nh3yrvMf2KCebJchRJoVo1gTU6kcP05uRSh5NV3sj9+a8IomuJoQzf3sMq4T" crossorigin="anonymous">
+
+    <!-- The loading of KaTeX is deferred to speed up page rendering -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.js" integrity="sha384-+W9OcrYK2/bD7BmUAk+xeFAyKp0QjyRQUCxeU31dfyTt/FrPsUgaBTLLkVf33qWt" crossorigin="anonymous"></script>
+
+    <!-- To automatically render math in text elements, include the auto-render extension: -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/contrib/auto-render.min.js" integrity="sha384-hCXGrW6PitJEwbkoStFjeJxv+fSOOQKOPbJxSfM6G5sWZjAyWhXiTIIAmQqnlLlh" crossorigin="anonymous"
+        onload="renderMathInElement(document.body);"></script>
+<!------------------------------------ katex end   -------------------------------------->
+
+<script type="text/javascript" src="lib/i18n/i18n.js?ver=8"></script>
+<script type="text/javascript" src="lib/parser/parser.js?ver=8"></script>
+<script type="text/javascript" src="lib/algebra/algebra.js?ver=8"></script>
+
+</head>
+<body>
+<pre id="eqs">
+a + (b + c)
+a * 3 * 4 * b
+3 * a + 3 * b + 3 * c
+2 * a + 3 * b + 4 * a + 5 * b
+(2 * a + 2 * b) / 2 = (2 * c) / 2
+</pre>
+
+<script>
+    document.addEventListener('DOMContentLoaded', algebra_ts.bodyOnLoad );
+</script>
+
+</body>
+</html>

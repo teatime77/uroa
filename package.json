@@ -1,6 +1,18 @@
 {
-  "name": "uroa-stem",
+  "name": "uroa",
   "private": true,
+  "type": "module",
+  "workspaces": [
+    "i18n",
+    "parser",
+    "algebra",
+    "layout",
+    "plane",
+    "firebase",
+    "webgpu",
+    "game",
+    "diagram"
+  ],
   "scripts": {
     "build:all": "tsc -b tsconfig.sys.json && git submodule foreach \"npm run build\"",
     "install:all": "git submodule foreach \"npm install\""

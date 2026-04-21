@@ -1,0 +1,167 @@
+{
+    "target" : "stage.stage-4"
+    ,
+    "uis" : [
+        {
+            "className" : "Grid",
+            "position"  : [ 0, 0 ],
+            "columns"   : "200px 100% 200px",
+            "rows"      : "80px 100% 80px",
+            "children"  : [
+                {
+                    "className" : "Button",
+                    "name"      : "play",
+                    "size"      : [ 200, 50 ],
+                    "text"      : "Play"
+                }
+                ,
+                {
+                    "className" : "Grid",
+                    "columns"   : "* * * *",
+                    "rows"      : "*",
+                    "children"  : [
+                        {
+                            "className" : "Link",
+                            "text"      : "stage-1",
+                            "path"      : "stage.stage-1"
+                        }
+                        ,
+                        {
+                            "className" : "Link",
+                            "text"      : "stage-2",
+                            "path"      : "stage.stage-2"
+                        }
+                        ,
+                        {
+                            "className" : "Link",
+                            "text"      : "stage-3",
+                            "path"      : "stage.stage-3"
+                        }
+                        ,
+                        {
+                            "className" : "Link",
+                            "text"      : "stage-4",
+                            "path"      : "stage.stage-4"
+                        }
+                    ]
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "name"      : "toolbox",
+                    "size"      : [ 200, 50 ],
+                    "text"      : "ラベル3"
+                }
+                ,
+                {
+                    "className" : "ScrollView",
+                    "size"      : [ 400, 500 ],
+                    "viewSize": [ 1000, 1000 ],
+                    "viewChildren"  : [
+                        {
+                            "className" : "TreeNode",
+                            "id"        : "inspector",
+                            "label"     : "ツリー",
+                            "childNodes": [
+                                {
+                                    "className" : "TreeNode",
+                                    "label"     : "サブツリー",
+                                    "childNodes": []
+                                }
+
+                            ],
+                            "position"  : [ 50, 50 ]
+                        }
+
+                    ]
+                }
+                ,
+                {
+                    "className" : "SymbolRef",
+                    "path"  : "main-stage"
+                }
+                ,
+
+                {
+                    "className" : "Grid",
+                    "columns"   : "60px 60px",
+                    "rows"      : "60px 60px 60px 60px 60px",
+                    "children"  : [
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "banana.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "Label",
+                            "size"      : [ 60, 60 ],
+                            "text"      : "1"
+                        }
+                        ,
+
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "tree-opened.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "Label",
+                            "size"      : [ 60, 60 ],
+                            "text"      : "2"
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "tree-closed.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "Label",
+                            "size"      : [ 60, 60 ],
+                            "text"      : "3"
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "tree-3.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "Label",
+                            "size"      : [ 60, 60 ],
+                            "text"      : "4"
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "banana.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "Label",
+                            "size"      : [ 60, 60 ],
+                            "text"      : "5"
+                        }
+                    ]
+                }
+                ,
+
+                {
+                    "className" : "HorizontalSlider",
+                    "colSpan"   : 3
+                }
+            ]
+        }
+    ]
+    ,
+    "menus" : [
+    ]
+    ,
+    "actions" : [
+    ]
+}

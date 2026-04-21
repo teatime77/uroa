@@ -1,0 +1,227 @@
+0:seleksi
+
+1:rentang
+
+2:titik
+
+3:titik tengah
+
+4:perpotongan
+
+5:ruas garis
+
+6:poligon
+
+7:tegak lurus
+
+8:garis sejajar
+
+9:lingkaran per titik
+
+10:lingkaran per jari-jari
+
+11:busur per titik
+
+12:busur per jari-jari
+
+13:elips
+
+14:titik singgung
+
+15:lingkaran singgung
+
+16:sudut
+
+17:garis dimensi
+
+18:simbol panjang
+
+19:teks
+
+20:pernyataan
+
+21:kongruensi segitiga
+
+22:animasi
+
+23:Misalkan dua garis berpotongan.
+
+24:Ada empat sudut di sekitar perpotongan.
+
+25:Kedua sudut ini disebut sudut vertikal.
+
+26:Kedua sudut ini juga disebut sudut vertikal.
+
+27:Sudut-sudut vertikal sama besar.
+
+28:Kita buktikan ini.
+
+29:Misalkan sudut ini adalah gamma.
+
+30:Oleh karena itu
+
+31:Ini melengkapi pembuktian bahwa sudut-sudut vertikal sama besar.
+
+32:Jumlah sudut-sudut dalam sebuah segitiga adalah 180 derajat.
+
+33:Kita akan buktikan ini.
+
+34:Gambarlah garis yang sejajar dengan salah satu sisi segitiga dan melalui titik sudut.
+
+35:Karena kedua garis ini sejajar
+
+36:Kedua sudut berseberangan ini sama besar.
+
+37:Demikian pula, karena kedua garis ini sejajar
+
+38:Jumlah ketiga sudut ini adalah 180 derajat.
+
+39:Oleh karena itu, jumlah sudut-sudut ini dalam sebuah segitiga adalah 180 derajat.
+
+40:Ini melengkapi pembuktian.
+
+41:Kita akan menggambar garis bagi sudut.
+
+42:Gambarlah busur.
+
+43:Temukan titik potong busur dan garis.
+
+44:Gambar busur dengan jari-jari yang sama.
+
+45:Temukan titik potong dua busur.
+
+46:Gambar garis setengah.
+
+47:Kita buktikan bahwa garis ini merupakan garis bagi sudut.
+
+48:Ini adalah jari-jari busur yang sama, jadi keduanya memiliki panjang yang sama.
+
+49:Karena jari-jari kedua busur ini sama,
+
+50:Kedua garis memiliki panjang yang sama.
+
+51:Kedua segitiga tersebut kongruen karena memiliki sisi yang sama.
+
+52:Karena kedua segitiga tersebut kongruen, sudut-sudut yang bersesuaian juga sama.
+
+53:Ini melengkapi pembuktian bahwa garis ini merupakan garis bagi sudut.
+
+54:Kita gambar garis tegak lurus dari sebuah titik pada sebuah garis
+
+55:Gambar busur yang berpusat pada titik ini.
+
+56:Gambar busur yang berpusat pada titik potong.
+
+57: Gambarlah busur dengan jari-jari yang sama yang berpusat di titik potong lainnya.
+
+58: Gambarlah garis dari titik potong busur ke suatu titik pada garis tersebut.
+
+59: Sudut ini adalah sudut siku-siku.
+
+60: Kedua garis ini saling tegak lurus.
+
+61: Ini menyimpulkan gambarnya.
+
+62: Kita akan menggambar garis bagi tegak lurus.
+
+63: Gambarlah lingkaran yang berpusat di titik ini.
+
+64: Gambarlah lingkaran dengan jari-jari yang sama dengan pusat di titik lainnya.
+
+65: Temukan titik potong dua lingkaran.
+
+66: Gambarlah garis yang menghubungkan kedua titik potong tersebut.
+
+67: Ada satu titik potong antara kedua garis tersebut.
+
+68: Oleh karena itu, garis ini adalah garis bagi tegak lurus.
+
+69: Kita menggambar garis sejajar.
+
+70: Gambarlah garis tegak lurus ke garis tersebut.
+
+71: Gambarlah garis tegak lurus ke garis tegak lurus ini.
+
+72: Kedua garis ini dikatakan sejajar.
+
+73: Misalkan ada dua garis sejajar.
+
+74: Jatuhkan garis tegak lurus dari satu garis sejajar ke garis sejajar lainnya.
+
+75: Jatuhkan garis tegak lurus dari posisi yang berbeda.
+
+76: Panjang garis tegak lurus ini selalu sama.
+
+77: Ini disebut aksioma garis sejajar.
+
+78: Misalkan ada dua garis sejajar dan satu garis yang memotongnya.
+
+79: Kedua sudut ini disebut sudut berseberangan.
+
+80: Kedua sudut ini juga merupakan sudut berseberangan.
+
+81: Sudut berseberangan dari garis sejajar sama besar.
+
+82: Gambarkan garis tegak lurus dari perpotongan ke garis sejajar lainnya.
+
+83: Gambarkan garis tegak lurus lainnya dari perpotongan ke garis tersebut.
+
+84: Sudut ini juga merupakan sudut siku-siku.
+
+85: Karena garis-garis ini sejajar.
+
+86: Panjang ruas-ruas garis ini sama.
+
+87: Demikian pula, karena garis-garis ini sejajar.
+
+88: Kedua segitiga itu kongruen karena panjang sisi-sisi yang bersesuaian sama dan sudut-sudut antara kedua sisi itu siku-siku.
+
+89: Kita buktikan bahwa kedua garis itu saling tegak lurus.
+
+90: Ini adalah jari-jari busur yang sama.
+
+91: Jadi, keduanya memiliki panjang yang sama.
+
+92: Kita tunjukkan bahwa kedua segitiga itu kongruen.
+
+93: Kedua sisi ini sama.
+
+94: Sisi ini sama.
+
+95: Karena ketiga sisi yang bersesuaian sama,
+
+96: Kedua segitiga itu kongruen.
+
+97: Sudut-sudut yang bersesuaian ini sama.
+
+98: Jumlah kedua sudut itu adalah 180 derajat.
+
+99: Jadi, setiap sudut adalah sudut siku-siku.
+
+100:Oleh karena itu, kedua garis tersebut saling tegak lurus.
+
+101:Diferensiasi
+
+102:Pengertian sudut vertikal
+
+103:Sudut-sudut vertikal sama besar
+
+104:Jumlah sudut-sudut dalam segitiga
+
+105:Pembagi sudut (konstruksi)
+
+106:Pembagi sudut (bukti)
+
+107:Garis tegak lurus (konstruksi)
+
+108:Pembagi sudut (konstruksi)
+
+109:Garis-garis sejajar (konstruksi)
+
+110:Aksioma garis sejajar
+
+111:Sudut berseberangan (pengertian)
+
+112:Sudut berseberangan (bukti)
+
+113:Garis tegak lurus (bukti)

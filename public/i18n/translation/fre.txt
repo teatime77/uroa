@@ -1,0 +1,227 @@
+0 : sélection
+
+1 : plage
+
+2 : point
+
+3 : point médian
+
+4 : intersection
+
+5 : segment de ligne
+
+6 : polygone
+
+7 : perpendiculaire
+
+8 : ligne parallèle
+
+9 : cercle par point
+
+10 : cercle par rayon
+
+11 : arc par point
+
+12 : arc par rayon
+
+13 : ellipse
+
+14 : point tangent
+
+15 : cercles tangents
+
+16 : angle
+
+17 : ligne de cote
+
+18 : symbole de longueur
+
+19 : texte
+
+20 : énoncé
+
+21 : congruence triangulaire
+
+22 : animation
+
+23 : Supposons que deux lignes se croisent.
+
+24 : Il y a quatre angles autour de l'intersection.
+
+25 : Ces deux angles sont appelés angles verticaux.
+
+26 : Ces deux angles sont également appelés angles verticaux.
+
+27 : Les angles verticaux sont égaux entre eux.
+
+28 : Nous prouvons cela.
+
+29 : Soit cet angle gamma.
+
+30 : Par conséquent
+
+31 : Ceci complète la preuve que les angles verticaux sont égaux.
+
+32 : La somme des angles intérieurs d'un triangle est de 180 degrés.
+
+33 : Nous allons prouver cela.
+
+34 : Tracer une ligne parallèle à un côté du triangle et passant par le sommet.
+
+35 : Comme ces deux lignes sont parallèles
+
+36 : Ces deux angles alternes sont égaux.
+
+37 :De même, comme ces deux lignes sont parallèles
+
+38 :La somme de ces trois angles est de 180 degrés.
+
+39 :Par conséquent, la somme de ces angles dans un triangle est de 180 degrés.
+
+40 : Ceci complète la preuve.
+
+41 : Nous allons dessiner la bissectrice de l'angle.
+
+42 : Tracer un arc.
+
+43 : Trouvez l'intersection de l'arc et de la ligne.
+
+44 : Tracer un arc de même rayon.
+
+45 : Trouver l'intersection de deux arcs.
+
+46 : Tracer une demi-droite.
+
+47 : Nous prouvons que cette droite est une bissectrice d'angle.
+
+48 : Ce sont les rayons du même arc, ils ont donc la même longueur.
+
+49 : Étant donné que les rayons de ces deux arcs sont les mêmes,
+
+50 : Les deux droites ont la même longueur.
+
+51 : Les deux triangles sont congruents car ils ont des côtés égaux.
+
+52 : Étant donné que les deux triangles sont congruents, les angles correspondants sont égaux.
+
+53 : Ceci complète la preuve que cette droite est une bissectrice d'angle.
+
+54 : Nous traçons une droite perpendiculaire à partir d'un point sur une droite
+
+55 : Tracer un arc centré sur ce point.
+
+56 : Tracer un arc centré sur l'intersection.
+
+57 : Tracer un arc de même rayon centré sur une autre intersection.
+
+58 :Tracer une ligne depuis l'intersection des arcs jusqu'à un point de la ligne.
+
+59 :Cet angle est un angle droit.
+
+60 :Ces deux lignes sont perpendiculaires l'une à l'autre.
+
+61 :Ceci conclut le dessin.
+
+62 :Nous allons dessiner la médiatrice.
+
+63 :Tracer un cercle centré sur ce point.
+
+64 :Tracer un cercle de même rayon dont le centre est situé à un autre point.
+
+65 :Trouver l'intersection de deux cercles.
+
+66 :Tracer une ligne reliant les deux intersections.
+
+67 :Il y a une intersection entre les deux lignes.
+
+68 :Par conséquent, cette ligne est une médiatrice.
+
+69 :Nous traçons des lignes parallèles.
+
+70 :Tracer une ligne perpendiculaire à la ligne.
+
+71 :Tracer une ligne perpendiculaire à cette ligne perpendiculaire.
+
+72 :Ces deux lignes sont dites parallèles.
+
+73 : Supposons qu'il y ait deux lignes parallèles.
+
+74 : Tracez une ligne perpendiculaire d'une ligne parallèle à l'autre.
+
+75 : Tracez une ligne perpendiculaire à partir d'une position différente.
+
+76 : Les longueurs de ces lignes perpendiculaires sont toujours égales.
+
+77 : C'est ce qu'on appelle l'axiome des lignes parallèles.
+
+78 : Supposons qu'il y ait deux lignes parallèles et une ligne qui les coupe.
+
+79 : Ces deux angles sont appelés angles alternes.
+
+80 : Ces deux angles sont également des angles alternes.
+
+81 : Les angles alternes des lignes parallèles sont égaux entre eux.
+
+82 : Tracez une ligne perpendiculaire de l'intersection à une autre ligne parallèle.
+
+83 : Tracez une autre ligne perpendiculaire de l'intersection à la ligne.
+
+84 : Cet angle est également un angle droit.
+
+85 : Puisque ces lignes sont parallèles.
+
+86 : Les longueurs de ces segments sont égales.
+
+87 :De même, puisque ces droites sont parallèles.
+
+88 :Les deux triangles sont congruents car les longueurs des côtés correspondants sont égales et les angles entre les deux côtés sont des angles droits.
+
+89 :Nous prouvons que les deux droites sont perpendiculaires l'une à l'autre.
+
+90 :Ce sont les rayons du même arc.
+
+91 :Ils ont donc la même longueur.
+
+92 :Nous montrons que les deux triangles sont congruents.
+
+93 :Ces deux côtés sont égaux.
+
+94 :Ce côté est commun.
+
+95 :Parce que les trois côtés correspondants sont égaux,
+
+96 :les deux triangles sont congruents.
+
+97 :Ces angles correspondants sont égaux.
+
+98 :La somme des deux angles est de 180 degrés.
+
+99 :Chaque angle est donc un angle droit.
+
+100 :Par conséquent, les deux droites sont perpendiculaires l'une à l'autre.
+
+101 : Différenciation
+
+102 : Définition des angles verticaux
+
+103 : Les angles verticaux sont égaux
+
+104 : Somme des angles intérieurs d'un triangle
+
+105 : Bissectrice d'angle (construction)
+
+106 : Bissectrice d'angle (preuve)
+
+107 : Ligne perpendiculaire (construction)
+
+108 : Bissectrice perpendiculaire (construction)
+
+109 : Lignes parallèles (construction)
+
+110 : Axiome de la ligne parallèle
+
+111 : Angle alternatif (définition)
+
+112 : Angle alternatif (preuve)
+
+113 : Ligne perpendiculaire (preuve)

@@ -1,0 +1,513 @@
+0:selection
+
+1:range
+
+2:point
+
+3:mid point
+
+4:intersection
+
+5:line segment
+
+6:polygon
+
+7:perpendicular
+
+8:parallel line
+
+9:circle by point
+
+10:circle by radius
+
+11:arc by point
+
+12:arc by radius
+
+13:ellipse
+
+14:tangent point
+
+15:tangent circles
+
+16:angle
+
+17:dimension line
+
+18:length symbol
+
+19:text
+
+20:statement
+
+21:triangle congruence
+
+22:animation
+
+23:Suppose two lines intersect.
+
+24:There are four angles around the intersection.
+
+25:These two angles are called vertical angles.
+
+26:These two angles are also called vertical angles.
+
+27:The vertical angles are equal to each other.
+
+28:We prove this.
+
+29:Let this angle be gamma.
+
+30:therefore,
+
+31:This completes the proof that the vertical angles are equal.
+
+32:The sum of the interior angles of a triangle is π.
+
+33:
+
+34:Draw a line parallel to one side of the triangle and through the vertex.
+
+35:As these two lines are parallel,
+
+36:These two alternate angles are equal.
+
+37:Similarly, as these two lines are parallel
+
+38:The sum of these three angles is 180 degrees.
+
+39:Therefore, the sum of these angles in a triangle is 180 degrees.
+
+40:This completes the proof.
+
+41:Draw the angle bisector.
+
+42:Draw an arc.
+
+43:Find the intersection of the arc and the line.
+
+44:Draw an arc with the same radius.
+
+45:Find the intersection of two arcs.
+
+46:Draw a half-line.
+
+47:We prove that this line is an angle bisector.
+
+48:These are the radii of the same arc, so they have the same length.
+
+49:Since the radii of these two arcs are the same,
+
+50:The two lines have the same length.
+
+51:The two triangles are congruent because they have equal sides.
+
+52:Since the two triangles are congruent, corresponding angles are equal.
+
+53:This completes the proof that this line is an angle bisector.
+
+54:We draw a perpendicular line from a point on a line.
+
+55:Draw an arc centered on this point.
+
+56:Draw an arc centered on the intersection.
+
+57:Draw an arc of the same radius centered at another intersection.
+
+58:Draw a line from the intersection of the arcs to a point on the line.
+
+59:This angle is a right angle.
+
+60:These two lines are perpendicular to each other.
+
+61:This concludes the drawing.
+
+62:We will draw the perpendicular bisector.
+
+63:Draw a circle centered on this point.
+
+64:Draw a circle of the same radius with the center at another point.
+
+65:Find the intersection of two circles.
+
+66:Draw a line connecting the two intersections.
+
+67:There is one intersection between the two lines.
+
+68:Therefore this line is a perpendicular bisector.
+
+69:We draw parallel lines.
+
+70:Draw a perpendicular line to the line.
+
+71:Draw a perpendicular line to this perpendicular line.
+
+72:These two lines are said to be parallel.
+
+73:Suppose there are two parallel lines.
+
+74:Drop a perpendicular line from one parallel line to the other.
+
+75:Drop a perpendicular line from a different position.
+
+76:The lengths of these perpendicular lines are always equal.
+
+77:This is called the parallel lines axiom.
+
+78:Suppose there two parallel lines and one line that intersects them.
+
+79:These two angles are called alternate angles.
+
+80:These two angles are also alternate angles.
+
+81:The alternate angles of parallel lines are equal to each other.
+
+82:Draw a perpendicular line from the intersection to another parallel line.
+
+83:Draw another perpendicular line from the intersection to the line.
+
+84:This angle is also a right angle.
+
+85:Since these lines are parallel.
+
+86:The lengths of these segments are equal.
+
+87:Similarly, since these lines are parallel.
+
+88:The two triangles are congruent because the lengths of the corresponding sides are equal and the angles between the two sides are right angles.
+
+89:We prove that the two lines are perpendicular to each other.
+
+90:These are the radii of the same arc.
+
+91:So they have the same length.
+
+92:We show that the two triangles are congruent.
+
+93:These two sides are equal.
+
+94:This side is common.
+
+95:Because the three corresponding sides are equal,
+
+96:the two triangles are congruent.
+
+97:These corresponding angles are equal.
+
+98:The sum of the two angles is 180 degrees.
+
+99:So each angle is a right angle.
+
+100:Therefore, the two lines are perpendicular to each other.
+
+101:Differentiation
+
+102:Definition of vertical angles
+
+103:Vertical angles are equal
+
+104:Sum of interior angles of a triangle
+
+105:Angle bisector (construction)
+
+106:Angle bisector (proof)
+
+107:Perpendicular line (construction)
+
+108:Perpendicular bisector (construction)
+
+109:Parallel lines (construction)
+
+110:Parallel line axiom
+
+111:Alternative angle (definition)
+
+112:Alternative angle (proof)
+
+113:Perpendicular line (proof)
+
+114:
+
+115:The distance between two parallel lines is equal.
+
+116:Draw a perpendicular line from a point on a line.
+
+117:Draw a perpendicular line from a point to a line.
+
+118:The base angles of an isosceles triangle are equal.
+
+119:The opposite angles of a parallelogram are equal. The opposite sides of a parallelogram are equal in length.
+
+120:unused text.
+
+121:A quadrilateral with opposite sides of equal length is a parallelogram.
+
+122:The diagonals of a parallelogram intersect at the midpoint.
+
+123:If the diagonals of a quadrilateral intersect at the midpoint, it is a parallelogram.
+
+124:If a pair of opposite sides of a quadrilateral are parallel and of equal length, it is a parallelogram.
+
+125:The diagonals of a rhombus intersect at right angles.
+
+126:Draw a line segment through two points.
+
+127:Draw the angle formed by intersecting two lines.
+
+128:Draw a line through two points.
+
+129:Draw a line through a point that is parallel to another line.
+
+130:Draw a triangle.
+
+131:Draw a quadrilateral.
+
+132:vertical angle
+
+133:angle bisector
+
+134:alternate angles
+
+135:perpendicular line
+
+136:isosceles triangle
+
+137:parallelogram
+
+138:rhombus
+
+139:A quadrilateral with opposite angles that are equal is a parallelogram.
+
+140:The bisector of the apex angle of an isosceles triangle bisects the base perpendicularly.
+
+141:midpoint theorem
+
+142:Find the midpoint of two points.
+
+143:Draw a half-line through two points.
+
+144:blank
+
+145:Draw a line.
+
+146:Draw a point on the line.
+
+147:this is a parallelogram.
+
+148:these two lines are parallel.
+
+149:the two length symbols are of equal length.
+
+150:the two angles are equal.
+
+151:Draw a point.
+
+152:this is a rhombus.
+
+153:Since three pairs of sides of two triangles are equal,
+
+154:Since two pairs of sides of two triangles are equal, and the included angles are equal,
+
+155:Since two pairs of angles of two triangles are equal, and the included sides are equal,
+
+156:Since the two circles have the same radius,
+
+157:Since two length symbols are the radii of the same circle,
+
+158:Since the distance between two parallel lines is constant,
+
+159:
+
+160:Since the two triangles are congruent,
+
+161:Since the opposite sides of a parallelogram are equal in length,
+
+162:Since the diagonals of a parallelogram intersect at the midpoint,
+
+163:Since these two length symbols are equal to another length symbol,
+
+164:Since vertical angles are equal,
+
+165:Since the corresponding angles of parallel lines are equal,
+
+166:Since these angles are formed by the angle bisectors,
+
+167:
+
+168:Since the diagonals of a parallelogram are congruent,
+
+169:Since each opposite sides are equal,
+
+170:Since each opposite sides are parallel,
+
+171:Since each opposite angles are equal,
+
+172:Since one opposite sides are parallel and equal,
+
+173:Since the diagonals intersect at their midpoints,
+
+174:Since all four sides are equal in length,
+
+175:Since the opposite sides of a parallelogram are parallel,
+
+176:Make the two line segments equal in length.
+
+177:A triangle with equal base angles is an isosceles triangle.
+
+178:Since both pairs of angles in two triangles are equal,
+
+179:Since the two triangles are similar,
+
+180:the two triangles are similar.
+
+181:
+
+182:Draw a circle.
+
+183:Since the midpoint bisects the line segment,
+
+184:no reason
+
+185:click the common circle.
+
+186:new document
+
+187:add folder
+
+188:rename
+
+189:delete
+
+190:Do you want to start the conversion?
+
+191:Do you want to start the backup?
+
+192:Do you want to copy all data?
+
+193:Draw a point on the circle.
+
+194:Draw a point on the arc.
+
+195:Draw a length symbol.
+
+196:Draw a perpendicular line from the point to the line.
+
+197:Draw a perpendicular line.
+
+198:Find the intersection of the circle and the line.
+
+199:Find the intersection of the circle and the arc.
+
+200:Draw tangents to the two circles.
+
+201:Draw a tangent line from the point to the circle.
+
+202:length symbols are not on the same line.
+
+203:no connection point of two length symbols
+
+204:Since the sum of the angles is π,
+
+205:Since the sum of the angles is equal,
+
+206:Since the sum of the lengths is equal,
+
+207:Since the sum of the interior angles of a triangle is π,
+
+208:Since the sum of the interior angles of a quadrilateral is 2 π,
+
+209:Since the exterior angle of a triangle equals the sum of two remote interior angles,
+
+210:Since the base angles of an isosceles triangle are equal,
+
+211:Since two sides are equal in length,
+
+212:Since corresponding angles or alternate angles are equal,
+
+213:Since the sum of the two interior angles on the same side is π,
+
+214:The selected shapes are not named angles.
+
+215:The vertices of the angles do not match.
+
+216:Transpose the term.
+
+217:From the above equations,
+
+218:Add two equations together.
+
+219:Substitute the term.
+
+220:Dividing an equation by the same term.
+
+221:Enter a mathematical expression.
+
+222:click two parallel lines.
+
+223:The name of the shape is blank.
+
+224:triangle similarity
+
+225:equal length
+
+226:equal angle
+
+227:parallel detector
+
+228:equality constraint
+
+229:assumption
+
+230:parallel constraint
+
+231:perpendicular constraint
+
+232:quadrilateral classifier
+
+233:shape equation
+
+234:expression transformation
+
+235:If a line intersects two other lines and the sum of the two interior angles on the same side is π, then the two lines are parallel.
+
+236:The sum of the interior angles of a quadrilateral is 2 π.
+
+237:A quadrilateral with opposite angles equal is a parallelogram.
+
+238:exterior angle theorem
+
+239:inscribed angle theorem
+
+240:condition
+
+241:property
+
+242:Reason for length equality
+
+243:Reason for angle equality
+
+244:Shape type
+
+245:Reason for parallelogram
+
+246:Reason for rhombus
+
+247:Reason for isosceles triangle
+
+248:Reason for parallel
+
+249:Equation derived from shapes
+
+250:Types of formula transformation
+
+251:The triangle is an isosceles triangle.
+
+252:Types of proposition
+
+253:Draw an angle.
+
+254:Set the angle mark.
+
+255:Set the line kind.
+
+256:Set the name.

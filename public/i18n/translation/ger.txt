@@ -1,0 +1,227 @@
+0:Auswahl
+
+1:Bereich
+
+2:Punkt
+
+3:Mittelpunkt
+
+4:Schnittpunkt
+
+5:Liniensegment
+
+6:Polygon
+
+7:Senkrecht
+
+8:Parallele Linie
+
+9:Kreis nach Punkt
+
+10:Kreis nach Radius
+
+11:Bogen nach Punkt
+
+12:Bogen nach Radius
+
+13:Ellipse
+
+14:Tangentenpunkt
+
+15:Tangentenkreise
+
+16:Winkel
+
+17:Maßlinie
+
+18:Längensymbol
+
+19:Text
+
+20:Anweisung
+
+21:Dreieckskongruenz
+
+22:Animation
+
+23:Angenommen, zwei Linien schneiden sich.
+
+24:Um den Schnittpunkt herum gibt es vier Winkel.
+
+25:Diese beiden Winkel werden Scheitelwinkel genannt.
+
+26:Diese beiden Winkel werden auch Scheitelwinkel genannt.
+
+27:Die Scheitelwinkel sind einander gleich.
+
+28:Wir beweisen dies.
+
+29:Dieser Winkel sei Gamma.
+
+30:deshalb
+
+31:Damit ist der Beweis abgeschlossen, dass die Scheitelwinkel gleich sind.
+
+32:Die Summe der Innenwinkel eines Dreiecks beträgt 180 Grad.
+
+33:Wir werden dies beweisen.
+
+34:Zeichnen Sie eine Linie parallel zu einer Seite des Dreiecks und durch den Scheitelpunkt.
+
+35:Da diese beiden Linien parallel sind
+
+36:Sind diese beiden Wechselwinkel gleich.
+
+37:Ebenso sind diese beiden Linien parallel
+
+38:Die Summe dieser drei Winkel beträgt 180 Grad.
+
+39:Daher beträgt die Summe dieser Winkel in einem Dreieck 180 Grad.
+
+40:Damit ist der Beweis abgeschlossen.
+
+41:Wir werden die Winkelhalbierende zeichnen.
+
+42:Zeichnen Sie einen Bogen.
+
+43:Finden Sie den Schnittpunkt von Bogen und Linie.
+
+44:Zeichnen Sie einen Bogen mit gleichem Radius.
+
+45:Finden Sie den Schnittpunkt zweier Bögen.
+
+46:Zeichnen Sie eine Halblinie.
+
+47:Wir beweisen, dass diese Linie eine Winkelhalbierende ist.
+
+48:Dies sind die Radien desselben Bogens, sie haben also dieselbe Länge.
+
+49:Da die Radien dieser beiden Bögen gleich sind,
+
+50:haben die beiden Linien dieselbe Länge.
+
+51:Die beiden Dreiecke sind kongruent, da sie gleich lange Seiten haben.
+
+52:Da die beiden Dreiecke kongruent sind, sind die entsprechenden Winkel gleich.
+
+53:Damit ist der Beweis abgeschlossen, dass diese Linie eine Winkelhalbierende ist.
+
+54:Wir zeichnen eine senkrechte Linie von einem Punkt auf einer Linie
+
+55:Zeichnen Sie einen Bogen, dessen Mittelpunkt dieser Punkt ist.
+
+56:Zeichnen Sie einen Bogen, dessen Mittelpunkt der Schnittpunkt ist.
+
+57:Zeichnen Sie einen Bogen mit demselben Radius, dessen Mittelpunkt ein anderer Schnittpunkt ist.
+
+58:Zeichnen Sie eine Linie vom Schnittpunkt der Bögen zu einem Punkt auf der Linie.
+
+59:Dieser Winkel ist ein rechter Winkel.
+
+60:Diese beiden Linien stehen senkrecht zueinander.
+
+61:Damit ist die Zeichnung abgeschlossen.
+
+62:Wir zeichnen die senkrechte Mittelsenkrechte.
+
+63:Zeichnen Sie einen Kreis, dessen Mittelpunkt dieser Punkt ist.
+
+64:Zeichnen Sie einen Kreis mit demselben Radius, dessen Mittelpunkt ein anderer Punkt ist.
+
+65:Finden Sie den Schnittpunkt zweier Kreise.
+
+66:Zeichnen Sie eine Linie, die die beiden Schnittpunkte verbindet.
+
+67:Es gibt einen Schnittpunkt zwischen den beiden Linien.
+
+68:Daher ist diese Linie eine senkrechte Mittelsenkrechte.
+
+69:Wir zeichnen parallele Linien.
+
+70:Zeichnen Sie eine senkrechte Linie zur Linie.
+
+71:Zeichnen Sie eine senkrechte Linie zu dieser senkrechten Linie.
+
+72:Diese beiden Linien werden als parallel bezeichnet.
+
+73:Nehmen wir an, es gibt zwei parallele Linien.
+
+74:Ziehen Sie eine senkrechte Linie von einer parallelen Linie zur anderen.
+
+75:Ziehen Sie eine senkrechte Linie von einer anderen Position aus.
+
+76:Die Längen dieser senkrechten Linien sind immer gleich.
+
+77:Dies wird als Axiom der parallelen Linien bezeichnet.
+
+78:Nehmen wir an, es gibt zwei parallele Linien und eine Linie, die sie schneidet.
+
+79:Diese beiden Winkel werden Wechselwinkel genannt.
+
+80:Diese beiden Winkel sind auch Wechselwinkel.
+
+81:Die Wechselwinkel paralleler Linien sind einander gleich.
+
+82:Zeichnen Sie eine senkrechte Linie vom Schnittpunkt zu einer anderen parallelen Linie.
+
+83:Zeichnen Sie eine weitere senkrechte Linie vom Schnittpunkt zur Linie.
+
+84:Dieser Winkel ist auch ein rechter Winkel.
+
+85:Da diese Linien parallel sind.
+
+86:Die Längen dieser Segmente sind gleich.
+
+87:Ebenso, da diese Linien parallel sind.
+
+88:Die beiden Dreiecke sind kongruent, da die Längen der entsprechenden Seiten gleich sind und die Winkel zwischen den beiden Seiten rechte Winkel sind.
+
+89:Wir beweisen, dass die beiden Linien senkrecht zueinander sind.
+
+90:Dies sind die Radien desselben Bogens.
+
+91:Sie haben also die gleiche Länge.
+
+92:Wir zeigen, dass die beiden Dreiecke kongruent sind.
+
+93:Diese beiden Seiten sind gleich.
+
+94:Diese Seite ist gemeinsam.
+
+95:Da die drei entsprechenden Seiten gleich sind,
+
+96:sind die beiden Dreiecke kongruent.
+
+97:Diese entsprechenden Winkel sind gleich.
+
+98:Die Summe der beiden Winkel beträgt 180 Grad.
+
+99:Jeder Winkel ist also ein rechter Winkel.
+
+100:Daher stehen die beiden Linien senkrecht zueinander.
+
+101:Differenzierung
+
+102:Definition von Scheitelwinkeln
+
+103:Scheitelwinkel sind gleich
+
+104:Summe der Innenwinkel eines Dreiecks
+
+105:Winkelhalbierende (Konstruktion)
+
+106:Winkelhalbierende (Beweis)
+
+107:Senkrechte Linie (Konstruktion)
+
+108:Senkrechte Halbierende (Konstruktion)
+
+109:Parallele Linien (Konstruktion)
+
+110:Parallele Linienaxiom
+
+111:Alternativwinkel (Definition)
+
+112:Alternativwinkel (Beweis)
+
+113:Senkrechte Linie (Beweis)

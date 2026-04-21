@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Diagram</title>
+  <script type="text/javascript" src="static/lib/i18n/i18n.js?ver=1"></script>
+  <script type="text/javascript" src="static/lib/parser/parser.js?ver=1"></script>
+  <script type="text/javascript" src="static/lib/layout/layout.js?ver=1"></script>
+  <script type="text/javascript" src="static/lib/plane/plane.js?ver=1"></script>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scrollbars from appearing if content slightly overflows */
+    width: 100%;
+    height: 100%;
+}
+
+#world {
+    display: block; /* Remove any default inline-block spacing */
+    width: 100%;
+    height: 100%;
+    /* Optional: background-color for visualization */
+    background-color:darkslategray;
+}  
+
+.dragging {
+    cursor: grabbing;
+    /* box-shadow: 4px 4px 12px rgba(0,0,0,0.3); */
+}
+
+.ui_button {
+    font-size: xx-large;
+}
+
+</style>
+</head>
+
+<body>
+<img id="camera-icon" src="static/lib/diagram/img/camera.png" style="z-index: -10; position: absolute; left: 0; top: 0;" width="320" height="240" />
+<img id="motor-icon"  src="static/lib/diagram/img/motor.png"  style="z-index: -10; position: absolute; left: 0; top: 0;" width="297" height="271" />
+<img id="distance-sensor-icon"  src="static/lib/diagram/img/distance_sensor.png"  style="z-index: -10; position: absolute; left: 0; top: 0;" width="353" height="154" />
+<img id="tts-icon"  src="static/lib/diagram/img/tts.png"  style="z-index: -10; position: absolute; left: 0; top: 0;" width="180" height="148" />
+<img id="sleep-icon"  src="static/lib/diagram/img/sleep.png"  style="z-index: -10; position: absolute; left: 0; top: 0;" width="460" height="580" />
+
+<canvas id="world" ></canvas>
+
+<div style="display: flex; position: absolute; left: 10px; top: 9px">
+    <button id="clear-btn" class="ui_button">Clear</button>
+    <button id="start-btn" class="ui_button">Start</button>
+    <button id="download-btn" class="ui_button">Download</button>
+</div>
+
+<script type="text/javascript" src="static/lib/diagram/diagram.js?ver=1"></script>
+
+</body>
+
+</html>

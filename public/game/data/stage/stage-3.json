@@ -1,0 +1,62 @@
+{
+    "imports":[
+        "system.keyboard"
+    ]
+    ,
+    "uis" : [
+        {
+            "className" : "Stage",
+            "name"      : "main-stage",
+            "children"  : [
+                {
+                    "className" : "ArithmeticView",
+                    "expr"      : "12 + 34",
+                    "position"  : [ 10, 10 ]
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "back",
+                    "right"     : 10,
+                    "top"       : 10,
+                    "text"      : "Back"
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "play",
+                    "right"     : 10,
+                    "top"       : 100,
+                    "text"      : "Play"
+                }
+            ]
+        }
+    ]
+    ,
+    "menus" : [
+    ]
+    ,
+    "actions" : [
+        {
+            "className" : "SequentialAction",
+            "actions"   : [
+                {
+                    "className" : "ArithmeticAction",
+                    "args"      : {
+                        "viewIdx": 0,
+                        "argIdx" : 0
+                    }
+                }
+                ,
+                {
+                    "className" : "ArithmeticAction",
+                    "args"      : {
+                        "viewIdx": 0,
+                        "argIdx" : 1
+                    }
+                }
+
+            ]
+        }
+    ] 
+}

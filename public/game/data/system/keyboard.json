@@ -1,0 +1,142 @@
+{
+    "imports":[
+    ]
+    ,
+    "uis" : [
+        {
+            "className" : "Grid",
+            "name"      : "numpad",
+            "columns"   : "* * * *",
+            "children"  : [
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "⌫"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "("
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : ")"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "÷"
+                }
+                ,
+
+
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "7"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "8"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "9"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "×"
+                }
+                ,
+
+
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "4"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "5"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "6"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "－"
+                }
+                ,
+
+
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "1"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "2"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "3"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "＋"
+                }
+                ,
+
+
+
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "0"
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "size"      : [ 60, 60 ],
+                    "text"      : "."
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "colSpan"   : 2,
+                    "text"      : "Enter"
+                }
+            ]
+        }
+    ]
+    ,
+    "menus" : [
+    ]
+    ,
+    "actions" : [
+    ] 
+}

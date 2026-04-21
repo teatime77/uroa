@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Cache-Control" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Parser</title>
+    <script type="text/javascript" src="../js/parser.js"></script>
+</head>
+<body onload="parser_ts.bodyOnLoad()">
+
+<textarea id="sample" cols="160" rows="80">
+diff(f(x) + g(x), x) == diff(f(x), x) + diff(g(x), x)
+   
+diff(f(x) + g(x), x) == lim((f(x + Delta) + g(x + Delta) - (f(x) + g(x))) / Delta, Delta, 0)
+    
+diff(f(x) + g(x), x) == lim((f(x + Delta) - f(x)) / Delta, Delta, 0) + lim((g(x + Delta) - g(x)) / Delta, Delta, 0)
+</textarea>
+
+</body>
+</html>

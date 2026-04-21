@@ -1,0 +1,87 @@
+{
+    "imports":[
+        "system.keyboard"
+    ]
+    ,
+    "uis" : [
+        {
+            "className" : "Stage",
+            "name"      : "main-stage",
+            "children"  : [
+                {
+                    "className" : "Grid",
+                    "columns"   : "* * *",
+                    "rows"      : "* * *",
+                    "children"  : [
+                        {
+                            "className" : "SingleDigitImage",
+                            "value"     : 6
+                        }
+                        ,
+                        {
+                            "className" : "ImageGrid10",
+                            "imageFile" : "orange.png"
+                        }
+                        ,
+                        {
+                            "className" : "ImageGrid10",
+                            "imageFile" : "orange.png",
+                            "value"     : 6
+                        }
+
+                        ,
+                        {
+                            "className" : "ColumnArithmetic",
+                            "expr"      : "12 + 34"
+                        }
+                        ,
+                        {
+                            "className" : "ColumnArithmetic",
+                            "expr"      : "12 * 34"
+                        }
+                        ,
+                        {
+                            "className" : "BundleImage",
+                            "value"     : 34
+                        }
+
+                        ,
+                        {
+                            "className" : "ImageExpr",
+                            "expr"      : "12 + ans = 46"
+                        }
+                    ]
+                }
+                ,
+                {
+                    "className" : "SymbolRef",
+                    "path"  : "system.keyboard.numpad",
+                    "right" : 100,
+                    "bottom": 10
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "back",
+                    "right"     : 10,
+                    "top"       : 10,
+                    "text"      : "Back"
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "expandNumber",
+                    "right"     : 10,
+                    "top"       : 100,
+                    "text"      : "Play"
+                }
+            ]
+        }
+    ]
+    ,
+    "menus" : [
+    ]
+    ,
+    "actions" : [
+    ] 
+}

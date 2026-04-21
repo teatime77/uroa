@@ -1,0 +1,227 @@
+0:selección
+
+1:rango
+
+2:punto
+
+3:punto medio
+
+4:intersección
+
+5:segmento de línea
+
+6:polígono
+
+7:perpendicular
+
+8:línea paralela
+
+9:círculo por punto
+
+10:círculo por radio
+
+11:arco por punto
+
+12:arco por radio
+
+13:elipse
+
+14:punto tangente
+
+15:círculos tangentes
+
+16:ángulo
+
+17:línea de dimensión
+
+18:símbolo de longitud
+
+19:texto
+
+20:declaración
+
+21:congruencia de triángulos
+
+22:animación
+
+23:Supongamos que dos líneas se intersecan.
+
+24:Hay cuatro ángulos alrededor de la intersección.
+
+25:Estos dos ángulos se denominan ángulos verticales.
+
+26:Estos dos ángulos también se denominan ángulos verticales.
+
+27:Los ángulos verticales son iguales entre sí.
+
+28:Lo demostramos.
+
+29:Sea este ángulo gamma.
+
+30:Por lo tanto
+
+31:Esto completa la demostración de que los ángulos verticales son iguales.
+
+32:La suma de los ángulos interiores de un triángulo es 180 grados.
+
+33:Lo demostraremos.
+
+34:Traza una línea paralela a un lado del triángulo y que pase por el vértice.
+
+35:Como estas dos líneas son paralelas
+
+36:Estos dos ángulos alternos son iguales.
+
+37:De manera similar, como estas dos líneas son paralelas
+
+38:La suma de estos tres ángulos es 180 grados.
+
+39:Por lo tanto, la suma de estos ángulos en un triángulo es 180 grados.
+
+40:Esto completa la demostración.
+
+41:Trazaremos la bisectriz del ángulo.
+
+42:Trazaremos un arco.
+
+43: Halla la intersección del arco y la línea.
+
+44: Dibuja un arco con el mismo radio.
+
+45: Halla la intersección de dos arcos.
+
+46: Dibuja una semirrecta.
+
+47: Demostramos que esta línea es una bisectriz de un ángulo.
+
+48: Estos son los radios del mismo arco, por lo que tienen la misma longitud.
+
+49: Como los radios de estos dos arcos son los mismos,
+
+50: Las dos líneas tienen la misma longitud.
+
+51: Los dos triángulos son congruentes porque tienen lados iguales.
+
+52: Como los dos triángulos son congruentes, los ángulos correspondientes son iguales.
+
+53: Esto completa la prueba de que esta línea es una bisectriz de un ángulo.
+
+54: Dibujamos una línea perpendicular desde un punto en una línea.
+
+55: Dibujamos un arco centrado en este punto.
+
+56:Dibuja un arco centrado en la intersección.
+
+57:Dibuja un arco del mismo radio centrado en otra intersección.
+
+58:Dibuja una línea desde la intersección de los arcos hasta un punto de la línea.
+
+59:Este ángulo es un ángulo recto.
+
+60:Estas dos líneas son perpendiculares entre sí.
+
+61:Con esto concluimos el dibujo.
+
+62:Dibujaremos la mediatriz.
+
+63:Dibuja un círculo centrado en este punto.
+
+64:Dibuja un círculo del mismo radio con el centro en otro punto.
+
+65:Encuentra la intersección de dos círculos.
+
+66:Dibuja una línea que conecte las dos intersecciones.
+
+67:Hay una intersección entre las dos líneas.
+
+68:Por lo tanto, esta línea es una mediatriz.
+
+69:Dibujamos líneas paralelas.
+
+70:Dibuja una línea perpendicular a la línea.
+
+71:Dibuja una línea perpendicular a esta línea perpendicular.
+
+72:Se dice que estas dos líneas son paralelas.
+
+73:Supón que hay dos líneas paralelas.
+
+74:Traza una línea perpendicular desde una línea paralela a la otra.
+
+75:Traza una línea perpendicular desde una posición diferente.
+
+76:Las longitudes de estas líneas perpendiculares son siempre iguales.
+
+77:Esto se llama axioma de las líneas paralelas.
+
+78:Supón que hay dos líneas paralelas y una línea que las interseca.
+
+79:Estos dos ángulos se llaman ángulos alternos.
+
+80:Estos dos ángulos también son ángulos alternos.
+
+81:Los ángulos alternos de las líneas paralelas son iguales entre sí.
+
+82:Traza una línea perpendicular desde la intersección hasta otra línea paralela.
+
+83:Traza otra línea perpendicular desde la intersección hasta la línea.
+
+84:Este ángulo también es un ángulo recto.
+
+85:Dado que estas líneas son paralelas.
+
+86:Las longitudes de estos segmentos son iguales.
+
+87:De manera similar, dado que estas líneas son paralelas.
+
+88:Los dos triángulos son congruentes porque las longitudes de los lados correspondientes son iguales y los ángulos entre los dos lados son ángulos rectos.
+
+89:Demostramos que las dos líneas son perpendiculares entre sí.
+
+90:Estos son los radios del mismo arco.
+
+91:Por lo tanto, tienen la misma longitud.
+
+92:Demostramos que los dos triángulos son congruentes.
+
+93:Estos dos lados son iguales.
+
+94:Este lado es común.
+
+95:Dado que los tres lados correspondientes son iguales,
+
+96:los dos triángulos son congruentes.
+
+97:Estos ángulos correspondientes son iguales.
+
+98:La suma de los dos ángulos es 180 grados.
+
+99:Entonces cada ángulo es un ángulo recto.
+
+100:Por lo tanto, las dos líneas son perpendiculares entre sí.
+
+101: Derivación
+
+102: Definición de ángulos verticales
+
+103: Los ángulos verticales son iguales
+
+104: Suma de los ángulos interiores de un triángulo
+
+105: Bisectriz de un ángulo (construcción)
+
+106: Bisectriz de un ángulo (prueba)
+
+107: Línea perpendicular (construcción)
+
+108: Bisectriz perpendicular (construcción)
+
+109: Líneas paralelas (construcción)
+
+110: Axioma de la línea paralela
+
+111: Ángulo alternativo (definición)
+
+112: Ángulo alternativo (prueba)
+
+113: Línea perpendicular (prueba)

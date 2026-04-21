@@ -1,0 +1,191 @@
+{
+    "imports":[
+        "system.keyboard"
+    ]
+    ,
+    "uis" : [
+        {
+            "className" : "Stage",
+            "name"      : "main-stage",
+            "children"  : [
+                {
+                    "className" : "ImageUI",
+                    "imageFile" : "tomato.png",
+                    "position"  : [ 10, 10 ],
+                    "size"      : [ 60, 60 ]
+                }
+                ,
+                {
+                    "className" : "ImageUI",
+                    "id"        : "banana",
+                    "imageFile" : "banana.png",
+                    "position"  : [ 80, 10 ],
+                    "size"      : [ 60, 60 ]
+                }
+                ,
+                {
+                    "className" : "ImageUI",
+                    "imageFile" : "orange.png",
+                    "position"  : [ 150, 10 ],
+                    "size"      : [ 60, 60 ]
+                }
+                ,
+                {
+                    "className" : "Star",
+                    "position"  : [ 220, 10 ]
+                }
+                ,
+                {
+                    "className" : "Label",
+                    "font"      : "15px Arial",
+                    "text"      : "こんにちは",
+                    "position"  : [ 300, 10 ]
+                }
+                ,
+                {
+                    "className" : "Grid",
+                    "position"  : [ 500, 10 ],
+                    "columns"   : "60px 60px",
+                    "rows"      : "60px 60px 60px",
+                    "children"  : [
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "tomato.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "banana.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "orange.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "lettuce.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "potato.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                        ,
+                        {
+                            "className" : "ImageUI",
+                            "imageFile" : "suika.png",
+                            "size"      : [ 60, 60 ]
+                        }
+                    ]
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "back",
+                    "right"     : 10,
+                    "top"       : 10,
+                    "text"      : "Back"
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "play",
+                    "right"     : 10,
+                    "top"       : 100,
+                    "text"      : "Play"
+                }
+                ,
+                {
+                    "className" : "Firework",
+                    "numStars"  : 30,
+                    "position"  : [ 300, 300 ]
+                }
+                ,
+                {
+                    "className" : "SymbolRef",
+                    "path"  : "system.keyboard.numpad",
+                    "right" : 100,
+                    "bottom": 10
+                }
+            ]
+        }
+    ]
+    ,
+    "menus" : [
+        {
+            "className" : "PopupMenu",
+            "children"  : [
+                {
+                    "className" : "Button",
+                    "name"      : "Cut",
+                    "text"      : "Cut"
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "Copy",
+                    "text"      : "Copy"
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "Paste",
+                    "text"      : "Paste"
+                }
+            ]
+        }
+    ]
+    ,
+    "actions" : [
+        {
+            "className" : "SequentialAction",
+            "actions"   : [
+                {
+                    "className" : "NumAction",
+                    "count"     : 4
+                }
+                ,
+                {
+                    "className" : "Speech",
+                    "text"      : "こんにちは。"
+                }
+                ,
+                {
+                    "className" : "MoveAction",
+                    "target"     : "banana",
+                    "destination": [ 500, 400 ],
+                    "duration"   : 5
+                }
+                ,
+                {
+                    "className" : "NumAction",
+                    "count"     : 5
+                }
+
+            ]
+        }
+        ,
+        {
+            "className" : "ParallelAction",
+            "actions"   : [
+                {
+                    "className" : "NumAction",
+                    "count"     : 2
+                }
+                ,
+                {
+                    "className" : "NumAction",
+                    "count"     : 3
+                }
+
+            ]
+        }
+    ] 
+}

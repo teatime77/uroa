@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Game</title>
+  <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script type="module" src="./ts/game.ts"></script>
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* Prevent scrollbars from appearing if content slightly overflows */
+    width: 100%;
+    height: 100%;
+}
+
+#world {
+    display: block; /* Remove any default inline-block spacing */
+    width: 100%;
+    height: 100%;
+    /* Optional: background-color for visualization */
+    background-color:darkslategray;
+}  
+
+</style>
+</head>
+<body>
+
+<canvas id="world" tabindex="0" ></canvas>
+</body>
+</html>
