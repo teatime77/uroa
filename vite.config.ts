@@ -1,5 +1,4 @@
 import { defineConfig } from 'vite';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'path';
 
 export default defineConfig({
@@ -31,9 +30,10 @@ export default defineConfig({
             '@algebra': path.resolve(__dirname, './algebra/ts'),
             '@layout': path.resolve(__dirname, './layout/ts'),
             '@plane': path.resolve(__dirname, './plane/ts'),
-            '@firebase': path.resolve(__dirname, './firebase/ts'),
+            '@uroa-firebase': path.resolve(__dirname, './firebase/ts'),
             '@webgpu': path.resolve(__dirname, './webgpu/ts'),
             '@game': path.resolve(__dirname, './game/ts'),
+            '@movie': path.resolve(__dirname, './movie/ts'),
             '@diagram': path.resolve(__dirname, './diagram/ts')
         }
     }

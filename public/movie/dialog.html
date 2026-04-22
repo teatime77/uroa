@@ -1,0 +1,82 @@
+<dialog id="index-dlg">
+    <div style="display: grid; grid-template-columns: 300px 1fr;">
+      <span>タイトル</span>
+      <input id="doc-title" type="text" style="width: 10em;"  />
+    
+      <span>主張</span>
+      <textarea id="doc-assertion" type="text" cols="100" rows="5" oninput="movie_ts.onAssertionInput()"></textarea><br/>
+      <div id="index-tex"></div>
+    </div>
+    <button id="index-ok">OK</button>
+</dialog>
+
+<!---->
+
+<dialog id="section-menu-dlg" class="menu_dlg">
+    <span class="mn1" id="add-section">セクションを追加</span><br/>
+    <span class="mn1" id="add-index">項目を追加</span><br/>
+</dialog>
+
+<!---->
+
+<dialog id="index-menu-dlg" class="menu_dlg">
+    <span class="mn1" id="index-menu-edit">編集</span><br/>
+    <span class="mn1" id="index-menu-proof">証明</span><br/>
+    <span class="mn1" id="index-menu-delete"></span><br/>
+    <span class="mn1" id="index-menu-delete">削除</span><br/>
+</dialog>
+
+<!---->
+
+<dialog id="input-box-dlg">
+    <h4 id="input-box-label"></h4>
+    <input id="input-box-text" type="text" size="20" />
+    <button id="input-box-ok">OK</button>
+</dialog>
+
+<!---->
+
+<dialog id="eq-action-dlg" class="menu_dlg">
+    <span class="l1">辺を追加</span><br/>
+      <span class="l2" onclick="movie_ts.addLHS()">左辺</span><br/>
+      <span class="l2" onclick="movie_ts.addRHS()">右辺</span><br/>
+  
+    <span class="l1">式を追加</span><br/>
+      <span class="l2">公式</span><br/>
+      <span class="l2">番号のついた式</span><br/>
+  
+    <span class="l1">式の操作</span><br/>
+      <span class="l2">左辺と右辺を交換</span><br/>
+      <span class="l2">式に番号をつける</span><br/>
+  
+    <span class="mn1" id="eq-action-delete" >削除</span><br/>
+</dialog>
+
+<!---->
+  
+<dialog id="contents-dlg">
+    <div id="contents-div" style="display: grid; grid-template-columns: 1fr 1fr;"></div>
+    <button style="float: right;" onclick="movie_ts.updateContents()">更新</button>
+</dialog>
+
+<!---->
+    
+<dialog id="drag-drop-dlg">
+    <span class="mn1" id="drag-drop-before" >手前に挿入</span><br/>
+    <span class="mn1" id="drag-drop-after"  >後ろに追加</span><br/>
+    <span class="mn1" id="drag-drop-child"  >子を追加</span>
+</dialog>
+
+<!---->
+    
+<dialog id="speech-dlg" style="position: fixed; left: 0; bottom: 0;">
+    速度 : <input type="number" min="0.1" max="100" step="0.1" value="1" id="speech-rate" />
+    <select id="voice-lang-select" ></select>
+    <select id="voice-name-select" ></select>
+    <button onclick="movie_ts.speakTest()" >Speak</button>
+    <button onclick="movie_ts.cancelSpeech()" >Stop</button>
+    <br/>
+    <textarea id="text-data" cols="160" rows="2">
+    In theoretical physics, quantum field theory (QFT) is a theoretical framework that combines classical field theory, special relativity, and quantum mechanics.  
+    </textarea>  
+</dialog>

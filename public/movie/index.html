@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Expires" content="0">
+
+<title>Free STEM for All</title>
+<link rel="icon" href="favicon.ico" type="image/x-icon">
+
+<!------------------------------------ firebase start -------------------------------------->
+    <!-- update the version number as needed -->
+    <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-app-compat.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-firestore-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-storage-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-analytics-compat.js"></script>
+    <!-- 
+      initialize the SDK after all desired features are loaded, set useEmulator to false
+      to avoid connecting the SDK to running emulators.
+    -->
+    <script defer src="https://www.gstatic.com/firebasejs/firebase/init.js?useEmulator=false"></script>
+<!------------------------------------ firebase end   -------------------------------------->
+
+<!------------------------------------ katex start   -------------------------------------->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.css" integrity="sha384-Wsr4Nh3yrvMf2KCebJchRJoVo1gTU6kcP05uRSh5NV3sj9+a8IomuJoQzf3sMq4T" crossorigin="anonymous">
+
+    <!-- The loading of KaTeX is deferred to speed up page rendering -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.js" integrity="sha384-+W9OcrYK2/bD7BmUAk+xeFAyKp0QjyRQUCxeU31dfyTt/FrPsUgaBTLLkVf33qWt" crossorigin="anonymous"></script>
+
+    <!-- To automatically render math in text elements, include the auto-render extension: -->
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/contrib/auto-render.min.js" integrity="sha384-hCXGrW6PitJEwbkoStFjeJxv+fSOOQKOPbJxSfM6G5sWZjAyWhXiTIIAmQqnlLlh" crossorigin="anonymous"
+        onload="renderMathInElement(document.body);"></script>
+<!------------------------------------ katex end   -------------------------------------->
+
+<script type="text/javascript" src="../firebase/viz-standalone.js"></script>
+<script type="module" src="../main.mjs"></script>
+
+
+
+<style type="text/css">
+body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.lang_button {
+    font-size:xxx-large;
+    margin: 4px;
+}
+
+.progress-dialog-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 5px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #f2f2f2;
+    border-radius: 5px;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #4CAF50;
+}
+
+.tooltip {
+    display: none;
+    position: absolute;
+    top: -20px; 
+    left: 0;
+    background-color: cornsilk;
+    color: black;
+    padding: 5px;
+    border-radius: 3px;
+    font-size: 24px;
+    z-index: 10;
+    border-style: ridge;
+    border-width: 3px;
+}
+
+img:hover + .tooltip {
+    display: block;
+}
+
+
+</style>
+<style>
+.menu_dlg {
+    position: absolute; 
+    margin: 0;
+}
+
+.enum_selection_item {
+    display: inline-block;
+    cursor:pointer;
+    white-space: nowrap;
+}
+
+.pointer {
+    position: absolute;
+    visibility: hidden;
+    left: 0px;
+    top : 0px;
+    z-index: 10;
+}
+
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent background */
+}
+</style>
+    
+</head>
+<body>
+<div id="modal_dlg" class="modal" tabindex="0">
+</div>
+
+<img id="pointer_img" class="pointer" src="../plane/images/pointer.png" />
+<img id="pointer_move_img" class="pointer" src="../plane/images/pointer_move.png" />
+<div id="katex-div" style="display: none; width: 1280px;; height: 670px; overflow-y: scroll;" ></div>
+
+<dialog id="lang-texts-dlg">
+<textarea id="lang-texts-text" rows="50" cols="180" ></textarea>    
+</dialog>
+<dialog id="lang-dlg">
+    <div style="display: flex; flex-direction: column; ">
+        <button class="lang_button" value="ara">اَلْعَرَبِيَّةُ</button>
+        <button class="lang_button" value="chi">汉语</button>
+        <button class="lang_button" value="eng">English</button>
+        <button class="lang_button" value="fre">français</button>
+        <button class="lang_button" value="ger">Deutsch</button>
+        <button class="lang_button" value="hin">हिन्दी</button>
+        <button class="lang_button" value="ind">Indonesia</button>
+        <button class="lang_button" value="jpn">日本語</button>
+        <button class="lang_button" value="kor">한국어</button>
+        <button class="lang_button" value="rus">Русский</button>
+        <button class="lang_button" value="spa">español</button>
+        <button class="lang_button" value="por">português</button>
+    </div>
+</dialog>
+
+<dialog id="progress-dialog" style="z-index: 1; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: xxx-large;">
+    <div class="progress-dialog-content">
+        <p style="text-align: center;">電子紙芝居を</p>
+        <p style="text-align: center;">ダウンロード中・・・</p>
+
+        <div class="progress-bar">
+            <div class="progress-bar-fill" id="progress-bar-fill"></div>
+        </div>
+    </div>
+</dialog>
+
+<dialog id="graph-menu-dlg" class="menu_dlg">
+    <span class="menu_item" onclick="firebase_ts.addGraphSection()">セクションを追加</span><br/>
+    <span class="menu_item" onclick="firebase_ts.addGraphItem()">項目を追加</span><br/>
+    <span class="menu_item" onclick="firebase_ts.changeDisplay()">表示切替</span><br/>
+    <span class="menu_item" id="connect-edge">接続</span><br/>
+    <span class="menu_item" id="remove-from-section">除去</span><br/>
+    <span class="menu_item" onclick="firebase_ts.updateGraph()">update graph</span><br/>
+    <span class="menu_item" onclick="movie_ts.playAllGraph()">play all graph</span><br/>
+    <span class="menu_item" onclick="movie_ts.convert()">convert</span><br/>
+    <span class="menu_item" onclick="movie_ts.backup()">back up</span><br/>
+    <span class="menu_item" onclick="movie_ts.playBackUp()">play back up</span><br/>
+</dialog>
+
+<dialog id="graph-doc-menu-dlg" class="menu_dlg">
+    <span class="menu_item" onclick="firebase_ts.renameDoc()">名前を変更</span><br/>
+    <span class="menu_item" onclick="firebase_ts.deleteDoc()">削除</span><br/>
+  </dialog>
+  
+<dialog id="graph-section-menu-dlg" class="menu_dlg">
+  <span class="menu_item" id="add-section-to-section">セクションを追加</span><br/>
+  <span class="menu_item" onclick="firebase_ts.renameSection()">セクションの名前を変更</span><br/>
+  <span class="menu_item" id="add-item-to-section">項目を追加</span><br/>
+  <span class="menu_item" id="append-to-section" >追加</span><br/>
+</dialog>
+
+<dialog id="graph-edge-menu-dlg" class="menu_dlg">
+  <span class="menu_item" id="delete-edge">除去</span>
+</dialog>
+
+<dialog id="help-dlg" style="position: fixed; right: 20px; bottom: 20px; z-index: 10;" >
+    <span id="help-msg"></span>
+</dialog>
+
+<button id="close-graph" style="display: none; position: fixed; top:10px; right: 10px; z-index: 10;">×</button>
+</body>
+</html>
