@@ -3,7 +3,27 @@
 <head>
   <meta charset="utf-8">
   <title>Diagram</title>
+
+  <!-- Libraries for Game -->
+  <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+
+  <!-- Libraries for WebGPU -->
+  <script src="../webgpu/gl-matrix-min.js"></script>
+
+  <!-- Libraries for Movie & Firebase -->
+  <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-auth-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-firestore-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/firebase/10.14.1/firebase-storage-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/firebase/init.js?useEmulator=false"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.js"></script>
+  <script type="text/javascript" src="../firebase/viz-standalone.js"></script>
+
   <script type="module" src="../main.mjs"></script>
+  <link rel="stylesheet" href="./webgpu.css">
+  <link rel="stylesheet" href="./movie.css">
 
 <style>
 html, body {
@@ -41,17 +61,157 @@ html, body {
 <img id="tts-icon"  src="./images/tts.png"  style="z-index: -10; position: absolute; left: 0; top: 0;" width="180" height="148" />
 <img id="sleep-icon"  src="./images/sleep.png"  style="z-index: -10; position: absolute; left: 0; top: 0;" width="460" height="580" />
 
-<div id="canvas-container" style="position: relative; width: 100%; height: 100%;">
-    <canvas id="world-diagram" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 10;"></canvas>
-    <canvas id="world-game"    style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 0; display: none;"></canvas>
-    <canvas id="world-webgpu"  style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 0; display: none;"></canvas>
-    <canvas id="world-movie"   style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 0; display: none;"></canvas>
-</div>
+<div id="module-layers-container" style="position: relative; width: 100%; height: 100%;">
 
-<div style="display: flex; position: absolute; left: 10px; top: 9px">
-    <button id="clear-btn" class="ui_button">Clear</button>
-    <button id="start-btn" class="ui_button">Start</button>
-    <button id="download-btn" class="ui_button">Download</button>
+    <!-- Diagram Layer -->
+    <div id="layer-diagram" class="module-layer" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 10;">
+        <canvas id="world-diagram" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%;"></canvas>
+        <div style="display: flex; position: absolute; left: 10px; top: 9px">
+            <button id="clear-btn" class="ui_button">Clear</button>
+            <button id="start-btn" class="ui_button">Start</button>
+            <button id="download-btn" class="ui_button">Download</button>
+        </div>
+    </div>
+
+    <!-- Game Layer -->
+    <div id="layer-game" class="module-layer" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 0; display: none;">
+        <canvas id="world-game" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%;"></canvas>
+    </div>
+
+    <!-- WebGPU Layer -->
+    <div id="layer-webgpu" class="module-layer" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 0; display: none;">
+        <div id="div-color" style="display:none; position:absolute; z-index: 20;">
+            ambientColor  
+            R <input type="number" id="ambient-r" min="0" max="100" value="50" style="width: 3em;" />
+            G <input type="number" id="ambient-g" min="0" max="100" value="50" style="width: 3em;" />
+            B <input type="number" id="ambient-b" min="0" max="100" value="50" style="width: 3em;" />
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+            directionalColor  
+            R <input type="number" id="directional-r" min="0" max="100" value="50" style="width: 3em;" />
+            G <input type="number" id="directional-g" min="0" max="100" value="50" style="width: 3em;" />
+            B <input type="number" id="directional-b" min="0" max="100" value="50" style="width: 3em;" />
+        </div>
+        <span id="span-buttons" style="position:absolute; z-index: 20;"></span>
+        <button style="display:none; position:absolute; z-index: 20;" id="next-button">Next</button>
+        <span class="button-checkbox" style="position:absolute; z-index: 20;">
+            <input type="checkbox" id="auto-rotate" class="hidden-check">
+            <label for="auto-rotate" class="styled-button">自動回転</label>
+        </span>
+        <select id="sel-visualization" style="display: none; position:absolute; z-index: 20;">
+            <option value="plaquette">plaquette</option>
+            <option value="vortex" selected>vortex</option>
+        </select>
+        <span id="orbital-panel" style="display:none; position:absolute; z-index: 20;">
+            <label for="orbital-select">Select Orbital:</label>
+            <select id="orbital-select">
+                <option value="1s">1s (Spherical)</option>
+                <option value="2pz" selected>2p_z (Dumbbell)</option>
+                <option value="3dz2">3d_z² (Donut & Lobes)</option>
+            </select>
+        </span>
+        <div id="gauge-higgs-panel" style="display:none; position:absolute; z-index: 20;">
+            <span>
+                <label for="beta-inp">Beta: </label>
+                <input type="number" id="beta-inp" min="0.0" max="100.0" step="0.1" value="2.0">
+                <span id="gh-beta-value">2.0</span>
+            </span>
+            <span>
+                <label for="kappa-inp">Kappa: </label>
+                <input type="number" id="kappa-inp" min="0.0" max="2.0" step="0.05" value="0.5">
+                <span id="gh-kappa-value">0.50</span>
+            </span>
+            <span>
+                <label for="mass-inp">mass: </label>
+                <input type="number" id="mass-inp" min="0.01" max="3.0" step="0.01" value="0.1">
+            </span>
+        </div>
+        
+        <div id="app-container" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%;">
+            <canvas id="world-webgpu" width="800" height="800" tabindex="0" style="touch-action: none; overscroll-behavior: none; position: absolute; left: 0; top: 0; width: 100%; height: 100%;"></canvas>
+            <div id="higgs-panel" style="display:none; position:absolute; top:10px; left:10px; z-index: 20;">
+                <div style="margin-bottom:10px;">
+                    <label for="kappa-slider">Kappa: </label>
+                    <input type="range" id="kappa-slider" min="0.0" max="1.2" step="0.01" value="0.3">
+                    <span id="kappa-value">0.30</span>
+                </div>
+                <div>
+                    <label for="lambda-slider">Lambda: </label>
+                    <input type="range" id="lambda-slider" min="0.1" max="2.0" step="0.1" value="1.0">
+                    <span id="lambda-value">1.00</span>
+                </div>
+            </div>
+        </div>
+        <canvas id="plot-canvas" width="800px" height="400px" style="position:absolute; z-index: 20; display:none;"></canvas>
+    </div>
+
+    <!-- Movie Layer -->
+    <div id="layer-movie" class="module-layer" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; z-index: 0; display: none;">
+        <canvas id="world-movie" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%;"></canvas>
+        <div id="modal_dlg" class="modal" tabindex="0"></div>
+        <img id="pointer_img" class="pointer" src="../plane/images/pointer.png" />
+        <img id="pointer_move_img" class="pointer" src="../plane/images/pointer_move.png" />
+        <div id="katex-div" style="display: none; width: 1280px;; height: 670px; overflow-y: scroll;" ></div>
+        
+        <dialog id="lang-texts-dlg">
+            <textarea id="lang-texts-text" rows="50" cols="180" ></textarea>    
+        </dialog>
+        <dialog id="lang-dlg">
+            <div style="display: flex; flex-direction: column; ">
+                <button class="lang_button" value="ara">اَلْعَرَبِيَّةُ</button>
+                <button class="lang_button" value="chi">汉语</button>
+                <button class="lang_button" value="eng">English</button>
+                <button class="lang_button" value="fre">français</button>
+                <button class="lang_button" value="ger">Deutsch</button>
+                <button class="lang_button" value="hin">हिन्दी</button>
+                <button class="lang_button" value="ind">Indonesia</button>
+                <button class="lang_button" value="jpn">日本語</button>
+                <button class="lang_button" value="kor">한국어</button>
+                <button class="lang_button" value="rus">Русский</button>
+                <button class="lang_button" value="spa">español</button>
+                <button class="lang_button" value="por">português</button>
+            </div>
+        </dialog>
+        <dialog id="progress-dialog" style="z-index: 1; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: xxx-large;">
+            <div class="progress-dialog-content">
+                <p style="text-align: center;">電子紙芝居を</p>
+                <p style="text-align: center;">ダウンロード中・・・</p>
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" id="progress-bar-fill"></div>
+                </div>
+            </div>
+        </dialog>
+        
+        <dialog id="graph-menu-dlg" class="menu_dlg">
+            <span class="menu_item" onclick="firebase_ts.addGraphSection()">セクションを追加</span><br/>
+            <span class="menu_item" onclick="firebase_ts.addGraphItem()">項目を追加</span><br/>
+            <span class="menu_item" onclick="firebase_ts.changeDisplay()">表示切替</span><br/>
+            <span class="menu_item" id="connect-edge">接続</span><br/>
+            <span class="menu_item" id="remove-from-section">除去</span><br/>
+            <span class="menu_item" onclick="firebase_ts.updateGraph()">update graph</span><br/>
+            <span class="menu_item" onclick="movie_ts.playAllGraph()">play all graph</span><br/>
+            <span class="menu_item" onclick="movie_ts.convert()">convert</span><br/>
+            <span class="menu_item" onclick="movie_ts.backup()">back up</span><br/>
+            <span class="menu_item" onclick="movie_ts.playBackUp()">play back up</span><br/>
+        </dialog>
+        <dialog id="graph-doc-menu-dlg" class="menu_dlg">
+            <span class="menu_item" onclick="firebase_ts.renameDoc()">名前を変更</span><br/>
+            <span class="menu_item" onclick="firebase_ts.deleteDoc()">削除</span><br/>
+        </dialog>
+        <dialog id="graph-section-menu-dlg" class="menu_dlg">
+          <span class="menu_item" id="add-section-to-section">セクションを追加</span><br/>
+          <span class="menu_item" onclick="firebase_ts.renameSection()">セクションの名前を変更</span><br/>
+          <span class="menu_item" id="add-item-to-section">項目を追加</span><br/>
+          <span class="menu_item" id="append-to-section" >追加</span><br/>
+        </dialog>
+        <dialog id="graph-edge-menu-dlg" class="menu_dlg">
+          <span class="menu_item" id="delete-edge">除去</span>
+        </dialog>
+        <dialog id="help-dlg" style="position: fixed; right: 20px; bottom: 20px; z-index: 10;" >
+            <span id="help-msg"></span>
+        </dialog>
+        <button id="close-graph" style="display: none; position: fixed; top:10px; right: 10px; z-index: 10;">×</button>
+    </div>
+
 </div>
 
 </body>

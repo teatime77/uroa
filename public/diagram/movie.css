@@ -1,0 +1,72 @@
+.lang_button {
+    font-size:xxx-large;
+    margin: 4px;
+}
+
+.progress-dialog-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 5px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 20px;
+    background-color: #f2f2f2;
+    border-radius: 5px;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: #4CAF50;
+}
+
+.tooltip {
+    display: none;
+    position: absolute;
+    top: -20px; 
+    left: 0;
+    background-color: cornsilk;
+    color: black;
+    padding: 5px;
+    border-radius: 3px;
+    font-size: 24px;
+    z-index: 10;
+    border-style: ridge;
+    border-width: 3px;
+}
+
+img:hover + .tooltip {
+    display: block;
+}
+
+.menu_dlg {
+    position: absolute; 
+    margin: 0;
+}
+
+.enum_selection_item {
+    display: inline-block;
+    cursor:pointer;
+    white-space: nowrap;
+}
+
+.pointer {
+    position: absolute;
+    visibility: hidden;
+    left: 0px;
+    top : 0px;
+    z-index: 10;
+}
+
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent background */
+}
