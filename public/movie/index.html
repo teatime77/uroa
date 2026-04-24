@@ -166,26 +166,26 @@ img:hover + .tooltip {
 </dialog>
 
 <dialog id="graph-menu-dlg" class="menu_dlg">
-    <span class="menu_item" onclick="firebase_ts.addGraphSection()">セクションを追加</span><br/>
-    <span class="menu_item" onclick="firebase_ts.addGraphItem()">項目を追加</span><br/>
-    <span class="menu_item" onclick="firebase_ts.changeDisplay()">表示切替</span><br/>
+    <span class="menu_item" id="add-graph-section">セクションを追加</span><br/>
+    <span class="menu_item" id="add-graph-item">項目を追加</span><br/>
+    <span class="menu_item" id="change-display">表示切替</span><br/>
     <span class="menu_item" id="connect-edge">接続</span><br/>
     <span class="menu_item" id="remove-from-section">除去</span><br/>
-    <span class="menu_item" onclick="firebase_ts.updateGraph()">update graph</span><br/>
-    <span class="menu_item" onclick="movie_ts.playAllGraph()">play all graph</span><br/>
-    <span class="menu_item" onclick="movie_ts.convert()">convert</span><br/>
-    <span class="menu_item" onclick="movie_ts.backup()">back up</span><br/>
-    <span class="menu_item" onclick="movie_ts.playBackUp()">play back up</span><br/>
+    <span class="menu_item" id="update-graph">update graph</span><br/>
+    <span class="menu_item" id="play-all-graph">play all graph</span><br/>
+    <span class="menu_item" id="convert-movie">convert</span><br/>
+    <span class="menu_item" id="backup-movie">back up</span><br/>
+    <span class="menu_item" id="play-backup">play back up</span><br/>
 </dialog>
 
 <dialog id="graph-doc-menu-dlg" class="menu_dlg">
-    <span class="menu_item" onclick="firebase_ts.renameDoc()">名前を変更</span><br/>
-    <span class="menu_item" onclick="firebase_ts.deleteDoc()">削除</span><br/>
+    <span class="menu_item" id="rename-doc">名前を変更</span><br/>
+    <span class="menu_item" id="delete-doc">削除</span><br/>
   </dialog>
   
 <dialog id="graph-section-menu-dlg" class="menu_dlg">
   <span class="menu_item" id="add-section-to-section">セクションを追加</span><br/>
-  <span class="menu_item" onclick="firebase_ts.renameSection()">セクションの名前を変更</span><br/>
+  <span class="menu_item" id="rename-section">セクションの名前を変更</span><br/>
   <span class="menu_item" id="add-item-to-section">項目を追加</span><br/>
   <span class="menu_item" id="append-to-section" >追加</span><br/>
 </dialog>
