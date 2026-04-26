@@ -1,0 +1,70 @@
+[
+  {
+    "idx": 0,
+    "typeName": "CameraBlock",
+    "x": 478,
+    "y": 117,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 1,
+    "typeName": "FaceDetectionBlock",
+    "x": 479,
+    "y": 417,
+    "ports": [
+      {
+        "idx": 1,
+        "destinations": []
+      },
+      {
+        "idx": 2,
+        "destinations": [
+          4
+        ]
+      },
+      {
+        "idx": 3,
+        "destinations": []
+      }
+    ]
+  },
+  {
+    "idx": 2,
+    "typeName": "CalcBlock",
+    "x": 482,
+    "y": 727,
+    "ports": [
+      {
+        "idx": 4,
+        "destinations": []
+      },
+      {
+        "idx": 5,
+        "destinations": [
+          6
+        ]
+      }
+    ],
+    "text": "b = a + 50"
+  },
+  {
+    "idx": 3,
+    "typeName": "ServoMotorBlock",
+    "x": 476,
+    "y": 813,
+    "ports": [
+      {
+        "idx": 6,
+        "destinations": []
+      }
+    ],
+    "channel": 0
+  }
+]

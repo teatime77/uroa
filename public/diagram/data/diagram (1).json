@@ -1,0 +1,19 @@
+[
+  {
+    "idx": 0,
+    "typeName": "TTSBlock",
+    "x": 422,
+    "y": 335,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": []
+      },
+      {
+        "idx": 1,
+        "destinations": []
+      }
+    ],
+    "text": "こんにちは!どうぞよろしく!"
+  }
+]

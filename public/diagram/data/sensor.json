@@ -1,0 +1,97 @@
+[
+  {
+    "idx": 0,
+    "typeName": "UltrasonicDistanceSensorBlock",
+    "x": 532,
+    "y": 216,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 1,
+    "typeName": "CompareBlock",
+    "x": 573,
+    "y": 332,
+    "ports": [
+      {
+        "idx": 1,
+        "destinations": []
+      },
+      {
+        "idx": 2,
+        "destinations": [
+          6
+        ]
+      }
+    ],
+    "text": "a < 20"
+  },
+  {
+    "idx": 2,
+    "typeName": "IfBlock",
+    "x": 408,
+    "y": 439,
+    "ports": [
+      {
+        "idx": 3,
+        "destinations": []
+      },
+      {
+        "idx": 4,
+        "destinations": []
+      },
+      {
+        "idx": 5,
+        "destinations": [
+          7
+        ]
+      },
+      {
+        "idx": 6,
+        "destinations": []
+      }
+    ]
+  },
+  {
+    "idx": 3,
+    "typeName": "TTSBlock",
+    "x": 443,
+    "y": 474,
+    "ports": [
+      {
+        "idx": 7,
+        "destinations": []
+      },
+      {
+        "idx": 8,
+        "destinations": [
+          9
+        ]
+      }
+    ],
+    "text": "こんにちは!どうぞよろしく!"
+  },
+  {
+    "idx": 4,
+    "typeName": "SleepBlock",
+    "x": 443,
+    "y": 514,
+    "ports": [
+      {
+        "idx": 9,
+        "destinations": []
+      },
+      {
+        "idx": 10,
+        "destinations": []
+      }
+    ],
+    "text": "3"
+  }
+]

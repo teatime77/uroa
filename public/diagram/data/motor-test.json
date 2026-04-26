@@ -1,0 +1,92 @@
+[
+  {
+    "idx": 0,
+    "typeName": "InputRangeBlock",
+    "x": 492,
+    "y": 238,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [
+          1
+        ]
+      }
+    ],
+    "value": "41",
+    "min": "0",
+    "max": "180"
+  },
+  {
+    "idx": 1,
+    "typeName": "ServoMotorBlock",
+    "x": 492,
+    "y": 337,
+    "ports": [
+      {
+        "idx": 1,
+        "destinations": []
+      }
+    ],
+    "channel": 0
+  },
+  {
+    "idx": 2,
+    "typeName": "InputRangeBlock",
+    "x": 489,
+    "y": 436,
+    "ports": [
+      {
+        "idx": 2,
+        "destinations": [
+          4
+        ]
+      }
+    ],
+    "value": "63",
+    "min": "0",
+    "max": "180"
+  },
+  {
+    "idx": 3,
+    "typeName": "InputRangeBlock",
+    "x": 481,
+    "y": 626,
+    "ports": [
+      {
+        "idx": 3,
+        "destinations": [
+          5
+        ]
+      }
+    ],
+    "value": "74",
+    "min": "0",
+    "max": "180"
+  },
+  {
+    "idx": 4,
+    "typeName": "ServoMotorBlock",
+    "x": 485,
+    "y": 524,
+    "ports": [
+      {
+        "idx": 4,
+        "destinations": []
+      }
+    ],
+    "channel": 1
+  },
+  {
+    "idx": 5,
+    "typeName": "ServoMotorBlock",
+    "x": 480,
+    "y": 725,
+    "ports": [
+      {
+        "idx": 5,
+        "destinations": []
+      }
+    ],
+    "channel": 2
+  }
+]

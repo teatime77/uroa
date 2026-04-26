@@ -1,0 +1,6767 @@
+{
+  "type": "uroa-stem",
+  "version": 3,
+  "docs": [
+    {
+      "id": 1,
+      "name": "A quadrilateral with opposite sides of equal length is a parallelogram.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.23,
+          "y": 0.22
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 1.02
+        },
+        {
+          "op": "click",
+          "x": 2.19,
+          "y": -1.19
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -2.01
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.11,
+          "y": 0.61,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.1,
+          "y": -1.6,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.26,
+          "y": 0.2,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.06,
+          "y": -2.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 1,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2.21,
+          "y": -1.18,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.12,
+          "y": -0.87,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 1.08,
+          "y": -0.09,
+          "shapeId": "14"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.04,
+          "y": -2.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.2,
+          "y": 0.24,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.06,
+          "y": -2.01,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 1,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2.16,
+          "y": -1.19,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 1.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -2.05,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.49,
+          "y": -1.8,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": -1.45,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": -0.68,
+          "y": 0.81,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.23,
+          "shapeId": "16"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.9,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": -0.08,
+          "y": 0.94,
+          "shapeId": "22"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Angle bisector (construction)",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.42,
+          "y": -2.17
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": 2.01
+        },
+        {
+          "op": "click",
+          "x": -0.42,
+          "y": -2.16,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.97,
+          "y": 2
+        },
+        {
+          "op": "tool",
+          "name": "ArcByPointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.44,
+          "y": -2.19,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.78,
+          "y": -0.82
+        },
+        {
+          "op": "click",
+          "x": -1.42,
+          "y": -0.62
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.88,
+          "y": -1.01,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -0.67,
+          "y": -0.38,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.33,
+          "y": -0.84,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.16,
+          "y": -0.45,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.43,
+          "y": -2.16,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.06,
+          "y": -0.49,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.44,
+          "y": -2.18,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.49,
+          "y": -0.63,
+          "shapeId": "13"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 102
+        },
+        {
+          "op": "click",
+          "x": -0.75,
+          "y": -1.35,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.38,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": -0.34,
+          "y": -0.36,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "ArcByPointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.06,
+          "y": -0.5,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 0.76,
+          "y": 1.38
+        },
+        {
+          "op": "click",
+          "x": -1.07,
+          "y": 2.13
+        },
+        {
+          "op": "tool",
+          "name": "ArcByRadiusBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.32,
+          "y": 2.02,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.5,
+          "y": -0.6,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.65,
+          "y": 2.14
+        },
+        {
+          "op": "click",
+          "x": -0.95,
+          "y": 1.56
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.45,
+          "y": 1.78,
+          "shapeId": "23"
+        },
+        {
+          "op": "click",
+          "x": -0.62,
+          "y": 2.09,
+          "shapeId": "21"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.04,
+          "y": -0.45,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.07,
+          "y": 1.91,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.52,
+          "y": -0.59,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 1.93,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 101
+        },
+        {
+          "op": "click",
+          "x": -0.52,
+          "y": 0.7,
+          "shapeId": "30"
+        },
+        {
+          "op": "click",
+          "x": 0.23,
+          "y": 0.66,
+          "shapeId": "32"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.43,
+          "y": -2.15,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.07,
+          "y": 1.91,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.45,
+          "y": -2.14,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.04,
+          "y": -0.5,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": 1.91,
+          "shapeId": "27"
+        },
+        {
+          "op": "click",
+          "x": -0.38,
+          "y": -2.15,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.5,
+          "y": -0.6,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": -0.06,
+          "y": 1.89,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.15,
+          "y": -1.2,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.32,
+          "y": -1.01,
+          "shapeId": "34"
+        },
+        {
+          "op": "click",
+          "x": -0.32,
+          "y": -1.01,
+          "shapeId": "34"
+        },
+        {
+          "op": "click",
+          "x": -0.85,
+          "y": -1.02,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": -0.38,
+          "y": -2.01,
+          "shapeId": "39"
+        },
+        {
+          "op": "click",
+          "x": -0.46,
+          "y": -2.01,
+          "shapeId": "40"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "The base angles of an isosceles triangle are equal.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2.02
+        },
+        {
+          "op": "click",
+          "x": -1.98,
+          "y": -1.98
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 2.03,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": -1.99
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.99,
+          "y": 0.04,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.94,
+          "y": -0.02,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1.97,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": -1.95,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBisectorBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBisectorBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.71,
+          "y": 0.56,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.82,
+          "y": 0.36,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.36,
+          "y": -1.96,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.64,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.98,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 2.02,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.93,
+          "y": -1.95,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 2.03,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.91,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": 2.03,
+          "y": -1.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 2.05,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -1.95,
+          "shapeId": "15"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.45,
+          "y": -1.96,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -1.8,
+          "y": -1.61,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 1.68,
+          "y": -1.34,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 1.4,
+          "y": -1.95,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": -1.87,
+          "y": -1.9,
+          "shapeId": "20"
+        },
+        {
+          "op": "click",
+          "x": 1.86,
+          "y": -1.9,
+          "shapeId": "21"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "name": "The bisector of the apex angle of an isosceles triangle bisects the base perpendicularly.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1.97
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": -2.01
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.02,
+          "y": 0.02,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.01,
+          "y": 0.01,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.02,
+          "y": -1.94,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": -1.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBisectorBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.56,
+          "y": 0.9,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.7,
+          "y": 0.61,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.07,
+          "y": -1.99,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.35,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -1.97,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": -1.94,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": 1.99,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.96,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": -1.94,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 2.02,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -1.99,
+          "shapeId": "15"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.46,
+          "y": -1.95,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -1.62,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -1.62,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": -0.59,
+          "y": -1.97,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": -0.1,
+          "y": -1.84,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.11,
+          "y": -1.86,
+          "shapeId": "20"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "name": "A triangle with equal base angles is an isosceles triangle.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2.02
+        },
+        {
+          "op": "click",
+          "x": -1.76,
+          "y": -1.38
+        },
+        {
+          "op": "click",
+          "x": 1.83,
+          "y": -1.39
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 2.05,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.43,
+          "y": -1.36,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.56,
+          "y": -1.03,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 1.5,
+          "y": -0.84,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 1.38,
+          "y": -1.34,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.67,
+          "y": -1.31,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1.72,
+          "y": -1.31,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBisectorBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.63,
+          "y": 0.84,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.81,
+          "y": 0.53,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.55,
+          "y": -1.38,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -0.64,
+          "shapeId": "12"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleSimilarityBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.75,
+          "y": -1.35,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 2,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.37,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 1.83,
+          "y": -1.42,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 1.99,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.04,
+          "y": -1.41,
+          "shapeId": "16"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.76,
+          "y": -1.41,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -0.62,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -0.62,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": -0.41,
+          "y": -1.36,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 206
+        },
+        {
+          "op": "click",
+          "x": -0.1,
+          "y": -1.27,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.11,
+          "y": -1.28,
+          "shapeId": "20"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.35,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.77,
+          "y": -1.34,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.33,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 2.06,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.86,
+          "y": -1.41,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.43,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 2.03,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.78,
+          "y": -1.33,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 2.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 2.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.83,
+          "y": -1.37,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.92,
+          "y": 0.31,
+          "shapeId": "27"
+        },
+        {
+          "op": "click",
+          "x": 0.95,
+          "y": 0.3,
+          "shapeId": "28"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "name": "Draw a perpendicular line from a point on a line.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.02,
+          "y": -1.59
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": -1.58
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.58,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "ArcByPointBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": -1.56,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.39,
+          "y": -1.78
+        },
+        {
+          "op": "click",
+          "x": -1.39,
+          "y": -1.81
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.93,
+          "y": -0.46,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.75,
+          "y": -1.54,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -1.57,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -1.4,
+          "y": -1.58,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": -1.58,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.36,
+          "y": -1.57,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 102
+        },
+        {
+          "op": "click",
+          "x": -0.7,
+          "y": -1.6,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 0.74,
+          "y": -1.58,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": -0.78,
+          "y": -0.38,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "ArcByPointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.41,
+          "y": -1.57,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 0.97,
+          "y": 1.21
+        },
+        {
+          "op": "click",
+          "x": -1.42,
+          "y": 2.12
+        },
+        {
+          "op": "tool",
+          "name": "ArcByRadiusBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.43,
+          "y": 1.99,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": 1.41,
+          "y": -1.58,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1.09,
+          "y": 2.09
+        },
+        {
+          "op": "click",
+          "x": -1.08,
+          "y": 1.22
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.8,
+          "y": 2.03,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": -0.53,
+          "y": 1.59,
+          "shapeId": "19"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.41,
+          "y": -1.56,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 1.82,
+          "shapeId": "22"
+        },
+        {
+          "op": "click",
+          "x": 1.37,
+          "y": -1.56,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 1.83,
+          "shapeId": "22"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 101
+        },
+        {
+          "op": "click",
+          "x": -0.74,
+          "y": 0.13,
+          "shapeId": "26"
+        },
+        {
+          "op": "click",
+          "x": 0.69,
+          "y": 0.12,
+          "shapeId": "28"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.58,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 1.8,
+          "shapeId": "22"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.44,
+          "y": -1.57,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -1.58,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": 1.8,
+          "shapeId": "22"
+        },
+        {
+          "op": "click",
+          "x": 1.39,
+          "y": -1.59,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -1.63,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 1.8,
+          "shapeId": "22"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.41,
+          "y": -1.56,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.22,
+          "shapeId": "30"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.22,
+          "shapeId": "30"
+        },
+        {
+          "op": "click",
+          "x": -0.39,
+          "y": -1.57,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": 0.07,
+          "y": -1.45,
+          "shapeId": "35"
+        },
+        {
+          "op": "click",
+          "x": -0.11,
+          "y": -1.48,
+          "shapeId": "36"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "name": "Draw a perpendicular line from a point to a line.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": 0.03
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": 0.02
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.62
+        },
+        {
+          "op": "tool",
+          "name": "ArcByPointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.08,
+          "y": 1.62,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": 0.63
+        },
+        {
+          "op": "click",
+          "x": 1.51,
+          "y": 0.68
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.41,
+          "y": 0.05,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.38,
+          "y": -0.19,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.98,
+          "y": 0.03,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.64,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.64,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.9,
+          "y": 0.03,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 102
+        },
+        {
+          "op": "click",
+          "x": -0.52,
+          "y": 0.83,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.46,
+          "y": 0.81,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.42,
+          "y": -0.17,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBisectorBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.27,
+          "y": 1.2,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 0.4,
+          "y": 0.94,
+          "shapeId": "14"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.28,
+          "y": 0.07,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.47,
+          "shapeId": "17"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.03,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.61,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.96,
+          "y": 0.03,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 1.62,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.06,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.92,
+          "y": 0.06,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.6,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.06,
+          "shapeId": "21"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.47,
+          "y": 0.02,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 0.41,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 0.41,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": -0.41,
+          "y": 0.04,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": 0.06,
+          "y": 0.15,
+          "shapeId": "26"
+        },
+        {
+          "op": "click",
+          "x": -0.11,
+          "y": 0.12,
+          "shapeId": "27"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "name": "If the diagonals of a quadrilateral intersect at the midpoint, it is a parallelogram.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1.98
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": 2.01
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": 1.02
+        },
+        {
+          "op": "click",
+          "x": 1.61,
+          "y": -0.99
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.02,
+          "y": 0.66,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.94,
+          "y": 0.94,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.02,
+          "y": -1.97,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.02,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.02,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 2.02,
+          "y": 2,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.97,
+          "y": -1.01,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": 1.01,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.58,
+          "y": 1.01,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": 0.03,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": -1.02,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.82,
+          "y": 0.53,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 0.78,
+          "y": -0.5,
+          "shapeId": "13"
+        },
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1.98,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": 1.03,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 2.02,
+          "y": 2,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": -0.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": -2,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.49,
+          "y": -0.3,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.42,
+          "y": 0.43,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.35,
+          "y": 0.24,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.28,
+          "y": -0.23,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 201
+        },
+        {
+          "op": "click",
+          "x": -0.13,
+          "y": 0.03,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.13,
+          "y": 0.04,
+          "shapeId": "20"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.05,
+          "y": -1.95,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.04,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -1.63,
+          "y": 1.02,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 2.02,
+          "y": 2,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": 0.03,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.61,
+          "y": -0.96,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.04,
+          "y": -1.96,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": 1.02,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 2.02,
+          "y": 2.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": -0.97,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -1.78,
+          "y": -0.47,
+          "shapeId": "26"
+        },
+        {
+          "op": "click",
+          "x": 1.86,
+          "y": 0.49,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.6,
+          "y": -0.57,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.53,
+          "y": -0.31,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.47,
+          "y": 0.49,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -0.45,
+          "y": 0.33,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 201
+        },
+        {
+          "op": "click",
+          "x": 0.06,
+          "y": -0.19,
+          "shapeId": "29"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.22,
+          "shapeId": "30"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.05,
+          "y": -1.97,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 0.01,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.61,
+          "y": -0.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 2.02,
+          "y": 2.03,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.05,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": 1.04,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2,
+          "y": -1.96,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": -1,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.61,
+          "y": 1.03,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 2,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.24,
+          "y": -1.46,
+          "shapeId": "35"
+        },
+        {
+          "op": "click",
+          "x": 0.2,
+          "y": 1.54,
+          "shapeId": "36"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 800
+        },
+        {
+          "op": "enum",
+          "value": 401
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1.97,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": -0.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": 2.03,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": 1.04,
+          "shapeId": "5"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "name": "The opposite angles of a parallelogram are equal. The opposite sides of a parallelogram are equal in length.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.61,
+          "y": -1.57
+        },
+        {
+          "op": "click",
+          "x": 0.81,
+          "y": -1.59
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 1.01
+        },
+        {
+          "op": "tool",
+          "name": "ParallelLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.88,
+          "y": -1.57,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 1.03,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.82,
+          "y": -1.58,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": 1.03,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.18,
+          "y": -0.79,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -1.63,
+          "y": -1.53,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.06,
+          "y": 1.06,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -0.32,
+          "y": 1.3,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.43,
+          "y": 1.06,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.78,
+          "y": -1.59,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.99,
+          "y": -1.22,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.59,
+          "y": -1.14,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.77,
+          "y": 0.28,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.18,
+          "y": 0.49,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": -0.45,
+          "y": 0.88,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 0.8,
+          "y": -1.37,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.14,
+          "y": 0.42,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 0.11,
+          "y": 1.04,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0.25,
+          "y": -0.43,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -1.58,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": 0.68,
+          "y": -1.48,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.32,
+          "y": 0.98,
+          "shapeId": "14"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.82,
+          "y": -1.55,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.45,
+          "y": 1.05,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": 1.04,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.46,
+          "y": 1.06,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.8,
+          "y": -1.57,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -1.63,
+          "y": -1.54,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.77,
+          "y": -1.59,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.39,
+          "y": 1.03,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.63,
+          "y": -1.54,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.46,
+          "y": 1.02,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": 1.03,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.8,
+          "y": -1.58,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.99,
+          "y": -0.27,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 1.37,
+          "y": -0.29,
+          "shapeId": "22"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.47,
+          "y": 1.01,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": 1.02,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.81,
+          "y": -1.56,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -1.58,
+          "y": -1.59,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.44,
+          "y": -1.59,
+          "shapeId": "25"
+        },
+        {
+          "op": "click",
+          "x": 0.79,
+          "y": 1.02,
+          "shapeId": "24"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.02,
+          "y": -1.55,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.38,
+          "y": -1.07,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.25,
+          "y": 1.01,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.77,
+          "y": 0.47,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": -1.53,
+          "y": -1.47,
+          "shapeId": "27"
+        },
+        {
+          "op": "click",
+          "x": 1.87,
+          "y": 0.97,
+          "shapeId": "28"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "name": "The diagonals of a parallelogram intersect at the midpoint.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.64,
+          "y": 0.75
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": -2.2
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": -0.97
+        },
+        {
+          "op": "tool",
+          "name": "ParallelLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.65,
+          "y": 0.51,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": -0.95,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.63,
+          "y": -2.24,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.63,
+          "y": -1,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.51,
+          "y": -1.77,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -1.65,
+          "y": 1.59,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.38,
+          "y": 1.61,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": 0.75,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.68,
+          "y": 0.77,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.57,
+          "y": -0.99,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -1.58,
+          "y": -2.19,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.58,
+          "y": 1.95,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.91,
+          "y": 0.39,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.38,
+          "y": -0.64,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 800
+        },
+        {
+          "op": "enum",
+          "value": 402
+        },
+        {
+          "op": "click",
+          "x": -1.64,
+          "y": -2.17,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": -0.99,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.53,
+          "y": 1.97,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": -1.66,
+          "y": 0.77,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.56,
+          "y": -2.17,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.58,
+          "y": -0.99,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -1.61,
+          "y": 0.78,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.54,
+          "y": 2,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 106
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -1.61,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": 1.4,
+          "shapeId": "16"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.02,
+          "y": -1.99,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -1.13,
+          "y": -1.63,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 0.44,
+          "y": 1.57,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 0.76,
+          "y": 0.96,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": -1.46,
+          "y": -2.08,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": 1.41,
+          "y": 1.88,
+          "shapeId": "20"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.04,
+          "y": 0.47,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -1.16,
+          "y": 0.95,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 0.98,
+          "y": -0.63,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 1.1,
+          "y": -1.13,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": -1.5,
+          "y": 0.77,
+          "shapeId": "22"
+        },
+        {
+          "op": "click",
+          "x": 1.49,
+          "y": -0.95,
+          "shapeId": "23"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -0.1,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": -1.58,
+          "y": -2.16,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": -1,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": -0.1,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 1.57,
+          "y": 1.99,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": -1.62,
+          "y": 0.76,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.62,
+          "y": -2.22,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": -0.14,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -0.09,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 1.57,
+          "y": 1.99,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.79,
+          "y": -1.13,
+          "shapeId": "28"
+        },
+        {
+          "op": "click",
+          "x": 0.79,
+          "y": 0.94,
+          "shapeId": "29"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.64,
+          "y": 0.75,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -0.09,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -0.09,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 1.61,
+          "y": -0.96,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.86,
+          "y": 0.32,
+          "shapeId": "31"
+        },
+        {
+          "op": "click",
+          "x": 0.76,
+          "y": -0.55,
+          "shapeId": "32"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "name": "If a pair of opposite sides of a quadrilateral are parallel and of equal length, it is a parallelogram.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -1.98
+        },
+        {
+          "op": "click",
+          "x": 2.01,
+          "y": 1.01
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.07,
+          "y": 0.52,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.99,
+          "y": -0.47,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.69,
+          "y": -0.51,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.3,
+          "y": -1.51,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": -0.99,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": -1.99,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 2.03,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": 1.04,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 1.97,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": -1.99,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": -1,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": 1.03,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 0.66,
+          "shapeId": "14"
+        },
+        {
+          "op": "click",
+          "x": 0.64,
+          "y": 0.37,
+          "shapeId": "15"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.58,
+          "y": -1.11,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -1.08,
+          "shapeId": "14"
+        },
+        {
+          "op": "click",
+          "x": -0.51,
+          "y": 1.21,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.9,
+          "shapeId": "14"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -1.8,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": -0.07,
+          "y": 1.85,
+          "shapeId": "18"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.91,
+          "y": 0.44,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": 1.32,
+          "y": 0.03,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.84,
+          "y": -0.41,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -1.36,
+          "y": -0.02,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": -1.9,
+          "y": -0.88,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 1.84,
+          "y": 0.9,
+          "shapeId": "20"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.04,
+          "y": 0.01,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": -0.08,
+          "y": -1.93,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 2.02,
+          "y": 1.05,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 0,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 2.02,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -2,
+          "y": -0.96,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": -1.96,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.04,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.04,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": 1.99,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": -0.99,
+          "shapeId": "26"
+        },
+        {
+          "op": "click",
+          "x": -0.05,
+          "y": 1,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -0.99,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 1.97,
+          "y": 1.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 105
+        },
+        {
+          "op": "click",
+          "x": -0.99,
+          "y": -0.48,
+          "shapeId": "29"
+        },
+        {
+          "op": "click",
+          "x": 1.01,
+          "y": 0.53,
+          "shapeId": "30"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 800
+        },
+        {
+          "op": "enum",
+          "value": 405
+        },
+        {
+          "op": "click",
+          "x": -0.06,
+          "y": -1.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": 1.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.04,
+          "y": 2.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -2.04,
+          "y": -0.96,
+          "shapeId": "2"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "name": "The diagonals of a rhombus intersect at right angles.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2.02
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": 0.01
+        },
+        {
+          "op": "click",
+          "x": -1.57,
+          "y": 0.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -2
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": -2,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.63,
+          "y": 0.01
+        },
+        {
+          "op": "click",
+          "x": 1.63,
+          "y": 0.01,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 2.03,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.76,
+          "y": 1,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.82,
+          "y": 1.04,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.85,
+          "y": 1.02,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.82,
+          "y": -0.97,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 0.82,
+          "y": -0.97,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": -0.8,
+          "y": -0.99,
+          "shapeId": "8"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 801
+        },
+        {
+          "op": "enum",
+          "value": 501
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 2.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.63,
+          "y": 0.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.04,
+          "y": -1.98,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": -0.02,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 2.06,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.03,
+          "y": -1.97,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": 0.03,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.55,
+          "y": 0.01,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.46,
+          "y": 0.03,
+          "shapeId": "20"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 0.51,
+          "shapeId": "19"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": 0.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.02,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.02,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": 0.03,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 107
+        },
+        {
+          "op": "click",
+          "x": -0.79,
+          "y": 0,
+          "shapeId": "22"
+        },
+        {
+          "op": "click",
+          "x": 0.8,
+          "y": 0,
+          "shapeId": "23"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.03,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 1.98,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "TriangleCongruenceBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.62,
+          "y": -0.01,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 0.04,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 1.98,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.55,
+          "y": 0.06,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": -0.01,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 0.02,
+          "y": 2,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.47,
+          "y": 0.01,
+          "shapeId": "20"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.37,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.37,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": -0.26,
+          "y": 0.05,
+          "shapeId": "20"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 204
+        },
+        {
+          "op": "click",
+          "x": -0.08,
+          "y": 0.1,
+          "shapeId": "30"
+        },
+        {
+          "op": "click",
+          "x": 0.11,
+          "y": 0.11,
+          "shapeId": "29"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "name": "midpoint theorem",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 1.04
+        },
+        {
+          "op": "click",
+          "x": -1.97,
+          "y": -0.97
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": -1
+        },
+        {
+          "op": "click",
+          "x": 0.03,
+          "y": 1.01,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "MidpointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.02,
+          "y": -0.95,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.04,
+          "y": 1.02,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 1.03,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.01,
+          "y": -0.97,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.02,
+          "y": 0.05,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.48,
+          "y": 0.01,
+          "shapeId": "13"
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": 0.01,
+          "shapeId": "17"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.97,
+          "y": 0.05,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.47,
+          "y": 0.02,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.5,
+          "y": 0.01,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 1.95,
+          "y": 0.03,
+          "shapeId": "18"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.24,
+          "y": 0.06,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": 1.22,
+          "y": 0.03,
+          "shapeId": "20"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": -1,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -1.01,
+          "y": 0.03,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": -0.99,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 0.03,
+          "shapeId": "18"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": 0.03,
+          "shapeId": "18"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 1.03,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 800
+        },
+        {
+          "op": "enum",
+          "value": 405
+        },
+        {
+          "op": "click",
+          "x": -1,
+          "y": 0.04,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1.01,
+          "y": -0.95,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.94,
+          "y": 0,
+          "shapeId": "18"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 1.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelDetectorBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 601
+        },
+        {
+          "op": "click",
+          "x": -1.21,
+          "y": -0.15,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 1.33,
+          "y": -0.65,
+          "shapeId": "23"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": -1,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.97,
+          "y": 0.03,
+          "shapeId": "18"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 106
+        },
+        {
+          "op": "click",
+          "x": 1.52,
+          "y": -0.48,
+          "shapeId": "28"
+        },
+        {
+          "op": "click",
+          "x": -0.5,
+          "y": 0.54,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 108
+        },
+        {
+          "op": "click",
+          "x": -1.5,
+          "y": -0.47,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 1.49,
+          "y": -0.5,
+          "shapeId": "28"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 800
+        },
+        {
+          "op": "enum",
+          "value": 404
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -0.98,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.98,
+          "y": -0.99,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": -0.01,
+          "shapeId": "18"
+        },
+        {
+          "op": "click",
+          "x": -0.97,
+          "y": 0.04,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelDetectorBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 601
+        },
+        {
+          "op": "click",
+          "x": -0.96,
+          "y": -0.99,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -0.06,
+          "y": 0.05,
+          "shapeId": "17"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "name": "blank",
+      "parent": null,
+      "operations": []
+    },
+    {
+      "id": 16,
+      "name": "The distance between two parallel lines is equal.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -1.99
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": -2
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.57,
+          "y": 1.01
+        },
+        {
+          "op": "tool",
+          "name": "ParallelLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.11,
+          "y": -1.97,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.55,
+          "y": 1.04,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "PerpendicularLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": 1.03,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.61,
+          "y": 1.01,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.75,
+          "y": -1.97,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": -1.63,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": 0.58,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -1.36,
+          "y": 1.04,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.12,
+          "y": -1.96,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.56,
+          "y": -1.56,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "PointBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.48,
+          "y": 1.02,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "PerpendicularLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.14,
+          "y": 1,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.5,
+          "y": 0.99,
+          "shapeId": "11"
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.93,
+          "y": -1.97,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 1.46,
+          "y": -1.6,
+          "shapeId": "12"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.96,
+          "y": 1.03,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.44,
+          "y": 0.68,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 1.47,
+          "y": -1.56,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": -2.01,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 800
+        },
+        {
+          "op": "enum",
+          "value": 403
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": -1.97,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.47,
+          "y": -1.99,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 1.49,
+          "y": 1.01,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": -1.58,
+          "y": 1.04,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.6,
+          "y": -1.98,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -1.58,
+          "y": 0.98,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.47,
+          "y": 1.01,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 1.49,
+          "y": -1.99,
+          "shapeId": "13"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 106
+        },
+        {
+          "op": "click",
+          "x": -1.56,
+          "y": -0.49,
+          "shapeId": "18"
+        },
+        {
+          "op": "click",
+          "x": 1.47,
+          "y": -0.48,
+          "shapeId": "19"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "name": "@Vertical angles are equal.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.97,
+          "y": -0.97
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 1.98
+        },
+        {
+          "op": "click",
+          "x": -2,
+          "y": 2.03
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": -0.98
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.11,
+          "y": 1.36,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.41,
+          "y": 0.24,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.43,
+          "y": 0.22,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.36,
+          "y": 0.77,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "9",
+          "name": "name",
+          "value": "A"
+        },
+        {
+          "op": "click",
+          "x": -0.72,
+          "y": 1.05,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.53,
+          "y": 0.16,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "11",
+          "name": "name",
+          "value": "B"
+        },
+        {
+          "op": "click",
+          "x": -0.33,
+          "y": 0.28,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.45,
+          "y": 0.15,
+          "shapeId": "7"
+        },
+        {
+          "op": "property",
+          "id": "13",
+          "name": "name",
+          "value": "C"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 51
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.41,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.13,
+          "y": 0.53,
+          "shapeId": "9"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 151
+        },
+        {
+          "op": "term",
+          "textBlock_id": "15",
+          "indexes": [
+            0,
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 51
+        },
+        {
+          "op": "click",
+          "x": -0.09,
+          "y": 0.55,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 0.39,
+          "shapeId": "13"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 151
+        },
+        {
+          "op": "term",
+          "textBlock_id": "19",
+          "indexes": [
+            0,
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 152
+        },
+        {
+          "op": "term",
+          "textBlock_id": "18",
+          "indexes": [
+            0
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "22",
+          "indexes": [
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "name": "@The sum of the interior angles of a triangle is 180 degrees.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2,
+          "y": -1.98
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": -2
+        },
+        {
+          "op": "click",
+          "x": 0.61,
+          "y": 0.63
+        },
+        {
+          "op": "click",
+          "x": -1.97,
+          "y": -1.99,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.73,
+          "y": -1.53,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.49,
+          "y": -1.99,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "9",
+          "name": "name",
+          "value": "A"
+        },
+        {
+          "op": "click",
+          "x": 0.29,
+          "y": 0.31,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": 0.83,
+          "y": 0.24,
+          "shapeId": "6"
+        },
+        {
+          "op": "property",
+          "id": "11",
+          "name": "name",
+          "value": "B"
+        },
+        {
+          "op": "click",
+          "x": -1.46,
+          "y": -1.98,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.54,
+          "y": -1.5,
+          "shapeId": "7"
+        },
+        {
+          "op": "property",
+          "id": "13",
+          "name": "name",
+          "value": "C"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelLineBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.83,
+          "y": -1.97,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.59,
+          "y": 0.63,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.23,
+          "y": -0.52,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.11,
+          "y": 0.63,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.4,
+          "y": 0.62,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.35,
+          "y": -0.31,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": 1.9,
+          "y": -1.9,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.73,
+          "y": 0.57,
+          "shapeId": "16"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 202
+        },
+        {
+          "op": "click",
+          "x": -1.87,
+          "y": -1.89,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": 0.47,
+          "y": 0.6,
+          "shapeId": "17"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 51
+        },
+        {
+          "op": "click",
+          "x": 0.45,
+          "y": 0.61,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": 0.55,
+          "y": 0.53,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 0.7,
+          "y": 0.57,
+          "shapeId": "16"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "name": "If a line intersects two other lines and the sum of the two interior angles on the same side is π, then the two lines are parallel.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": -0.98
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": -1
+        },
+        {
+          "op": "click",
+          "x": -2.02,
+          "y": 1.02
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": 1.01
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.59,
+          "y": 2.03
+        },
+        {
+          "op": "click",
+          "x": 1.51,
+          "y": -1.98
+        },
+        {
+          "op": "tool",
+          "name": "IntersectionBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.31,
+          "y": 1.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -1.21,
+          "y": 1.56,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.68,
+          "y": -0.95,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.43,
+          "y": -0.57,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.19,
+          "y": -0.94,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.51,
+          "y": -0.68,
+          "shapeId": "10"
+        },
+        {
+          "op": "property",
+          "id": "13",
+          "name": "name",
+          "value": "a"
+        },
+        {
+          "op": "click",
+          "x": -0.48,
+          "y": 0.58,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": -0.34,
+          "y": 1.04,
+          "shapeId": "7"
+        },
+        {
+          "op": "property",
+          "id": "15",
+          "name": "name",
+          "value": "b"
+        },
+        {
+          "op": "tool",
+          "name": "AssumptionBuilder"
+        },
+        {
+          "op": "text",
+          "text": "a + b = pi"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.08,
+          "y": 1.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.92,
+          "y": 1.13,
+          "shapeId": "10"
+        },
+        {
+          "op": "property",
+          "id": "19",
+          "name": "name",
+          "value": "c"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 51
+        },
+        {
+          "op": "click",
+          "x": -0.68,
+          "y": 0.94,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -0.69,
+          "y": 1.11,
+          "shapeId": "19"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 151
+        },
+        {
+          "op": "term",
+          "textBlock_id": "18",
+          "indexes": [
+            0,
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 151
+        },
+        {
+          "op": "term",
+          "textBlock_id": "21",
+          "indexes": [
+            0,
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 152
+        },
+        {
+          "op": "term",
+          "textBlock_id": "24",
+          "indexes": [
+            0
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "26",
+          "indexes": [
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelDetectorBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 602
+        },
+        {
+          "op": "click",
+          "x": 0.8,
+          "y": -0.87,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": -0.73,
+          "y": 1.11,
+          "shapeId": "19"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "name": "The sum of the interior angles of a quadrilateral is 2 π.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 2.03
+        },
+        {
+          "op": "click",
+          "x": -2,
+          "y": 0.02
+        },
+        {
+          "op": "click",
+          "x": -0.58,
+          "y": -1.98
+        },
+        {
+          "op": "click",
+          "x": 1.81,
+          "y": -0.61
+        },
+        {
+          "op": "click",
+          "x": 0.01,
+          "y": 2.05,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.47,
+          "y": -0.1,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 1.41,
+          "y": -0.84,
+          "shapeId": "8"
+        },
+        {
+          "op": "property",
+          "id": "11",
+          "name": "name",
+          "value": "a"
+        },
+        {
+          "op": "click",
+          "x": -0.44,
+          "y": 1.6,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.42,
+          "y": 1.39,
+          "shapeId": "9"
+        },
+        {
+          "op": "property",
+          "id": "13",
+          "name": "name",
+          "value": "b"
+        },
+        {
+          "op": "click",
+          "x": -1.7,
+          "y": -0.4,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.71,
+          "y": 0.32,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "15",
+          "name": "name",
+          "value": "c"
+        },
+        {
+          "op": "click",
+          "x": -0.28,
+          "y": -1.8,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.93,
+          "y": -1.46,
+          "shapeId": "6"
+        },
+        {
+          "op": "property",
+          "id": "17",
+          "name": "name",
+          "value": "d"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": 0.02,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.81,
+          "y": -0.59,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.05,
+          "y": 0.47,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": 0.64,
+          "y": -0.41,
+          "shapeId": "19"
+        },
+        {
+          "op": "property",
+          "id": "20",
+          "name": "name",
+          "value": "e"
+        },
+        {
+          "op": "click",
+          "x": 0.68,
+          "y": -0.41,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": 0.91,
+          "y": -1.12,
+          "shapeId": "8"
+        },
+        {
+          "op": "property",
+          "id": "22",
+          "name": "name",
+          "value": "f"
+        },
+        {
+          "op": "click",
+          "x": -1.35,
+          "y": -0.09,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": -1.45,
+          "y": 0.59,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "24",
+          "name": "name",
+          "value": "g"
+        },
+        {
+          "op": "click",
+          "x": -1.47,
+          "y": -0.75,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -1.07,
+          "y": -0.14,
+          "shapeId": "19"
+        },
+        {
+          "op": "property",
+          "id": "26",
+          "name": "name",
+          "value": "h"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 54
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 2.02,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -1.98,
+          "y": 0.04,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 1.8,
+          "y": -0.59,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 54
+        },
+        {
+          "op": "click",
+          "x": -2.03,
+          "y": 0.03,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.61,
+          "y": -1.96,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 1.82,
+          "y": -0.6,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 153
+        },
+        {
+          "op": "term",
+          "textBlock_id": "28",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "30",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 52
+        },
+        {
+          "op": "click",
+          "x": -1.82,
+          "y": 0.09,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": -1.56,
+          "y": -0.34,
+          "shapeId": "26"
+        },
+        {
+          "op": "click",
+          "x": -1.43,
+          "y": 0.09,
+          "shapeId": "24"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 52
+        },
+        {
+          "op": "click",
+          "x": 1.6,
+          "y": -0.63,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 1.33,
+          "y": -0.26,
+          "shapeId": "20"
+        },
+        {
+          "op": "click",
+          "x": 1.23,
+          "y": -0.78,
+          "shapeId": "22"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "34",
+          "indexes": [
+            1,
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "33",
+          "indexes": [
+            0,
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "36",
+          "indexes": [
+            1,
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "39",
+          "indexes": [
+            0,
+            3
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "name": "A quadrilateral with opposite angles equal is a parallelogram.",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.01,
+          "y": -1.99
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": -1
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 2.02
+        },
+        {
+          "op": "click",
+          "x": -1,
+          "y": 1
+        },
+        {
+          "op": "click",
+          "x": -1.03,
+          "y": -1.95,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.54,
+          "y": -1.83,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.01,
+          "y": -1.41,
+          "shapeId": "9"
+        },
+        {
+          "op": "property",
+          "id": "11",
+          "name": "name",
+          "value": "a"
+        },
+        {
+          "op": "click",
+          "x": 1.99,
+          "y": -0.5,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 1.56,
+          "y": -1.11,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "13",
+          "name": "name",
+          "value": "b"
+        },
+        {
+          "op": "click",
+          "x": 1.39,
+          "y": 1.82,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": 1.03,
+          "shapeId": "6"
+        },
+        {
+          "op": "property",
+          "id": "15",
+          "name": "name",
+          "value": "c"
+        },
+        {
+          "op": "click",
+          "x": -0.99,
+          "y": 0.4,
+          "shapeId": "9"
+        },
+        {
+          "op": "click",
+          "x": -0.57,
+          "y": 1.15,
+          "shapeId": "8"
+        },
+        {
+          "op": "property",
+          "id": "17",
+          "name": "name",
+          "value": "d"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.95,
+          "y": -1.87,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 1.91,
+          "y": 1.92,
+          "shapeId": "15"
+        },
+        {
+          "op": "tool",
+          "name": "EqualityConstraintBuilder"
+        },
+        {
+          "op": "click",
+          "x": 1.9,
+          "y": -0.92,
+          "shapeId": "13"
+        },
+        {
+          "op": "click",
+          "x": -0.91,
+          "y": 0.95,
+          "shapeId": "17"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 55
+        },
+        {
+          "op": "click",
+          "x": -1.02,
+          "y": -1.97,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.98,
+          "y": -0.99,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2,
+          "y": 2.06,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -1.03,
+          "y": 1.02,
+          "shapeId": "7"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "20",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "23",
+          "indexes": [
+            0,
+            3
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "22",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "26",
+          "indexes": [
+            0,
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 155
+        },
+        {
+          "op": "term",
+          "textBlock_id": "28",
+          "indexes": []
+        },
+        {
+          "op": "text",
+          "text": "2"
+        },
+        {
+          "op": "tool",
+          "name": "ParallelDetectorBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 603
+        },
+        {
+          "op": "click",
+          "x": -0.97,
+          "y": -1.89,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 1.93,
+          "y": -0.89,
+          "shapeId": "13"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "name": "exterior angle theorem",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "PolygonBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -0.97
+        },
+        {
+          "op": "click",
+          "x": 1.59,
+          "y": -0.97
+        },
+        {
+          "op": "click",
+          "x": -0.79,
+          "y": 1.04
+        },
+        {
+          "op": "click",
+          "x": -2.01,
+          "y": -0.95,
+          "shapeId": "2"
+        },
+        {
+          "op": "property",
+          "id": "4",
+          "name": "lineKind",
+          "value": 1
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -1.44,
+          "y": -0.93,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": -1.75,
+          "y": -0.5,
+          "shapeId": "7"
+        },
+        {
+          "op": "property",
+          "id": "9",
+          "name": "name",
+          "value": "A"
+        },
+        {
+          "op": "click",
+          "x": 0.96,
+          "y": -0.43,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0.84,
+          "y": -0.93,
+          "shapeId": "4"
+        },
+        {
+          "op": "property",
+          "id": "11",
+          "name": "name",
+          "value": "B"
+        },
+        {
+          "op": "click",
+          "x": -1.09,
+          "y": 0.54,
+          "shapeId": "7"
+        },
+        {
+          "op": "click",
+          "x": -0.34,
+          "y": 0.67,
+          "shapeId": "6"
+        },
+        {
+          "op": "property",
+          "id": "13",
+          "name": "name",
+          "value": "C"
+        },
+        {
+          "op": "click",
+          "x": 1.97,
+          "y": -0.91,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 0.98,
+          "y": -0.42,
+          "shapeId": "6"
+        },
+        {
+          "op": "property",
+          "id": "15",
+          "name": "name",
+          "value": "D"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 54
+        },
+        {
+          "op": "click",
+          "x": -2.02,
+          "y": -0.94,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 1.58,
+          "y": -0.97,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.76,
+          "y": 1.07,
+          "shapeId": "5"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 51
+        },
+        {
+          "op": "click",
+          "x": 1.67,
+          "y": -0.84,
+          "shapeId": "15"
+        },
+        {
+          "op": "click",
+          "x": 1.47,
+          "y": -0.9,
+          "shapeId": "11"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 151
+        },
+        {
+          "op": "term",
+          "textBlock_id": "17",
+          "indexes": [
+            0,
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 151
+        },
+        {
+          "op": "term",
+          "textBlock_id": "19",
+          "indexes": [
+            0,
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "22",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "24",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "name": "inscribed angle theorem",
+      "parent": null,
+      "operations": [
+        {
+          "op": "tool",
+          "name": "CircleByPointBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.03
+        },
+        {
+          "op": "click",
+          "x": 0.39,
+          "y": 2.22
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.08,
+          "y": -0.78,
+          "shapeId": "4"
+        },
+        {
+          "op": "click",
+          "x": 2.03,
+          "y": -0.82,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.11,
+          "y": -0.75,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 2.06,
+          "y": -0.82,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": -2.06,
+          "y": -0.77,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": 0.39,
+          "y": 2.2,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 0.39,
+          "y": 2.2,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": 2.03,
+          "y": -0.83,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.24,
+          "y": 1.46,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 1.07,
+          "y": 0.94,
+          "shapeId": "11"
+        },
+        {
+          "op": "property",
+          "id": "12",
+          "name": "name",
+          "value": "A"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.74,
+          "y": -0.24,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": 0.91,
+          "y": -0.35,
+          "shapeId": "9"
+        },
+        {
+          "op": "property",
+          "id": "14",
+          "name": "name",
+          "value": "B"
+        },
+        {
+          "op": "tool",
+          "name": "LineSegmentBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.04,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.39,
+          "y": 2.23,
+          "shapeId": "3"
+        },
+        {
+          "op": "property",
+          "id": "16",
+          "name": "lineKind",
+          "value": 0
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0.11,
+          "y": 0.71,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 1.29,
+          "y": 0.58,
+          "shapeId": "11"
+        },
+        {
+          "op": "property",
+          "id": "17",
+          "name": "name",
+          "value": "C"
+        },
+        {
+          "op": "click",
+          "x": 1.64,
+          "y": -0.07,
+          "shapeId": "11"
+        },
+        {
+          "op": "click",
+          "x": 1.33,
+          "y": -0.5,
+          "shapeId": "9"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": 0,
+          "y": 0.05,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.38,
+          "y": 2.23,
+          "shapeId": "3"
+        },
+        {
+          "op": "click",
+          "x": -0.02,
+          "y": 0.05,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 2.03,
+          "y": -0.77,
+          "shapeId": "6"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 102
+        },
+        {
+          "op": "click",
+          "x": 0.21,
+          "y": 1.11,
+          "shapeId": "20"
+        },
+        {
+          "op": "click",
+          "x": 1,
+          "y": -0.38,
+          "shapeId": "21"
+        },
+        {
+          "op": "click",
+          "x": 1.85,
+          "y": 1.26,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 802
+        },
+        {
+          "op": "enum",
+          "value": 521
+        },
+        {
+          "op": "click",
+          "x": -0.04,
+          "y": 0.02,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 2.03,
+          "y": -0.8,
+          "shapeId": "6"
+        },
+        {
+          "op": "click",
+          "x": 0.39,
+          "y": 2.18,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 207
+        },
+        {
+          "op": "click",
+          "x": 1.88,
+          "y": -0.69,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": 0.5,
+          "y": 1.72,
+          "shapeId": "17"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.27,
+          "y": -1.42,
+          "shapeId": "16"
+        },
+        {
+          "op": "click",
+          "x": 0.62,
+          "y": -0.24,
+          "shapeId": "9"
+        },
+        {
+          "op": "property",
+          "id": "27",
+          "name": "name",
+          "value": "D"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 56
+        },
+        {
+          "op": "click",
+          "x": 1.94,
+          "y": -0.69,
+          "shapeId": "19"
+        },
+        {
+          "op": "click",
+          "x": 0.59,
+          "y": 1.63,
+          "shapeId": "17"
+        },
+        {
+          "op": "click",
+          "x": 0.37,
+          "y": -0.4,
+          "shapeId": "27"
+        },
+        {
+          "op": "tool",
+          "name": "LengthSymbolBuilder"
+        },
+        {
+          "op": "click",
+          "x": -2.11,
+          "y": -0.72,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.01,
+          "y": 0,
+          "shapeId": "2"
+        },
+        {
+          "op": "tool",
+          "name": "LengthEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 102
+        },
+        {
+          "op": "click",
+          "x": -1.03,
+          "y": -0.36,
+          "shapeId": "31"
+        },
+        {
+          "op": "click",
+          "x": 0.24,
+          "y": 1.14,
+          "shapeId": "20"
+        },
+        {
+          "op": "click",
+          "x": -2.07,
+          "y": 0.9,
+          "shapeId": "4"
+        },
+        {
+          "op": "tool",
+          "name": "QuadrilateralClassifierBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 802
+        },
+        {
+          "op": "enum",
+          "value": 521
+        },
+        {
+          "op": "click",
+          "x": -2.14,
+          "y": -0.78,
+          "shapeId": "5"
+        },
+        {
+          "op": "click",
+          "x": -0.04,
+          "y": 0.02,
+          "shapeId": "2"
+        },
+        {
+          "op": "click",
+          "x": 0.38,
+          "y": 2.2,
+          "shapeId": "3"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.3,
+          "y": 1.38,
+          "shapeId": "10"
+        },
+        {
+          "op": "click",
+          "x": 0.06,
+          "y": 0.52,
+          "shapeId": "16"
+        },
+        {
+          "op": "property",
+          "id": "35",
+          "name": "name",
+          "value": "E"
+        },
+        {
+          "op": "click",
+          "x": -0.69,
+          "y": -0.25,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -1.1,
+          "y": 0.44,
+          "shapeId": "10"
+        },
+        {
+          "op": "tool",
+          "name": "AngleEqualityBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 207
+        },
+        {
+          "op": "click",
+          "x": -1.97,
+          "y": -0.67,
+          "shapeId": "37"
+        },
+        {
+          "op": "click",
+          "x": 0.14,
+          "y": 1.67,
+          "shapeId": "35"
+        },
+        {
+          "op": "tool",
+          "name": "AngleBuilder"
+        },
+        {
+          "op": "click",
+          "x": -0.74,
+          "y": -0.24,
+          "shapeId": "8"
+        },
+        {
+          "op": "click",
+          "x": -0.32,
+          "y": -1.63,
+          "shapeId": "16"
+        },
+        {
+          "op": "property",
+          "id": "40",
+          "name": "name",
+          "value": "F"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 56
+        },
+        {
+          "op": "click",
+          "x": -1.98,
+          "y": -0.67,
+          "shapeId": "37"
+        },
+        {
+          "op": "click",
+          "x": 0.16,
+          "y": 1.73,
+          "shapeId": "35"
+        },
+        {
+          "op": "click",
+          "x": -0.44,
+          "y": -0.35,
+          "shapeId": "40"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 52
+        },
+        {
+          "op": "click",
+          "x": -0.45,
+          "y": -0.32,
+          "shapeId": "40"
+        },
+        {
+          "op": "click",
+          "x": 0.39,
+          "y": -0.36,
+          "shapeId": "27"
+        },
+        {
+          "op": "click",
+          "x": 0.12,
+          "y": -0.14,
+          "shapeId": "14"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "29",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "44",
+          "indexes": [
+            1,
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "42",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "47",
+          "indexes": [
+            1,
+            0
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 52
+        },
+        {
+          "op": "click",
+          "x": 0.41,
+          "y": 2.03,
+          "shapeId": "12"
+        },
+        {
+          "op": "click",
+          "x": 0.14,
+          "y": 1.68,
+          "shapeId": "35"
+        },
+        {
+          "op": "click",
+          "x": 0.41,
+          "y": 1.61,
+          "shapeId": "17"
+        },
+        {
+          "op": "finish",
+          "name": "ShapeEquationBuilder"
+        },
+        {
+          "op": "tool",
+          "name": "ExprTransformBuilder"
+        },
+        {
+          "op": "enum",
+          "value": 154
+        },
+        {
+          "op": "term",
+          "textBlock_id": "50",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "term",
+          "textBlock_id": "49",
+          "indexes": [
+            1
+          ]
+        },
+        {
+          "op": "finish",
+          "name": "ExprTransformBuilder"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+[
+  {
+    "idx": 0,
+    "typeName": "UltrasonicDistanceSensorBlock",
+    "x": 515,
+    "y": 204,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [
+          1
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 1,
+    "typeName": "CompareBlock",
+    "x": 544,
+    "y": 306,
+    "ports": [
+      {
+        "idx": 1,
+        "destinations": []
+      },
+      {
+        "idx": 2,
+        "destinations": [
+          8
+        ]
+      }
+    ],
+    "text": "a < 20"
+  },
+  {
+    "idx": 2,
+    "typeName": "InfiniteLoop",
+    "x": 452,
+    "y": 439,
+    "ports": [
+      {
+        "idx": 3,
+        "destinations": []
+      },
+      {
+        "idx": 4,
+        "destinations": [
+          5
+        ]
+      }
+    ]
+  },
+  {
+    "idx": 3,
+    "typeName": "IfBlock",
+    "x": 487,
+    "y": 474,
+    "ports": [
+      {
+        "idx": 5,
+        "destinations": []
+      },
+      {
+        "idx": 6,
+        "destinations": []
+      },
+      {
+        "idx": 7,
+        "destinations": [
+          9
+        ]
+      },
+      {
+        "idx": 8,
+        "destinations": []
+      }
+    ]
+  },
+  {
+    "idx": 4,
+    "typeName": "TTSBlock",
+    "x": 522,
+    "y": 509,
+    "ports": [
+      {
+        "idx": 9,
+        "destinations": []
+      },
+      {
+        "idx": 10,
+        "destinations": [
+          11
+        ]
+      }
+    ],
+    "text": "こんにちは!どうぞよろしく!"
+  },
+  {
+    "idx": 5,
+    "typeName": "SleepBlock",
+    "x": 522,
+    "y": 549,
+    "ports": [
+      {
+        "idx": 11,
+        "destinations": []
+      },
+      {
+        "idx": 12,
+        "destinations": []
+      }
+    ],
+    "text": "3"
+  }
+]

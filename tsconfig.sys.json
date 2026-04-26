@@ -13,6 +13,7 @@
     { "path": "./plane" },
     { "path": "./game" },
     { "path": "./movie" },
-    { "path": "./webgpu" }
+    { "path": "./webgpu" },
+    { "path": "./unified" }
   ]
 }

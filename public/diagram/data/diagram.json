@@ -1,0 +1,19 @@
+[
+  {
+    "idx": 0,
+    "typeName": "TTSBlock",
+    "x": 536,
+    "y": 395,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": []
+      },
+      {
+        "idx": 1,
+        "destinations": []
+      }
+    ],
+    "text": "今日は暑いですね。水分をたっぷりとってね。"
+  }
+]
