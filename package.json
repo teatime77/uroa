@@ -19,14 +19,17 @@
     "install:all": "git submodule foreach \"npm install\""
   },
   "devDependencies": {
+    "@types/gl-matrix": "^2.4.5",
     "@types/katex": "^0.16.8",
     "@types/node": "^25.2.2",
     "madge": "^8.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
+    "vite-plugin-static-copy": "^4.1.0",
     "vite-tsconfig-paths": "^6.1.1"
   },
   "dependencies": {
-    "firebase": "^10.14.1"
+    "firebase": "^10.14.1",
+    "gl-matrix": "^3.4.4"
   }
 }

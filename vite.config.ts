@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+import { defineConfig, normalizePath } from 'vite';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'path';
 
 export default defineConfig({
@@ -36,5 +37,17 @@ export default defineConfig({
             '@movie': path.resolve(__dirname, './movie/ts'),
             '@diagram': path.resolve(__dirname, './diagram/ts')
         }
-    }
+    },
+    plugins: [
+        viteStaticCopy({
+            targets: [
+                {
+                    // 絶対パスではなく、スラッシュ(/)区切りの相対パス文字列を指定する
+                    src: 'webgpu/public/**/*',
+                    dest: 'webgpu',
+                    rename: { stripBase: 2 }
+                }
+            ]
+        })
+    ]
 });
