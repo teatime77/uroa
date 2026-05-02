@@ -1,0 +1,51 @@
+{
+  "type": "uroa-unified-lesson",
+  "schemaVersion": "0.1.0",
+  "lessonId": "sample-unified-001",
+  "title": "Sample: diagram + game (dry-run)",
+  "modules": {
+    "diagram": true,
+    "game": true,
+    "movie": false,
+    "webgpu": false
+  },
+  "resources": [
+    {
+      "id": "diagram-main",
+      "uri": "/diagram/data/diagram.json",
+      "kind": "json"
+    },
+    {
+      "id": "game-map",
+      "uri": "/game/data/map.json",
+      "kind": "json"
+    }
+  ],
+  "modulePayloads": {
+    "diagram": [
+      {
+        "idx": 0,
+        "typeName": "TTSBlock",
+        "x": 100,
+        "y": 100,
+        "ports": [
+          { "idx": 0, "destinations": [] },
+          { "idx": 1, "destinations": [] }
+        ],
+        "text": "UnifiedLesson v0.1 sample"
+      }
+    ],
+    "game": {
+      "note": "Opaque until game adapter maps to loadWorld target / stage JSON"
+    }
+  },
+  "timeline": [
+    { "id": "t1", "step": "runDiagram" },
+    { "id": "t2", "step": "runGameWorld" },
+    { "id": "t3", "step": "wait", "durationMs": 0 }
+  ],
+  "limits": {
+    "maxTimelineSteps": 1000,
+    "maxLessonWallClockMs": 600000
+  }
+}
