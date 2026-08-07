@@ -1,4 +1,4 @@
-import { MyError, msg, Vec2 } from "@i18n";
+import { MyError, msg, Vec2, AbstractUI, AbstractUIAttr } from "@i18n";
 import type { ContainerUI } from "./container";
 import type { TreeNode } from "./tree";
 import type { Canvas } from "./canvas";
@@ -51,11 +51,6 @@ export class VisibleArea {
     }
 }
 
-export interface Movable {
-    getPosition() : Vec2;
-    setPosition(position : Vec2) : void;
-}
-
 export class Padding {
     left   : number;
     right  : number;
@@ -73,7 +68,7 @@ export class Padding {
 const UI_padding : Padding = new Padding(5, 5, 5, 5);
 const UI_borderWidth : number = 5;
 
-export interface UIAttr {
+export interface UIAttr extends AbstractUIAttr {
     className? : string;
     id?   : string;
     name? : string;
@@ -89,9 +84,6 @@ export interface UIAttr {
     padding? : number | [number, number] | [number, number, number, number];
     imageFile? : string;
     lesson?  : string;
-
-    colSpan? : number;
-    rowSpan? : number;
 }
 
 export interface TextUIAttr extends UIAttr {
@@ -105,7 +97,7 @@ export interface LabelAttr extends TextUIAttr {
     args? : number[];
 }
 
-export abstract class UI implements Movable {
+export abstract class UI extends AbstractUI {
     static count : number = 0;
     static fontFamily : string = "Arial";
     static fontSize   : string = "30px";
@@ -114,24 +106,17 @@ export abstract class UI implements Movable {
     idx      : number;
     id?      : string;
     name? : string;
-    parent?  : ContainerUI | TreeNode;
+    parent?  : ContainerUI;
     position : Vec2 = Vec2.zero();
     right?   : number;
     bottom?  : number;
     fixedSize? : Vec2;
     size     : Vec2 = Vec2.zero();
-    minSize  : Vec2 = Vec2.zero();
     backgroundColor? : string;
     color?           : string;
     borderWidth? : number;
     padding? : Padding;
     lesson?  : string;
-
-    colIdx! : number;
-    rowIdx! : number;
-
-    colSpan? : number;
-    rowSpan? : number;
 
     clickHandler? : ()=>Promise<void>;
 
@@ -196,14 +181,6 @@ export abstract class UI implements Movable {
         const padding = this.getPadding();
 
         return Vec2.fromXY(borderWidth + padding.left, borderWidth + padding.top);
-    }
-
-    getColSpan() : number {
-        return this.colSpan == undefined ? 1 : this.colSpan;
-    }
-
-    getRowSpan() : number {
-        return this.rowSpan == undefined ? 1 : this.rowSpan;
     }
 
     isVisible(offset : Vec2, visibleArea : VisibleArea | undefined) : boolean {
@@ -296,6 +273,7 @@ export abstract class UI implements Movable {
     }
 
     constructor(data : UIAttr){
+        super();
         this.className = this.constructor.name;
         this.idx      = UI.count++;
 

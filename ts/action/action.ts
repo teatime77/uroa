@@ -1,5 +1,5 @@
-import { range, Vec2 } from "@i18n";
-import { getObjectById, registerAction, type Movable } from "../widget/core";
+import { type AbstractUI, range, Vec2 } from "@i18n";
+import { getObjectById, registerAction } from "../widget/core";
 
 export interface ActionAttr {
     args? : any;
@@ -40,7 +40,7 @@ registerAction(NumAction.name, (obj) => new NumAction(obj));
 
 
 export class MoveAction extends Action {
-    target      : Movable;
+    target      : AbstractUI;
     destination : Vec2;
     duration    : number;
 
