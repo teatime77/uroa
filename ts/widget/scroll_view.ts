@@ -35,7 +35,7 @@ export class ScrollView extends ContainerUI {
             this.minSize.y += Track.breadth;
         }
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
 
         this.children.forEach(x => x.setMinSize());
     }
@@ -63,8 +63,8 @@ export class ScrollView extends ContainerUI {
     layout(position : Vec2, size : Vec2) : void {
         super.layout(position, size);
         const padding_border_size = this.getPaddingBorderSize();
-        this.clientSize.x = this.size.x - padding_border_size.x - Track.breadth;
-        this.clientSize.y = this.size.y - padding_border_size.y - Track.breadth;
+        this.clientSize.x = this.netSize.x - padding_border_size.x - Track.breadth;
+        this.clientSize.y = this.netSize.y - padding_border_size.y - Track.breadth;
 
         this.layoutHorizontalSlider();
         this.layoutVerticalSlider();

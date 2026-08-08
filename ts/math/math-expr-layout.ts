@@ -35,7 +35,7 @@ export class MathExprLayout extends ContainerUI {
                 x += this.widthDiff * this.progress;
             }
             else{
-                x += child.size.x;
+                x += child.netSize.x;
             }
         }
         const width  = Math.max(...this.children.map(x => x.getRight()));
@@ -57,7 +57,7 @@ export class MathExprLayout extends ContainerUI {
 
             expr.forEach(x => x.setMinSize());
             // this.widthDiff = sum(expr.map(x => x.size.x)) - digit.size.x;
-            this.widthDiff = digit.size.x;
+            this.widthDiff = digit.netSize.x;
         }
         else if(1 < progress){
 

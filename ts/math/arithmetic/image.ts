@@ -129,8 +129,8 @@ export class BundleImage extends ContainerUI {
         if(this.children.length != 0){
 
             if(this.tens.length != 0){
-                width = this.tens[0].size.x;
-                height = this.tens.length * this.tens[0].size.y;
+                width = this.tens[0].netSize.x;
+                height = this.tens.length * this.tens[0].netSize.y;
             }
         }
 
@@ -139,8 +139,8 @@ export class BundleImage extends ContainerUI {
                 width += gap;
             }
 
-            width += this.unit.size.x;
-            height = Math.max(height, this.unit.size.y);
+            width += this.unit.netSize.x;
+            height = Math.max(height, this.unit.netSize.y);
         }
 
         this.setMinSizeFromContentSize(width, height);
@@ -155,15 +155,15 @@ export class BundleImage extends ContainerUI {
             // msg(`bundle image:${this.minSize} ${size} ${base}`);
         }
         for(const [idx, ten] of this.tens.entries()){
-            ten.setPosition(Vec2.fromXY(0, idx * this.tens[0].size.y).add(base));
+            ten.setPosition(Vec2.fromXY(0, idx * this.tens[0].netSize.y).add(base));
         }
 
         if(this.unit != undefined){
 
             const content_size = this.getContentSize();
-            const x = (this.tens.length == 0 ? 0 : this.tens[0].size.x + gap);
+            const x = (this.tens.length == 0 ? 0 : this.tens[0].netSize.x + gap);
 
-            this.unit.setPosition(Vec2.fromXY(x, content_size.y - this.unit.size.y).sub(base));
+            this.unit.setPosition(Vec2.fromXY(x, content_size.y - this.unit.netSize.y).sub(base));
         }
 
         this.children.forEach(x => x.updateLayout());

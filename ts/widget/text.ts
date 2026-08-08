@@ -113,7 +113,7 @@ export abstract class TextUI extends UI {
             this.minSize.y = size.height + padding_border_size.y;
         }
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
         // msg(`text size:${this.size.x.toFixed()} ${this.size.y.toFixed()} ${this.text}`);
     }
 
@@ -129,8 +129,8 @@ export abstract class TextUI extends UI {
         // ctx.font = `${(this.size.y * 0.8).toFixed()}px "Hiragino Kaku Gothic Pro", "Meiryo", sans-serif`;
         ctx.font = this.getFont();
         
-        const x = offset.x + this.position.x + this.size.x / 2;
-        const y = offset.y + this.position.y + this.size.y / 2;
+        const x = offset.x + this.position.x + this.netSize.x / 2;
+        const y = offset.y + this.position.y + this.netSize.y / 2;
 
         ctx.fillStyle = textColor;
         ctx.fillText(this.text, x, y);

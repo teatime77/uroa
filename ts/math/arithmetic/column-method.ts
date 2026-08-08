@@ -39,13 +39,13 @@ export class ColumnArithmetic extends ContainerUI {
     setMinSizeByChildren() : void {
         const padding_border_size = this.getPaddingBorderSize();
 
-        const width  = this.operator.size.x + Math.max(...this.nums.map(x => x.size.x));
-        const height = Math.max(...this.nums.map(x => x.position.y + x.size.y));
+        const width  = this.operator.netSize.x + Math.max(...this.nums.map(x => x.netSize.x));
+        const height = Math.max(...this.nums.map(x => x.position.y + x.netSize.y));
 
         this.minSize.x = width  + padding_border_size.x;
         this.minSize.y = height + padding_border_size.y;
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
     }
 
     layout(position : Vec2, size : Vec2) : void {
@@ -56,10 +56,10 @@ export class ColumnArithmetic extends ContainerUI {
     layoutChildren() : void {
         let y = 0;
 
-        const maxNumWidth = Math.max(...this.nums.map(n => n.size.x));        
-        const contentWidth = this.operator.size.x + maxNumWidth;
+        const maxNumWidth = Math.max(...this.nums.map(n => n.netSize.x));        
+        const contentWidth = this.operator.netSize.x + maxNumWidth;
         for(const [row, num] of this.nums.entries()){
-            const x = contentWidth - num.size.x;
+            const x = contentWidth - num.netSize.x;
 
             num.setPosition(Vec2.fromXY(x, y));
 
@@ -74,7 +74,7 @@ export class ColumnArithmetic extends ContainerUI {
                 // msg(`diff y ${row} diff:${this.heightDiff} prog:${this.progress}`)
             }
             else{
-                y += num.size.y;
+                y += num.netSize.y;
             }
         }
 
@@ -95,7 +95,7 @@ export class ColumnArithmetic extends ContainerUI {
             this.addChildren(...this.nums, this.operator);
 
             child_nums.forEach(x => x.setMinSize());
-            this.heightDiff = sum(child_nums.map(x => x.size.y)) - num.size.y;
+            this.heightDiff = sum(child_nums.map(x => x.netSize.y)) - num.netSize.y;
         }
         else if(1 < progress){
 

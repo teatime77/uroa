@@ -172,14 +172,14 @@ export abstract class Slider extends ContainerUI {
 export class HorizontalSlider extends Slider {
     thumbStart() : Vec2 {
         const start_x = Slider.padding;
-        const start_y = this.size.y / 2;
+        const start_y = this.netSize.y / 2;
 
         return new Vec2(start_x, start_y);
     }
 
     thumbEnd() : Vec2 {
-        const end_x   = this.size.x - Slider.padding;
-        const end_y = this.size.y / 2;
+        const end_x   = this.netSize.x - Slider.padding;
+        const end_y = this.netSize.y / 2;
 
         return new Vec2(end_x, end_y);
     }
@@ -189,15 +189,15 @@ registerUI(HorizontalSlider.name, (obj) => new HorizontalSlider(obj));
 
 export class VerticalSlider extends Slider {
     thumbStart() : Vec2 {
-        const start_x = this.size.x / 2;
+        const start_x = this.netSize.x / 2;
         const start_y = Slider.padding;
 
         return new Vec2(start_x, start_y);
     }
 
     thumbEnd() : Vec2 {
-        const end_x = this.size.x / 2;
-        const end_y = this.size.y - Slider.padding;
+        const end_x = this.netSize.x / 2;
+        const end_y = this.netSize.y - Slider.padding;
 
         return new Vec2(end_x, end_y);
     }

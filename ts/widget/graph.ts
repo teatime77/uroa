@@ -46,12 +46,12 @@ export class GraphNode extends Label {
         ctx.strokeStyle = "white"; // "#333";
         ctx.lineWidth = 2;
         // ctx.fillRect(x, y, node.width, node.height);
-        ctx.strokeRect(leftTop.x, leftTop.y, this.size.x, this.size.y);
+        ctx.strokeRect(leftTop.x, leftTop.y, this.netSize.x, this.netSize.y);
 
         // テキストの描画
         ctx.fillStyle = "white"; // "#333";
-        const x2 = leftTop.x + this.size.x / 2;
-        const y2 = leftTop.y + this.size.y / 2;
+        const x2 = leftTop.x + this.netSize.x / 2;
+        const y2 = leftTop.y + this.netSize.y / 2;
         ctx.fillText(this.text, x2, y2);
     }
 }
@@ -209,13 +209,13 @@ export class Graph extends ContainerUI {
                 throw new MyError();
             }
             nd.setPosition(Vec2.fromXY(x, y));
-            nd.size.setXY(node.width, node.height);
+            nd.netSize.setXY(node.width, node.height);
             // msg(`nd:${v} ${nd?.text}`);
         });
 
         const maxX = Math.max(...this.nodes.map(nd => nd.getRight()));
         const maxY = Math.max(...this.nodes.map(nd => nd.getBottom()));
-        this.size.setXY(maxX, maxY);
+        this.netSize.setXY(maxX, maxY);
 
         this.nodes.forEach(x => x.draw(ctx, offset2, undefined))
 

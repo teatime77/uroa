@@ -146,8 +146,8 @@ export class ArithmeticFormulaExercise extends Action {
         const label = new Label({ text:"よくできました。", fontSize:"60px"});
         stage.addChildren(label);
         label.setMinSize();
-        const x = stage.size.x / 2 - label.size.x / 2;
-        const y = stage.size.y / 2;
+        const x = stage.netSize.x / 2 - label.netSize.x / 2;
+        const y = stage.netSize.y / 2;
         label.setPosition(Vec2.fromXY(x, y));
     }
 }

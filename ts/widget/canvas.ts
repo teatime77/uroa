@@ -192,7 +192,7 @@ export class Canvas extends AbstractCanvas {
 
                 const name = target.name;
 
-                msg(`click:${target.idx} ${target.constructor.name} ${name == undefined ? "" : name} ${target.parent} pos:${target.position} size:${target.size} ${target}`);
+                msg(`click:${target.idx} ${target.constructor.name} ${name == undefined ? "" : name} ${target.parent} pos:${target.position} size:${target.netSize} ${target}`);
 
 
                 await target.click();

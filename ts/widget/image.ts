@@ -20,8 +20,8 @@ export class ImageUI extends UI {
     }
 
     isNear(position : Vec2) : boolean {
-        if(this.position.x <= position.x && position.x < this.position.x + this.size.x){
-            if(this.position.y <= position.y && position.y < this.position.y + this.size.y){
+        if(this.position.x <= position.x && position.x < this.position.x + this.netSize.x){
+            if(this.position.y <= position.y && position.y < this.position.y + this.netSize.y){
                 return true;
             }
         }
@@ -45,8 +45,8 @@ export class ImageUI extends UI {
 
             const x = offset.x + this.position.x + content_position.x;
             const y = offset.y + this.position.y + content_position.y;
-            const width = this.size.x - padding_border_size.x;
-            const height = this.size.y - padding_border_size.y;
+            const width = this.netSize.x - padding_border_size.x;
+            const height = this.netSize.y - padding_border_size.y;
             ctx.drawImage(image, x, y, width, height);
         }
     }

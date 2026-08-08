@@ -182,7 +182,7 @@ function drawHouses(){
                 
         img.setCenterPosition(pos);
 
-        const x = Math.min(worldCanvas.canvas.width - 5 - label.size.x, Math.max(5, pos.x - label.size.x / 2));
+        const x = Math.min(worldCanvas.canvas.width - 5 - label.netSize.x, Math.max(5, pos.x - label.netSize.x / 2));
         const y = img.getBottom();
         label.setPosition(Vec2.fromXY(x, y));
     }

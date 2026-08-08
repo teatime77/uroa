@@ -83,7 +83,7 @@ export class TreeNode extends ContainerUI {
 
         this.minSize.x = Math.max(header_width, nodes_width)  + padding_border_size.x;
         this.minSize.y = header_height + nodes_height         + padding_border_size.y;
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
     }
 
     layout(position : Vec2, size : Vec2) : void {
@@ -94,11 +94,11 @@ export class TreeNode extends ContainerUI {
 
         this.openClose.layoutXY(x, y);
         // msg(`open-close x:${x.toFixed()} size:${this.openClose.size}`);
-        x += this.openClose.size.x + TreeNode.padding;
+        x += this.openClose.netSize.x + TreeNode.padding;
 
         this.icon.layoutXY(x, y);
         // msg(`icon x:${x.toFixed()} size:${this.openClose.size}`);
-        x += this.icon.size.x + TreeNode.padding;
+        x += this.icon.netSize.x + TreeNode.padding;
 
         this.label.layoutXY(x, y);
         // msg(`label x:${x.toFixed()} size:${this.openClose.size}`);
@@ -110,7 +110,7 @@ export class TreeNode extends ContainerUI {
         for(const node of this.childNodes){
             node.layoutXY(TreeNode.indent, y);
 
-            y += node.size.y;
+            y += node.netSize.y;
         }
     }
 

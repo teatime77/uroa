@@ -47,7 +47,7 @@ export abstract class ContainerUI extends UI {
         this.minSize.x = width  + padding_border_size.x;
         this.minSize.y = height + padding_border_size.y;
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
     }
 
     getNearUI(position : Vec2) : UI | undefined {

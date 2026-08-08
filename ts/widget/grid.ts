@@ -5,6 +5,21 @@ import { UIAttr, UI, registerUI } from "./core";
 import { getDocumentSize } from "../game_util";
 import { ContainerUI } from "./container";
 
+function pixUI(s : string) : number {
+    assert(s.endsWith("px"));
+    return parseFloat(s.slice(0, -2));
+}
+
+function ratioUI(s: string) : number {
+    assert(s.endsWith("%"));
+    return parseFloat(s.slice(0, -1)) / 100;
+}
+
+function ratioSum(ratioes : string[]) : number {
+    const pix_nums = ratioes.map(x => ratioUI(x));
+    return sum(pix_nums);
+}
+
 export interface GridAttr extends UIAttr {
     children?: any[];
     columns? : string;
@@ -49,37 +64,8 @@ export class Grid extends ContainerUI implements IGrid {
         }
     }
 
-    static singleRow(data : UIAttr, ...children : UI[]) : GridAttr {
-        const grid_data : GridAttr = Object.assign(
-            data,
-            {
-                columns  : Grid.autoSize(children.length),
-                rows     : "*",
-                children
-            }
-        );
-
-        return grid_data;
-    }
-
-    static pix(s : string) : number {
-        assert(s.endsWith("px"));
-        return parseFloat(s.slice(0, -2));
-    }
-
-    static ratio(s: string) : number {
-        assert(s.endsWith("%"));
-        return parseFloat(s.slice(0, -1)) / 100;
-    }
-
-    static pixSum(pixes : string[]) : number {
-        const pix_nums = pixes.map(x => Grid.pix(x));
-        return sum(pix_nums);
-    }
-
-    static ratioSum(ratioes : string[]) : number {
-        const pix_nums = ratioes.map(x => Grid.ratio(x));
-        return sum(pix_nums);
+    absChildren() : AbstractUI[] {
+        return this.children;
     }
 
     static minTotalSize(columns : string[], pix_sum : number, min_size : number) : number {
@@ -88,7 +74,7 @@ export class Grid extends ContainerUI implements IGrid {
             return 0;
         }
 
-        const ratio_sum = Grid.ratioSum(ratio_columns);
+        const ratio_sum = ratioSum(ratio_columns);
 
         if(min_size < pix_sum){
             return 0;
@@ -129,19 +115,18 @@ export class Grid extends ContainerUI implements IGrid {
 
         for(const [col_idx, col] of this.columns.entries()){
             if(col.endsWith("px")){
-                pix_columns[col_idx] = Grid.pix(col);
+                pix_columns[col_idx] = pixUI(col);
             }
             else if(col == "*"){
                 const col_children = this.absChildren().filter(x => x.colIdx == col_idx && x.getColSpan() == 1);
-                pix_columns[col_idx] = col_children.length > 0 ? Math.max(...col_children.map(x => x.minSize.x)) : 0;
+
+                if(col_children.length != 0){
+                    pix_columns[col_idx] = Math.max(...col_children.map(x => x.minSize.x));
+                }
             }
         }
 
         return pix_columns;
-    }
-
-    absChildren() : AbstractUI[] {
-        return this.children;
     }
 
     getRowsPix(){
@@ -149,11 +134,14 @@ export class Grid extends ContainerUI implements IGrid {
 
         for(const [row_idx, row] of this.rows.entries()){
             if(row.endsWith("px")){
-                pix_rows[row_idx] = Grid.pix(row);
+                pix_rows[row_idx] = pixUI(row);
             }
             else if(row == "*"){
                 const row_children = this.absChildren().filter(x => x.rowIdx == row_idx && x.getRowSpan() == 1);
-                pix_rows[row_idx] = row_children.length > 0 ? Math.max(...row_children.map(x => x.minSize.y)) : 0;
+
+                if(row_children.length != 0){
+                    pix_rows[row_idx] = Math.max(...row_children.map(x => x.minSize.y));
+                }
             }
         }
 
@@ -171,7 +159,7 @@ export class Grid extends ContainerUI implements IGrid {
         }
         else{
 
-            const padding_border_size = this.getPaddingBorderSize();
+            const padding_border_size : Vec2 = this.getPaddingBorderSize();
 
             let max_grid_ratio_width  = 0;
             let max_grid_ratio_height = 0;
@@ -196,7 +184,7 @@ export class Grid extends ContainerUI implements IGrid {
             this.minSize.y = grid_pix_height + max_grid_ratio_height + padding_border_size.y;
         }
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
     }
 
     layout(position : Vec2, size : Vec2) : void {
@@ -206,8 +194,8 @@ export class Grid extends ContainerUI implements IGrid {
         const columns_ratio_all = content_size.x - sum(this.columnsPix);
         const rows_ratio_all    = content_size.y - sum(this.rowsPix);
         assert(0 <= columns_ratio_all && 0 <= rows_ratio_all, `grid:layout: content:${content_size}\n  col:${this.columnsPix.map(x => Math.floor(x))}\n  row:${this.rowsPix.map(x => Math.floor(x))}\n  doc-size:${getDocumentSize()}`);
-        const columns_pix = Array.from(this.columns.entries()).map(x => x[1].endsWith("%") ? Grid.ratio(x[1]) * columns_ratio_all : this.columnsPix[x[0]]);
-        const rows_pix    = Array.from(this.rows.entries()).map(x => x[1].endsWith("%") ? Grid.ratio(x[1]) * rows_ratio_all : this.rowsPix[x[0]]);
+        const columns_pix = Array.from(this.columns.entries()).map(x => x[1].endsWith("%") ? ratioUI(x[1]) * columns_ratio_all : this.columnsPix[x[0]]);
+        const rows_pix    = Array.from(this.rows.entries()).map(x => x[1].endsWith("%") ? ratioUI(x[1]) * rows_ratio_all : this.rowsPix[x[0]]);
 
         const column_pos : number[] = [0];
         columns_pix.forEach(x => column_pos.push( last(column_pos) + x ));

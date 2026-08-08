@@ -51,9 +51,6 @@ export class VisibleArea {
     }
 }
 
-const UI_padding : Padding = new Padding(5, 5, 5, 5);
-const UI_borderWidth : number = 5;
-
 export interface UIAttr extends AbstractUIAttr {
     className? : string;
     id?   : string;
@@ -65,7 +62,6 @@ export interface UIAttr extends AbstractUIAttr {
     bottom?  : number;
     size?     : [number, number];
     borderStyle? : string;
-    borderWidth? : number;
     backgroundColor? : string;
     imageFile? : string;
     lesson?  : string;
@@ -95,21 +91,18 @@ export abstract class UI extends AbstractUI {
     position : Vec2 = Vec2.zero();
     right?   : number;
     bottom?  : number;
-    fixedSize? : Vec2;
-    size     : Vec2 = Vec2.zero();
     backgroundColor? : string;
     color?           : string;
-    borderWidth? : number;
     lesson?  : string;
 
     clickHandler? : ()=>Promise<void>;
 
     getRight() : number {
-        return this.position.x + this.size.x;
+        return this.position.x + this.netSize.x;
     }
 
     getBottom() : number {
-        return this.position.y + this.size.y;
+        return this.position.y + this.netSize.y;
     }
 
     setParent(parent : ContainerUI | TreeNode){
@@ -138,26 +131,9 @@ export abstract class UI extends AbstractUI {
         all_uis.push(this);
     }
 
-    getPadding() : Padding {
-        return this.padding ?? UI_padding;
-    }
-
-    getBorderWidth() : number {
-        return this.borderWidth !== undefined ? this.borderWidth : UI_borderWidth;
-    }
-
-    getPaddingBorderSize() : Vec2 {
-        const padding = this.getPadding();
-        const borderWidth = this.getBorderWidth();
-
-        const width  = padding.left + padding.right  + 2 * borderWidth;
-        const height = padding.top  + padding.bottom + 2 * borderWidth;
-        return Vec2.fromXY(width, height);
-    }
-
     getContentSize() : Vec2 {
         const padding_border_size = this.getPaddingBorderSize();
-        return this.size.sub(padding_border_size);
+        return this.netSize.sub(padding_border_size);
     }
 
     getContentPosition(){
@@ -175,8 +151,8 @@ export abstract class UI extends AbstractUI {
         const x1 = offset.x + this.position.x;
         const y1 = offset.y + this.position.y;
 
-        const x2 = x1 + this.size.x;
-        const y2 = y1 + this.size.y;
+        const x2 = x1 + this.netSize.x;
+        const y2 = y1 + this.netSize.y;
 
         if(x2 < visibleArea.x1 || visibleArea.x2 < x1 || y2 < visibleArea.y1 || visibleArea.y2 < y1){
             return false;
@@ -191,7 +167,7 @@ export abstract class UI extends AbstractUI {
 
             const x = offset.x + this.position.x;
             const y = offset.y + this.position.y;
-            ctx.fillRect(x, y, this.size.x, this.size.y);
+            ctx.fillRect(x, y, this.netSize.x, this.netSize.y);
         }
         this.drawBorder(ctx, offset);
     }
@@ -287,7 +263,7 @@ export abstract class UI extends AbstractUI {
     }
 
     setCenterPosition(center: Vec2){
-        this.setPosition(center.sub(this.size.mul(0.5)));
+        this.setPosition(center.sub(this.netSize.mul(0.5)));
     }
 
     setMinSize() : void {
@@ -300,7 +276,7 @@ export abstract class UI extends AbstractUI {
             this.minSize.copyFrom(this.getPaddingBorderSize());
         }
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
     }
 
     setMinSizeFromContentSize(width : number, height : number){
@@ -309,7 +285,7 @@ export abstract class UI extends AbstractUI {
         this.minSize.x = width  + padding_border_size.x;
         this.minSize.y = height + padding_border_size.y;
 
-        this.size.copyFrom(this.minSize);
+        this.netSize.copyFrom(this.minSize);
     }
 
     layoutByRightBottom(){
@@ -317,12 +293,12 @@ export abstract class UI extends AbstractUI {
             const content_size = this.parent!.getContentSize();
 
             if(this.right != undefined){
-                this.position.x = content_size.x - this.size.x;
-                msg(`right:${this.name} ${this.right} ${this.position.x} = ${content_size.x} - ${this.size.x}`)
+                this.position.x = content_size.x - this.netSize.x;
+                msg(`right:${this.name} ${this.right} ${this.position.x} = ${content_size.x} - ${this.netSize.x}`)
             }
             if(this.bottom != undefined){
-                this.position.y = content_size.y - this.size.y;
-                msg(`bottom:${this.name} ${this.position.y} = ${content_size.y} - ${this.size.y}`)
+                this.position.y = content_size.y - this.netSize.y;
+                msg(`bottom:${this.name} ${this.position.y} = ${content_size.y} - ${this.netSize.y}`)
             }
         }
     }
@@ -330,11 +306,11 @@ export abstract class UI extends AbstractUI {
     layout(position : Vec2, size : Vec2) : void {
         this.layoutByRightBottom();
         this.position.copyFrom(position);
-        this.size.copyFrom(size);
+        this.netSize.copyFrom(size);
     }
 
     layoutXY(x : number, y : number) : void {
-        this.layout(Vec2.fromXY(x, y), this.size);
+        this.layout(Vec2.fromXY(x, y), this.netSize);
     }
 
     setMinSizeUpdateLayout(){
@@ -343,12 +319,12 @@ export abstract class UI extends AbstractUI {
     }
 
     updateLayout(){
-        this.layout(this.position, this.size);
+        this.layout(this.position, this.netSize);
     }
 
     isNear(position : Vec2) : boolean {
-        if(this.position.x <= position.x && position.x < this.position.x + this.size.x){
-            if(this.position.y <= position.y && position.y < this.position.y + this.size.y){
+        if(this.position.x <= position.x && position.x < this.position.x + this.netSize.x){
+            if(this.position.y <= position.y && position.y < this.position.y + this.netSize.y){
                 return true;
             }
         }
@@ -379,8 +355,8 @@ export abstract class UI extends AbstractUI {
 
         const x1 = offset.x + this.position.x;
         const y1 = offset.y + this.position.y;
-        const width  = this.size.x;
-        const height = this.size.y;
+        const width  = this.netSize.x;
+        const height = this.netSize.y;
 
         if(borderWidth == 1){
             ctx.strokeStyle = "white";
