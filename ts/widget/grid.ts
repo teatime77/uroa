@@ -1,6 +1,6 @@
 ///<reference path="container.ts" />
 
-import { assert, msg, sum, last, Vec2, IGrid, AbstractUI, setMinSizeGrid, ratioUI, getDocumentSize, layoutGrid } from "@i18n";
+import { msg, Vec2, IGrid, AbstractUI, setMinSizeGrid, layoutGrid } from "@i18n";
 import { UIAttr, UI, registerUI } from "./core";
 import { ContainerUI } from "./container";
 
