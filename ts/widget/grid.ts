@@ -1,6 +1,6 @@
 ///<reference path="container.ts" />
 
-import { assert, msg, sum, last, Vec2 } from "@i18n";
+import { assert, msg, sum, last, Vec2, IGrid, AbstractUI } from "@i18n";
 import { UIAttr, UI, registerUI } from "./core";
 import { getDocumentSize } from "../game_util";
 import { ContainerUI } from "./container";
@@ -11,7 +11,7 @@ export interface GridAttr extends UIAttr {
     rows?    : string;
 }
 
-export class Grid extends ContainerUI {
+export class Grid extends ContainerUI implements IGrid {
     columns : string[];
     rows    : string[];
     numCols : number;
@@ -44,7 +44,7 @@ export class Grid extends ContainerUI {
             this.numRows = this.rows.length;
         }
         else{
-            this.numRows = Math.max(... this.children.map(x => x.rowIdx + x.getRowSpan()));
+            this.numRows = Math.max(... this.absChildren().map(x => x.rowIdx + x.getRowSpan()));
             this.rows    = new Array(this.numRows).fill("*");
         }
     }
@@ -103,7 +103,7 @@ export class Grid extends ContainerUI {
     setRowColIdxOfChildren(){
         let col_idx = 0;
         let row_idx = 0;
-        for(const child of this.children){
+        for(const child of this.absChildren()){
             child.colIdx = col_idx;
             child.rowIdx = row_idx;
 
@@ -132,12 +132,16 @@ export class Grid extends ContainerUI {
                 pix_columns[col_idx] = Grid.pix(col);
             }
             else if(col == "*"){
-                const col_children = this.children.filter(x => x.colIdx == col_idx && x.getColSpan() == 1);
+                const col_children = this.absChildren().filter(x => x.colIdx == col_idx && x.getColSpan() == 1);
                 pix_columns[col_idx] = col_children.length > 0 ? Math.max(...col_children.map(x => x.minSize.x)) : 0;
             }
         }
 
         return pix_columns;
+    }
+
+    absChildren() : AbstractUI[] {
+        return this.children;
     }
 
     getRowsPix(){
@@ -148,7 +152,7 @@ export class Grid extends ContainerUI {
                 pix_rows[row_idx] = Grid.pix(row);
             }
             else if(row == "*"){
-                const row_children = this.children.filter(x => x.rowIdx == row_idx && x.getRowSpan() == 1);
+                const row_children = this.absChildren().filter(x => x.rowIdx == row_idx && x.getRowSpan() == 1);
                 pix_rows[row_idx] = row_children.length > 0 ? Math.max(...row_children.map(x => x.minSize.y)) : 0;
             }
         }
@@ -159,7 +163,7 @@ export class Grid extends ContainerUI {
     setMinSize() : void {
         assert(!isNaN(this.numCols) && !isNaN(this.numRows));
 
-        this.children.forEach(x => x.setMinSize());
+        this.absChildren().forEach(x => x.setMinSize());
 
         if(this.fixedSize !== undefined){
 
@@ -175,7 +179,7 @@ export class Grid extends ContainerUI {
             this.columnsPix = this.getColumnsPix();
             this.rowsPix    = this.getRowsPix();
 
-            for(const child of this.children){
+            for(const child of this.absChildren()){
                 const columns = this.columns.slice(child.colIdx, child.colIdx + child.getColSpan());
                 const pix_col_sum = sum(this.columnsPix.slice(child.colIdx, child.colIdx + child.getColSpan()));
                 max_grid_ratio_width = Math.max(max_grid_ratio_width, Grid.minTotalSize(columns, pix_col_sum, child.minSize.x));
@@ -211,7 +215,7 @@ export class Grid extends ContainerUI {
         const row_pos : number[] = [0];
         rows_pix.forEach(x => row_pos.push( last(row_pos) + x ));
 
-        for(const child of this.children){
+        for(const child of this.absChildren()){
             const x = column_pos[child.colIdx];
             const y = row_pos[child.rowIdx];
 
