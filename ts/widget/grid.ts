@@ -1,24 +1,9 @@
 ///<reference path="container.ts" />
 
-import { assert, msg, sum, last, Vec2, IGrid, AbstractUI } from "@i18n";
+import { assert, msg, sum, last, Vec2, IGrid, AbstractUI, setMinSizeGrid, ratioUI } from "@i18n";
 import { UIAttr, UI, registerUI } from "./core";
 import { getDocumentSize } from "../game_util";
 import { ContainerUI } from "./container";
-
-function pixUI(s : string) : number {
-    assert(s.endsWith("px"));
-    return parseFloat(s.slice(0, -2));
-}
-
-function ratioUI(s: string) : number {
-    assert(s.endsWith("%"));
-    return parseFloat(s.slice(0, -1)) / 100;
-}
-
-function ratioSum(ratioes : string[]) : number {
-    const pix_nums = ratioes.map(x => ratioUI(x));
-    return sum(pix_nums);
-}
 
 export interface GridAttr extends UIAttr {
     children?: any[];
@@ -68,24 +53,6 @@ export class Grid extends ContainerUI implements IGrid {
         return this.children;
     }
 
-    static minTotalSize(columns : string[], pix_sum : number, min_size : number) : number {
-        const ratio_columns = columns.filter(x => x.endsWith("%"));
-        if(ratio_columns.length == 0){
-            return 0;
-        }
-
-        const ratio_sum = ratioSum(ratio_columns);
-
-        if(min_size < pix_sum){
-            return 0;
-        }
-
-        const ratio_pix = min_size - pix_sum;
-
-        // grid-width * ratio_sum = ratio_pix
-        return ratio_pix / ratio_sum;
-    }
-
     setRowColIdxOfChildren(){
         let col_idx = 0;
         let row_idx = 0;
@@ -110,81 +77,8 @@ export class Grid extends ContainerUI implements IGrid {
         }
     }
 
-    getColumnsPix(){
-        const pix_columns = new Array(this.numCols).fill(0) as number[];
-
-        for(const [col_idx, col] of this.columns.entries()){
-            if(col.endsWith("px")){
-                pix_columns[col_idx] = pixUI(col);
-            }
-            else if(col == "*"){
-                const col_children = this.absChildren().filter(x => x.colIdx == col_idx && x.getColSpan() == 1);
-
-                if(col_children.length != 0){
-                    pix_columns[col_idx] = Math.max(...col_children.map(x => x.minSize.x));
-                }
-            }
-        }
-
-        return pix_columns;
-    }
-
-    getRowsPix(){
-        const pix_rows = new Array(this.numRows).fill(0) as number[];
-
-        for(const [row_idx, row] of this.rows.entries()){
-            if(row.endsWith("px")){
-                pix_rows[row_idx] = pixUI(row);
-            }
-            else if(row == "*"){
-                const row_children = this.absChildren().filter(x => x.rowIdx == row_idx && x.getRowSpan() == 1);
-
-                if(row_children.length != 0){
-                    pix_rows[row_idx] = Math.max(...row_children.map(x => x.minSize.y));
-                }
-            }
-        }
-
-        return pix_rows;
-    }
-
     setMinSize() : void {
-        assert(!isNaN(this.numCols) && !isNaN(this.numRows));
-
-        this.absChildren().forEach(x => x.setMinSize());
-
-        if(this.fixedSize !== undefined){
-
-            this.minSize.copyFrom(this.fixedSize);
-        }
-        else{
-
-            const padding_border_size : Vec2 = this.getPaddingBorderSize();
-
-            let max_grid_ratio_width  = 0;
-            let max_grid_ratio_height = 0;
-
-            this.columnsPix = this.getColumnsPix();
-            this.rowsPix    = this.getRowsPix();
-
-            for(const child of this.absChildren()){
-                const columns = this.columns.slice(child.colIdx, child.colIdx + child.getColSpan());
-                const pix_col_sum = sum(this.columnsPix.slice(child.colIdx, child.colIdx + child.getColSpan()));
-                max_grid_ratio_width = Math.max(max_grid_ratio_width, Grid.minTotalSize(columns, pix_col_sum, child.minSize.x));
-
-                const rows = this.rows.slice(child.rowIdx, child.rowIdx + child.getRowSpan());
-                const pix_row_sum = sum(this.rowsPix.slice(child.rowIdx, child.rowIdx + child.getRowSpan()));
-                max_grid_ratio_height = Math.max(max_grid_ratio_height, Grid.minTotalSize(rows, pix_row_sum, child.minSize.y));
-            }
-
-            const grid_pix_width  = sum(this.columnsPix);
-            const grid_pix_height = sum(this.rowsPix);
-
-            this.minSize.x = grid_pix_width  + max_grid_ratio_width  + padding_border_size.x;
-            this.minSize.y = grid_pix_height + max_grid_ratio_height + padding_border_size.y;
-        }
-
-        this.netSize.copyFrom(this.minSize);
+        setMinSizeGrid(this);
     }
 
     layout(position : Vec2, size : Vec2) : void {
