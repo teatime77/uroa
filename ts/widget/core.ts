@@ -131,11 +131,6 @@ export abstract class UI extends AbstractUI {
         all_uis.push(this);
     }
 
-    getContentSize() : Vec2 {
-        const padding_border_size = this.getPaddingBorderSize();
-        return this.netSize.sub(padding_border_size);
-    }
-
     getContentPosition(){
         const borderWidth = this.getBorderWidth();
         const padding = this.getPadding();

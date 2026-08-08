@@ -1,12 +1,5 @@
-import { msg, MyError, Vec2 } from "@i18n";
+import { getDocumentSize, msg, MyError, Vec2 } from "@i18n";
 import { UI, worldCanvas } from "./widget/core";
-
-export function getDocumentSize() : Vec2 {
-    const document_width  = document.documentElement.clientWidth;
-    const document_height = document.documentElement.clientHeight;
-
-    return Vec2.fromXY(document_width, document_height);
-}
 
 export function getUIFromId(id : string) : UI {
     for(const ui of worldCanvas.getUIMenus()){

@@ -1,9 +1,8 @@
 ///<reference path="core.ts" />
 
-import { MyError, msg, remove, Vec2 } from "@i18n";
+import { getDocumentSize, msg, remove, Vec2 } from "@i18n";
 import { AbstractCanvas } from "@plane";
 import { Sequencer } from "../action/sequencer";
-import { getDocumentSize } from "../game_util";
 import { drawIsometric } from "../isometric/isometric";
 import { UI, targetUI, setTargetUI, worldCanvas } from "./core";
 import { ImageUI } from "./image";

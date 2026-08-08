@@ -1,8 +1,7 @@
 ///<reference path="container.ts" />
 
-import { assert, msg, sum, last, Vec2, IGrid, AbstractUI, setMinSizeGrid, ratioUI } from "@i18n";
+import { assert, msg, sum, last, Vec2, IGrid, AbstractUI, setMinSizeGrid, ratioUI, getDocumentSize, layoutGrid } from "@i18n";
 import { UIAttr, UI, registerUI } from "./core";
-import { getDocumentSize } from "../game_util";
 import { ContainerUI } from "./container";
 
 export interface GridAttr extends UIAttr {
@@ -83,29 +82,7 @@ export class Grid extends ContainerUI implements IGrid {
 
     layout(position : Vec2, size : Vec2) : void {
         super.layout(position, size);
-
-        const content_size = this.getContentSize();
-        const columns_ratio_all = content_size.x - sum(this.columnsPix);
-        const rows_ratio_all    = content_size.y - sum(this.rowsPix);
-        assert(0 <= columns_ratio_all && 0 <= rows_ratio_all, `grid:layout: content:${content_size}\n  col:${this.columnsPix.map(x => Math.floor(x))}\n  row:${this.rowsPix.map(x => Math.floor(x))}\n  doc-size:${getDocumentSize()}`);
-        const columns_pix = Array.from(this.columns.entries()).map(x => x[1].endsWith("%") ? ratioUI(x[1]) * columns_ratio_all : this.columnsPix[x[0]]);
-        const rows_pix    = Array.from(this.rows.entries()).map(x => x[1].endsWith("%") ? ratioUI(x[1]) * rows_ratio_all : this.rowsPix[x[0]]);
-
-        const column_pos : number[] = [0];
-        columns_pix.forEach(x => column_pos.push( last(column_pos) + x ));
-
-        const row_pos : number[] = [0];
-        rows_pix.forEach(x => row_pos.push( last(row_pos) + x ));
-
-        for(const child of this.absChildren()){
-            const x = column_pos[child.colIdx];
-            const y = row_pos[child.rowIdx];
-
-            const width  = sum(columns_pix.slice(child.colIdx, child.colIdx + child.getColSpan()));
-            const height = sum(rows_pix.slice(child.rowIdx, child.rowIdx + child.getRowSpan()));
-
-            child.layout(new Vec2(x, y), new Vec2(width, height));
-        }
+        layoutGrid(this, position, size)
     }
 }
 
