@@ -1,4 +1,4 @@
-import { MyError, msg, Vec2, AbstractUI, AbstractUIAttr } from "@i18n";
+import { MyError, msg, Vec2, AbstractUI, AbstractUIAttr, Padding } from "@i18n";
 import type { ContainerUI } from "./container";
 import type { TreeNode } from "./tree";
 import type { Canvas } from "./canvas";
@@ -51,20 +51,6 @@ export class VisibleArea {
     }
 }
 
-export class Padding {
-    left   : number;
-    right  : number;
-    top    : number;
-    bottom : number;
-
-    constructor(left : number, right : number, top : number, bottom : number){
-        this.left  = left;
-        this.right  = right;
-        this.top    = top;
-        this.bottom = bottom;
-    }
-}
-
 const UI_padding : Padding = new Padding(5, 5, 5, 5);
 const UI_borderWidth : number = 5;
 
@@ -81,7 +67,6 @@ export interface UIAttr extends AbstractUIAttr {
     borderStyle? : string;
     borderWidth? : number;
     backgroundColor? : string;
-    padding? : number | [number, number] | [number, number, number, number];
     imageFile? : string;
     lesson?  : string;
 }
@@ -115,7 +100,6 @@ export abstract class UI extends AbstractUI {
     backgroundColor? : string;
     color?           : string;
     borderWidth? : number;
-    padding? : Padding;
     lesson?  : string;
 
     clickHandler? : ()=>Promise<void>;
@@ -155,7 +139,7 @@ export abstract class UI extends AbstractUI {
     }
 
     getPadding() : Padding {
-        return (this.padding !== undefined ? this.padding : UI_padding);
+        return this.padding ?? UI_padding;
     }
 
     getBorderWidth() : number {
@@ -221,17 +205,7 @@ export abstract class UI extends AbstractUI {
     }
 
     copyFromUIAttr(data : UIAttr){
-        if(data.padding !== undefined){
-            if(typeof data.padding == "number"){
-                this.padding = new Padding(data.padding, data.padding, data.padding, data.padding);
-            }
-            else if(data.padding.length == 2){
-                this.padding = new Padding(data.padding[0], data.padding[0], data.padding[1], data.padding[1]);
-            }
-            else{
-                this.padding = new Padding(... data.padding);
-            }
-        }
+        super.copyFromUIAttr(data);
 
         if(data.left != undefined){
             this.position.x = data.left;
