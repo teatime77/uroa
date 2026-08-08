@@ -1458,8 +1458,7 @@ export async function playShape(speech : AbstractSpeech, all_shapes : MathEntity
 
 export function appendRow(grid : Grid, nest : number, name : string, value : UI){
     const label = $label({ 
-        text : name,
-        paddingLeft : `${nest * 10}px`,
+        text : name
     });
 
     grid.addChild(label);
@@ -1478,8 +1477,7 @@ export function makeTexProperty(grid : Grid, nest : number, name : string, text 
 
 export function appendTitle(grid : Grid, nest : number, title : string){
     const label = $label({
-        text : title,
-        paddingLeft : `${nest * 10}px`,
+        text : title
     });
 
     const filler = $label({
