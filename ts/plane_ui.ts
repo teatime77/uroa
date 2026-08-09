@@ -96,6 +96,8 @@ export class Plane {
         });
     
         this.canvas_block = $block({
+            width:"960px",
+            height:"480px",
             children : [],
             color : fgColor,
             // backgroundColor : "cornsilk"
