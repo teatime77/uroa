@@ -1,7 +1,7 @@
 ///<reference path="../../widget/grid.ts" />
 ///<reference path="../../widget/text.ts" />
 
-import { range, assert, MyError, Vec2 } from "@i18n";
+import { range, assert, MyError, Vec2, setRowColIdxOfChildren } from "@i18n";
 import { App, Term, ConstNum, RefVar, parseMath } from "@parser";
 import { registerUI, UIAttr } from "../../widget/core";
 import { ContainerUI } from "../../widget/container";
@@ -38,7 +38,7 @@ export class SingleDigitImage extends Grid {
         this.addChildren(...this.labels);
 
 
-        this.setRowColIdxOfChildren();
+        setRowColIdxOfChildren(this);
 
         this.value = data.value;
     }

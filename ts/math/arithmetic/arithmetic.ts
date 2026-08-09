@@ -1,7 +1,7 @@
 ///<reference path="../../widget/grid.ts" />
 ///<reference path="../../widget/text.ts" />
 
-import { assert, MyError, msg } from "@i18n";
+import { assert, MyError, msg, setRowColIdxOfChildren } from "@i18n";
 import { Term, ConstNum, RefVar, parseMath, App } from "@parser";
 import { Action, ActionAttr } from "../../action/action";
 import { MathExprUI } from "../../lesson/exercise";
@@ -108,7 +108,7 @@ export class NumberUI extends Grid {
         this.value = value;
         this.digits = nums.map(n => new Digit(new ConstNum(n)));
         this.addChildren(...this.digits);
-        this.setRowColIdxOfChildren();        
+        setRowColIdxOfChildren(this);        
 
         addTermToUIs(value, this);
     }
@@ -174,7 +174,7 @@ export class ArithmeticView extends Grid {
 
         this.addChildren(this.imageView, this.mathExpr, this.columnArithmetic);
 
-        this.setRowColIdxOfChildren();
+        setRowColIdxOfChildren(this);
     }
 }
 
