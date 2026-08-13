@@ -20,10 +20,9 @@
         onload="renderMathInElement(document.body);"></script>
 <!------------------------------------ katex end   -------------------------------------->
 
-<script type="text/javascript" src="lib/i18n/i18n.js?ver=8"></script>
-<script type="text/javascript" src="lib/parser/parser.js?ver=8"></script>
-<script type="text/javascript" src="lib/algebra/algebra.js?ver=8"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script type="module" src="/diagram/ts/index.ts"></script>
 </head>
 <body>
 <pre id="eqs">
@@ -33,10 +32,5 @@ a * 3 * 4 * b
 2 * a + 3 * b + 4 * a + 5 * b
 (2 * a + 2 * b) / 2 = (2 * c) / 2
 </pre>
-
-<script>
-    document.addEventListener('DOMContentLoaded', algebra_ts.bodyOnLoad );
-</script>
-
 </body>
 </html>
