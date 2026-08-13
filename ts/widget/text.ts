@@ -3,11 +3,15 @@
 import { sleep, Vec2 } from "@i18n";
 import { VisibleArea, LabelAttr, TextUIAttr, UI, registerUI, worldCanvas } from "./core";
 import { Sequencer } from "../action/sequencer";
-import { loadWorld } from "../index";
 import { loadStageMapPage } from "../isometric/isometric";
 
 
 export let currentLesson : Label | undefined;
+
+async function loadWorld(target : string) {
+    const game = await import("../index");
+    await game.loadWorld(target);
+}
 
 const textColor = "white";
 

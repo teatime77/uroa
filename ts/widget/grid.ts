@@ -1,6 +1,7 @@
 ///<reference path="container.ts" />
 
-import { msg, Vec2, IGrid, AbstractUI, setMinSizeGrid, layoutGrid, initGrid } from "@i18n";
+import { msg, Vec2, AbstractUI, setMinSizeGrid, layoutGrid, initGrid } from "@i18n";
+import type { IGrid } from "@i18n";
 import { UIAttr, UI, registerUI } from "./core";
 import { ContainerUI } from "./container";
 

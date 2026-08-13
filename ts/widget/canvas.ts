@@ -198,7 +198,9 @@ export class Canvas extends AbstractCanvas {
             }
         }
 
-        this.canvas.releasePointerCapture(this.pointerId);
+        if (this.canvas.hasPointerCapture(this.pointerId)){
+            this.canvas.releasePointerCapture(this.pointerId);
+        }
         this.canvas.classList.remove('dragging');
 
         setTargetUI(undefined);

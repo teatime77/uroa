@@ -1,4 +1,5 @@
-import { MyError, msg, Vec2, AbstractUI, AbstractUIAttr, Padding } from "@i18n";
+import { MyError, msg, Vec2, AbstractUI, Padding } from "@i18n";
+import type { AbstractUIAttr } from "@i18n";
 import type { ContainerUI } from "./container";
 import type { TreeNode } from "./tree";
 import type { Canvas } from "./canvas";
