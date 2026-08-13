@@ -1,5 +1,7 @@
-import { AbstractSpeech, assert, msg, MyError, Readable, Reading, Speech, Vec2 } from "@i18n";
-import { App, Highlightable, isGreek, operator, RefVar, renderKatexSub, Term } from "@parser";
+import { AbstractSpeech, assert, msg, MyError, Reading, Speech, Vec2 } from "@i18n";
+import type { Readable } from "@i18n";
+import { App, isGreek, operator, RefVar, renderKatexSub, Term } from "@parser";
+import type { Highlightable } from "@parser";
 import { transpose } from "@algebra";
 
 import { ShapeMode } from "./enums";
