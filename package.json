@@ -11,8 +11,7 @@
     "firebase",
     "webgpu",
     "game",
-    "diagram",
-    "unified"
+    "diagram"
   ],
   "scripts": {
     "build:all": "tsc -b tsconfig.sys.json && git submodule foreach \"npm run build\"",
