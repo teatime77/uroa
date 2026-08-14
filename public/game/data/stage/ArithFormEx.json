@@ -9,41 +9,6 @@
             "name"      : "main-stage",
             "children"  : [
                 {
-                    "className" : "Grid",
-                    "left"      : 0,
-                    "right"     : 0,
-                    "top"       : 0,
-                    "bottom"    : 0,
-                    "columns"   : "*",
-                    "rows"      : "* * * *",
-                    "children"  : [
-                        {
-                            "className" : "Grid",
-                            "id"        : "results",
-                            "rows"      : "*",
-                            "children"  : [
-                            ]
-                        }
-                        ,
-                        {
-                            "className" : "Label",
-                            "id"        : "question",
-                            "text"      : ""
-                        }
-                        ,
-                        {
-                            "className" : "PlaceHolder",
-                            "id"        : "imageExpr"
-                        }
-                        ,
-                        {
-                            "className" : "PlaceHolder",
-                            "id"        : "mathExpr"
-                        }
-                    ]
-                }
-                ,
-                {
                     "className" : "Button",
                     "name"      : "back",
                     "right"     : 10,
