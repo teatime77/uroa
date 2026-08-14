@@ -1,8 +1,14 @@
 {
     "nodes"     : [
         {
-            "id"    : "group-1",
+            "id"    : "group-0",
             "isCluster" : true
+        }
+        ,
+        {
+            "id"    : "group-1",
+            "isCluster" : true,
+            "parentId" : "group-0"
         }
         ,
         {
@@ -44,40 +50,53 @@
         {
             "id"    : "node-5",
             "text" : "足して１０になる数",
-            "lesson" : "FriendsOfTen"
+            "lesson" : "FriendsOfTen",
+            "parentId" : "group-2"
         }
         ,
         {
             "id"    : "node-6",
             "text" : "10からの引き算",
-            "lesson" : "SubtractionFrom10"
+            "lesson" : "SubtractionFrom10",
+            "parentId" : "group-2"
+
         }
         ,
         {
             "id"    : "node-7",
-            "text" : "10より大きい数"
+            "text" : "10より大きい数",
+            "parentId" : "group-2"
+
         }
         ,
         {
             "id"    : "node-8",
             "text" : "足して10以上になる数",
-            "lesson"   : "AdditionSum11To19"
+            "lesson"   : "AdditionSum11To19",
+            "parentId" : "group-3"
+
         }
         ,
         {
             "id"    : "node-9",
             "text" : "10以上の数の引き算",
-            "lesson" : "SubtractionFrom11to19"
+            "lesson" : "SubtractionFrom11to19",
+            "parentId" : "group-3"
+
         }
         ,
         {
             "id"    : "node-10",
-            "text" : "２桁の数と１桁の数の足し算"
+            "text" : "２桁の数と１桁の数の足し算",
+            "parentId" : "group-3"
+
         }
         ,
         {
             "id"    : "node-11",
-            "text" : "２桁の数と１桁の数の引き算"
+            "text" : "２桁の数と１桁の数の引き算",
+            "parentId" : "group-3"
+
         }
         ,
         {
@@ -202,6 +221,51 @@
         {
             "source": "node-10",
             "target": "node-11"
+        }
+        ,
+        {
+            "source": "kuku-2",
+            "target": "kuku-3"
+        }
+        ,
+        {
+            "source": "kuku-3",
+            "target": "kuku-4"
+        }
+        ,
+        {
+            "source": "kuku-4",
+            "target": "kuku-5"
+        }
+        ,
+        {
+            "source": "kuku-5",
+            "target": "kuku-6"
+        }
+        ,
+        {
+            "source": "kuku-6",
+            "target": "kuku-7"
+        }
+        ,
+        {
+            "source": "kuku-7",
+            "target": "kuku-8"
+        }
+        ,
+        {
+            "source": "kuku-8",
+            "target": "kuku-9"
+        }
+        ,
+        {
+            "source": "test-1",
+            "target": "test-2"
+        }
+        ,
+        {
+            "source": "test-2",
+            "target": "test-3"
         }
     ]
 }
