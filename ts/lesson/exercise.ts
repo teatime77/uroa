@@ -65,15 +65,6 @@ export class ArithmeticFormulaExercise extends Action {
             throw new MyError();
         }
 
-        const results = getUIFromId("results") as Grid;
-        const question = getUIFromId("question") as Label;
-        const imageExprPlaceHolder = getUIFromId("imageExpr") as PlaceHolder;
-        const mathExprPlaceHolder  = getUIFromId("mathExpr") as PlaceHolder;
-
-        if([results, question, imageExprPlaceHolder, mathExprPlaceHolder].some(x => x == undefined)){
-            throw new MyError();
-        }
-
         const exs = fnc(trialCount, ...currentLesson.args);
         for(const [idx, ex] of exs.entries()){
 
