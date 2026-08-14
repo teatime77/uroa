@@ -65,7 +65,7 @@ export function initIsometric(canvas : Canvas, map : any){
     TILE_HEIGHT = TILE_WIDTH / 2;
 
     worldGraph = makeGraph(map);
-    worldGraph.setPosition(Vec2.fromXY(canvas.canvas.width / 2, 50));
+    worldGraph.setPosition(Vec2.fromXY(11, 12));
     worldGraph.updateLayout();
     canvas.addUI(worldGraph);
 
@@ -126,6 +126,8 @@ function makeUpDownButton(){
 export function loadStageMapPage(){
     worldCanvas.isIsometric = true;
     worldCanvas.clearCanvas();
+    worldCanvas.addUI(worldGraph);
+
     // worldCanvas.removeUIs(...houseImages, ...lessonLabels)
     houseImages = [];
     lessonLabels = [];
