@@ -1,0 +1,41 @@
+{
+    "imports":[
+    ]
+    ,
+    "uis" : [
+        {
+            "className" : "Stage",
+            "name"      : "main-stage",
+            "children"  : [
+                {
+                    "className" : "ProofUI",
+                    "expr"      : "12 + 34 + 56",
+                    "left"      : 11,
+                    "top"       : 22
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "back",
+                    "right"     : 10,
+                    "top"       : 10,
+                    "text"      : "Back"
+                }
+                ,
+                {
+                    "className" : "Button",
+                    "name"      : "expandNumber",
+                    "right"     : 10,
+                    "top"       : 100,
+                    "text"      : "Play"
+                }
+            ]
+        }
+    ]
+    ,
+    "menus" : [
+    ]
+    ,
+    "actions" : [
+    ] 
+}

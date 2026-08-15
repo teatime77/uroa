@@ -173,6 +173,12 @@
             "text"  : "テスト３",
             "path"  : "stage.stage-3"
         }
+        ,
+        {
+            "id"    : "test-4",
+            "text"  : "数式処理",
+            "path"  : "stage.equation"
+        }
     ],
     "edges"     : [
         {
@@ -266,6 +272,11 @@
         {
             "source": "test-2",
             "target": "test-3"
+        }
+        ,
+        {
+            "source": "test-3",
+            "target": "test-4"
         }
     ]
 }
