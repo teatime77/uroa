@@ -3,7 +3,6 @@
 import { sleep, Vec2 } from "@i18n";
 import { VisibleArea, LabelAttr, TextUIAttr, UI, registerUI, worldCanvas } from "./core";
 import { Sequencer } from "../action/sequencer";
-import { loadStageMapPage } from "../isometric/isometric";
 
 
 export let currentLesson : Label | undefined;
@@ -82,6 +81,7 @@ export abstract class TextUI extends UI {
             Sequencer.start();
         }
         else if(this.name == "back"){
+            const { loadStageMapPage } = await import("../isometric/isometric");
             loadStageMapPage();
         }
         else if(this instanceof Label && this.lesson != undefined){
@@ -128,6 +128,12 @@ export abstract class TextUI extends UI {
 
         super.draw(ctx, offset, visibleArea);
 
+        ctx.save();
+
+        if(this.color != undefined){
+            ctx.strokeStyle = this.color;
+        }
+
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         // ctx.font = `${(this.size.y * 0.8).toFixed()}px "Hiragino Kaku Gothic Pro", "Meiryo", sans-serif`;
@@ -138,10 +144,12 @@ export abstract class TextUI extends UI {
 
         ctx.fillStyle = textColor;
         ctx.fillText(this.text, x, y);
+
+        ctx.restore();
     }
 
     toString() : string {
-        return `${this.constructor.name} : ${this.text}`;
+        return `${this.constructor.name} : [${this.text}]`;
     }
 }
 

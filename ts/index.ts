@@ -16,6 +16,7 @@ import { Canvas } from "./widget/canvas";
 import { makeUIFromJSON, setCanvas, worldCanvas } from "./widget/core";
 import { initPopupMenus } from "./widget/menu";
 import { TreeNode, makeTreeNodeFromObject } from "./widget/tree";
+import './math/equation/equation';
 
 let urlOrigin : string;
 export let urlBase : string;

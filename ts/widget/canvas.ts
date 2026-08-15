@@ -141,7 +141,7 @@ export class Canvas extends AbstractCanvas {
 
         const pos = this.getPositionInCanvas(ev);
         const target = this.getUIFromPosition(pos);
-        const s = (target == undefined ? "" : `target:[${target.str()}]`);
+        const s = (target == undefined ? "" : `target:[${target}]`);
 
         this.movePos = pos;
 

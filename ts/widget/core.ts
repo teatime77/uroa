@@ -93,7 +93,6 @@ export abstract class UI extends AbstractUI {
     right?   : number;
     bottom?  : number;
     backgroundColor? : string;
-    color?           : string;
     lesson?  : string;
 
     clickHandler? : ()=>Promise<void>;
@@ -172,7 +171,7 @@ export abstract class UI extends AbstractUI {
         this.draw(ctx, Vec2.zero(), undefined)
     }
 
-    str() : string {
+    toString() : string {
         return `${this.idx} ${this.constructor.name}`;
     }
 

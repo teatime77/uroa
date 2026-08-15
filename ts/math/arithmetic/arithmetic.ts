@@ -26,7 +26,7 @@ export function addTermToUIs(term : Term, ui : UI){
         assert(!uis.includes(ui));
         uis.push(ui);
     }
-    // msg(`term:${term.str()} uis:[${uis.map(x => x.constructor.name)}]`);
+    // msg(`term:${term} uis:[${uis.map(x => x.constructor.name)}]`);
 }
 
 function getDigitCount(n: number): number {
@@ -86,8 +86,8 @@ export class Digit extends Label {
         return digits;
     }
 
-    str() : string {
-        return `${super.str()} ${typeof this.value == "number" ? this.value : this.value.str()}`;
+    toString() : string {
+        return `${super.toString()} ${typeof this.value == "number" ? this.value : this.value.toString()}`;
     }
 }
 
@@ -136,8 +136,8 @@ export class VariableUI extends Label {
         addTermToUIs(term, this);
     }
 
-    str() : string {
-        return `${super.str()} ${this.value.name}`;
+    toString() : string {
+        return `${super.toString()} ${this.value.name}`;
     }
 }
 
@@ -216,7 +216,7 @@ export class ArithmeticAction extends Action {
         if(targetArg0UIs == undefined){
             throw new MyError();
         }
-        msg(`exec [${targetArg0UIs.map(x => x.str() + ":" + x.parent!.str()).join(", ")}] column:${this.arithmeticView.columnArithmetic.str()}`);
+        msg(`exec [${targetArg0UIs.map(x => x.toString() + ":" + x.parent!.toString()).join(", ")}] column:${this.arithmeticView.columnArithmetic.toString()}`);
 
         const roots = Array.from(new Set<UI>(targetArg0UIs.map(x => x.getStageRoot())));
         for(let progress : number = 0; ; progress += 0.01){
