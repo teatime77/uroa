@@ -9,7 +9,7 @@
             "children"  : [
                 {
                     "className" : "ProofUI",
-                    "expr"      : "12 + 3 * 4 * 5 * 6 + 78",
+                    "expr"      : "12 + 3 * 4 ^ (5 + 6) * 7 + 89 = sum(t, i, a..b) + sum(t, x, A)",
                     "left"      : 11,
                     "top"       : 22
                 }
