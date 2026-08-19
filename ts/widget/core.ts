@@ -1,4 +1,4 @@
-import { MyError, msg, Vec2, AbstractUI, Padding } from "@i18n";
+import { MyError, msg, Vec2, AbstractUI, Padding, assert } from "@i18n";
 import type { AbstractUIAttr } from "@i18n";
 import type { ContainerUI } from "./container";
 import type { TreeNode } from "./tree";
@@ -94,6 +94,7 @@ export abstract class UI extends AbstractUI {
     bottom?  : number;
     backgroundColor? : string;
     lesson?  : string;
+    canvas?   : Canvas;
 
     clickHandler? : ()=>Promise<void>;
 
@@ -108,6 +109,13 @@ export abstract class UI extends AbstractUI {
     setParent(parent : ContainerUI | TreeNode){
         this.parent = parent;
         // msg(`set parent:${this.constructor.name} ${this.parent.constructor.name}`)
+    }
+
+    getChildIdx() : number {
+        assert(this.parent != undefined)
+        const idx = this.parent!.children.indexOf(this);
+        assert(idx != -1);
+        return idx;
     }
 
     getRootUI() : UI {
@@ -127,8 +135,15 @@ export abstract class UI extends AbstractUI {
         throw new MyError();
     }
 
-    getAllUI(all_uis : UI[]){
+    getAllUIsub(all_uis : UI[]){
         all_uis.push(this);
+    }
+
+    getAllUI() : UI[]{
+        const all_uis : UI[] = [];
+        this.getAllUIsub(all_uis);
+
+        return all_uis;
     }
 
     getContentPosition(){
@@ -343,13 +358,15 @@ export abstract class UI extends AbstractUI {
     }
 
     drawBorder(ctx : CanvasRenderingContext2D, offset : Vec2) {
+        const x1 = offset.x + this.position.x;
+        const y1 = offset.y + this.position.y;
+        this.absPos = Vec2.fromXY(x1, y1);
+
         const borderWidth = this.getBorderWidth();
         if(borderWidth == 0){
             return;
         }
 
-        const x1 = offset.x + this.position.x;
-        const y1 = offset.y + this.position.y;
         const width  = this.netSize.x;
         const height = this.netSize.y;
 
@@ -520,7 +537,7 @@ export function registerUI(name: string, creator: UICreator) {
     UIRegistry[name] = creator;
 }
 
-export function makeUIFromJSON(obj: any) {
+export function makeUIFromJSON(obj: any) : UI {
     if(obj instanceof UI){
         return obj;
     }

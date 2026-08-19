@@ -69,7 +69,7 @@ export class Digit extends Label {
     constructor(term  : ConstNum){
         const data : TextUIAttr = {
             text : `${term.int()}`,
-            size : [digitSize, digitSize]
+            // size : [digitSize, digitSize]
             // padding : 0,
             // borderWidth : 0
         };

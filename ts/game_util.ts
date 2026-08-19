@@ -3,9 +3,7 @@ import { UI, worldCanvas } from "./widget/core";
 
 export function getUIFromId(id : string) : UI {
     for(const ui of worldCanvas.getUIMenus()){
-        let all_uis : UI[] = [];
-        ui.getAllUI(all_uis);            
-        const ui2 = all_uis.find(x => x.id == id);
+        const ui2 = ui.getAllUI().find(x => x.id == id);
         if(ui2 != undefined){
             return ui2;
         }

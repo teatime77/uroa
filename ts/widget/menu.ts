@@ -29,8 +29,6 @@ export function showPopupMenu(canvas : Canvas, x : number, y : number){
 export class PopupMenu extends Grid {
     static one : PopupMenu | undefined;
 
-    canvas : Canvas | undefined;
-
     constructor(data : UIAttr & { children : any[] }){
         super(data);
     }

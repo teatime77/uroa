@@ -23,16 +23,6 @@ function makeOprTex(a : string) : Label {
     return new Label(attr);
 }
 
-function makeInsertion() : Label {
-    const attr : LabelAttr = {
-        text : " ",
-        padding: 0,
-        color : "Aquamarine"
-    };
-
-    return new Label(attr);
-}
-
 function joinTex(uis:UI[], seperator:string) : UI[]{
     const uis2 : UI[] = [];
     for(const i of range(uis.length)){
@@ -48,19 +38,17 @@ function joinTex(uis:UI[], seperator:string) : UI[]{
 
 function makeAppTex(app : App) : UI {
     const args = app.args.map(x => makeTex(x));
-    const uis: UI[] = [];
-
-    uis.push(makeInsertion());
+    let uis: UI[] = [];
 
     switch(app.fncName){
-    case "+":{
-        uis.splice(1, 0, ...joinTex(args, app.fncName));
+    case "+":
+    case "*":{
+        uis = joinTex(args, app.fncName);
         break;
     }
-        
+    default:
+        throw new MyError();
     }
-
-    uis.push(makeInsertion());
 
     return makeTexGrid(uis);
 }

@@ -58,7 +58,7 @@ export class SymbolRef {
         const uis = data.uis.map(x => makeUIFromJSON(x));
 
         const all_uis : UI[] = [];
-        uis.forEach(x => x.getAllUI(all_uis));
+        uis.forEach(x => x.getAllUIsub(all_uis));
         for(const ui of all_uis){
             if(ui.name != undefined){
                 const key = `${url}.${ui.name}`;

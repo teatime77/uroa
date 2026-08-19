@@ -1,6 +1,6 @@
 ///<reference path="core.ts" />
 
-import { getDocumentSize, msg, remove, Vec2 } from "@i18n";
+import { AbstractUI, assert, getDocumentSize, msg, range, remove, Vec2 } from "@i18n";
 import { AbstractCanvas } from "@plane";
 import { Sequencer } from "../action/sequencer";
 import { drawIsometric } from "../isometric/isometric";
@@ -9,7 +9,8 @@ import { ImageUI } from "./image";
 import { inputByNumpad } from "./input";
 import { PopupMenu, showPopupMenu } from "./menu";
 import { Thumb } from "./slider";
-import { Label } from "./text";
+import { Label, TextUI } from "./text";
+import { ContainerUI } from "./container";
 
 let animationFrameId : number | null = null;
 
@@ -29,10 +30,51 @@ function isTransparent(ctx : CanvasRenderingContext2D, position : Vec2) {
     }
 }
 
+function includedRight(ui: UI, x:number) : boolean {
+    return  ui.getRightUI() - AbstractUI.nearMargin <= x;
+}
+
+function getSelectedUIs(startSelectText : TextUI, pos: Vec2) : TextUI[]{
+    let selectedUI : UI | undefined;
+
+    for(let ui : TextUI | ContainerUI | undefined = startSelectText; ui != undefined && ui.parent != undefined; ui = ui.parent){
+        if(! includedRight(ui, pos.x)){
+            break;
+        }
+
+        selectedUI = ui;
+
+        const uiIdx = ui.getChildIdx();
+        if(uiIdx == 0 && includedRight(ui.parent.lastUI(), pos.x)){
+
+            selectedUI = ui.parent;
+            msg(`select all:${ui.parent}`)
+            continue;
+        }
+
+        const middles = ui.parent.children.slice(uiIdx).filter(x => includedRight(x, pos.x));
+        assert(middles.length != 0);
+
+        const middleTextUIs = middles.map(x => x.getAllUI()).flat().filter(x => x instanceof TextUI);
+        return middleTextUIs;
+    }
+
+    if(selectedUI == undefined){
+        return [];
+    }
+    else{
+        return selectedUI.getAllUI().filter(x => x instanceof TextUI);
+    }
+}
+
 export class Canvas extends AbstractCanvas {
     isReady : boolean = false;
 
     private uis: UI[] = [];
+    private allUIs:UI[] = [];
+    private startSelectText?: TextUI;
+    
+    selectedUIs : UI[] = [];
 
     isIsometric : boolean = false;
 
@@ -112,10 +154,58 @@ export class Canvas extends AbstractCanvas {
         target.setPosition(ui_new_pos);
     }
 
+    equationDown(pos:Vec2){        
+        this.selectedUIs = [];
+
+        this.startSelectText = this.allUIs.find(ui => ui.parent != undefined && ui instanceof TextUI && ui.nearLeft(pos)) as TextUI;
+        if(this.startSelectText != undefined){
+            msg(  `left:${this.startSelectText}`);
+            this.canvas.style.cursor = "default";
+        }
+        else{
+            this.canvas.style.cursor = "text";
+        }
+
+        this.requestUpdateCanvas();
+    }
+
+    equationMove(pos:Vec2){        
+        this.selectedUIs = [];
+        this.canvas.style.cursor = "default";
+        const nearLeftRight = this.allUIs.find(ui => ui instanceof TextUI && ui.nearLeftRight(pos));
+        if(nearLeftRight != undefined){
+            msg(`left-right:${nearLeftRight}`);
+
+            this.canvas.style.cursor = "text";
+        }
+
+        if(this.startSelectText != undefined){
+            this.selectedUIs = getSelectedUIs(this.startSelectText, pos);
+            if(this.selectedUIs.length != 0){
+                msg("selected:" + this.selectedUIs.map(x => `${x}`).join(" "));
+            }
+        }
+
+        this.requestUpdateCanvas();
+    }
+
+    equationUp(){        
+        this.canvas.style.cursor = "default";
+        this.startSelectText = undefined;
+        this.selectedUIs = [];
+
+        this.requestUpdateCanvas();
+    }
+
     pointerdown(ev:PointerEvent) : void {
         this.moved = false;
-
         const pos = this.getPositionInCanvas(ev);
+
+        this.equationDown(pos);
+        if(this.startSelectText != undefined){
+            return;
+        }
+
         const target = this.getUIFromPosition(pos);
         if(target != undefined){
             // msg(`down:${target.constructor.name}`);
@@ -132,6 +222,8 @@ export class Canvas extends AbstractCanvas {
     }
 
     pointermove(ev:PointerEvent) : void {
+        const pos = this.getPositionInCanvas(ev);
+        this.equationMove(pos);
 
         if(targetUI == undefined || !(targetUI instanceof Thumb)){
             return;
@@ -139,7 +231,6 @@ export class Canvas extends AbstractCanvas {
 
         this.moved = true;
 
-        const pos = this.getPositionInCanvas(ev);
         const target = this.getUIFromPosition(pos);
         const s = (target == undefined ? "" : `target:[${target}]`);
 
@@ -150,7 +241,18 @@ export class Canvas extends AbstractCanvas {
         this.requestUpdateCanvas();
     }
 
+    setAllUIs(){
+        const all_uis = this.uis.map(x => x.getAllUI()).flat()
+        this.allUIs = [];
+        this.uis.forEach(x => x.getAllUIsub(this.allUIs));
+        assert(all_uis.length == this.allUIs.length);
+        assert(range(all_uis.length).every(i => all_uis[i] == this.allUIs[i]));
+        this.allUIs.forEach(x => x.canvas = this);
+    }
+
     layoutCanvas(){
+        this.setAllUIs();
+
         for(const root of this.uis){
             root.setMinSize();
             root.layout(root.position, getDocumentSize());
@@ -173,6 +275,8 @@ export class Canvas extends AbstractCanvas {
     }
 
     async pointerup(ev:PointerEvent) : Promise<void> {
+        this.equationUp();
+
         if(targetUI == undefined){
             return;
         }

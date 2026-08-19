@@ -1,6 +1,6 @@
 ///<reference path="core.ts" />
 
-import { sleep, Vec2 } from "@i18n";
+import { msg, sleep, Vec2 } from "@i18n";
 import { VisibleArea, LabelAttr, TextUIAttr, UI, registerUI, worldCanvas } from "./core";
 import { Sequencer } from "../action/sequencer";
 
@@ -28,6 +28,7 @@ export function getTextBoxSize(ctx: CanvasRenderingContext2D, text: string, font
 
     // 2. Get the TextMetrics object
     const metrics = ctx.measureText(text);
+    msg(`metrix:[${text}] ${metrics.width}`);
 
     // 3. Calculate Width
     // metrics.width is the advance width (how far the cursor moves after drawing)
@@ -130,7 +131,18 @@ export abstract class TextUI extends UI {
 
         ctx.save();
 
-        if(this.color != undefined){
+        if(this.canvas == undefined){
+            msg(`no canvas:${this}`);
+        }
+
+        let fillStyle = textColor;
+
+        if(this.canvas != undefined && this.canvas.selectedUIs.includes(this)){
+
+            ctx.strokeStyle = "white";
+            fillStyle  = "blue";
+        }
+        else if(this.color != undefined){
             ctx.strokeStyle = this.color;
         }
 
@@ -142,7 +154,7 @@ export abstract class TextUI extends UI {
         const x = offset.x + this.position.x + this.netSize.x / 2;
         const y = offset.y + this.position.y + this.netSize.y / 2;
 
-        ctx.fillStyle = textColor;
+        ctx.fillStyle = fillStyle;
         ctx.fillText(this.text, x, y);
 
         ctx.restore();

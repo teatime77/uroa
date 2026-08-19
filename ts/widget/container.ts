@@ -1,6 +1,6 @@
 ///<reference path="core.ts" />
 
-import { remove, MyError, Vec2 } from "@i18n";
+import { remove, MyError, Vec2, assert, last } from "@i18n";
 import { VisibleArea, UI, UIAttr, getNearUIinArray, makeUIFromJSON } from "./core";
 
 export abstract class ContainerUI extends UI {
@@ -15,9 +15,13 @@ export abstract class ContainerUI extends UI {
         }
     }
 
-    getAllUI(all_uis : UI[]){
-        super.getAllUI(all_uis);
-        this.children.forEach(x => x.getAllUI(all_uis));
+    getAllUIsub(all_uis : UI[]){
+        super.getAllUIsub(all_uis);
+        this.children.forEach(x => x.getAllUIsub(all_uis));
+    }
+
+    lastUI() : UI {
+        return last(this.children);
     }
 
     removeChild(child : UI){
@@ -81,5 +85,9 @@ export abstract class ContainerUI extends UI {
     draw(ctx : CanvasRenderingContext2D, offset : Vec2, visibleArea : VisibleArea | undefined) : void {
         const offset2 = this.drawSub(ctx, offset, visibleArea);
         this.children.forEach(x => x.draw(ctx, offset2, visibleArea));
+    }
+
+    toString() : string {
+        return `${this.constructor.name} : [ ${this.children.map(x => x.toString()).join(", ")} ]`;
     }
 }

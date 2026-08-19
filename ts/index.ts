@@ -67,6 +67,8 @@ export async function initGame(){
 
     const map = await fetchJson(`${basePath}/data/map.json?id=${Math.random()}`);
     initIsometric(worldCanvas, map);
+    worldCanvas.setAllUIs();
+    
     worldCanvas.isReady = true;
 }
 
