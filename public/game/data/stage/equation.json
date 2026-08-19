@@ -9,7 +9,7 @@
             "children"  : [
                 {
                     "className" : "ProofUI",
-                    "expr"      : "12 + 34 + 56",
+                    "expr"      : "12 + 3 * 4 * 5 * 6 + 78",
                     "left"      : 11,
                     "top"       : 22
                 }
