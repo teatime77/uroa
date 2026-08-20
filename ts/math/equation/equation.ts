@@ -1,29 +1,84 @@
-import { App, ConstNum, parseMath, RefVar, Term } from "@parser";
+import { App, ConstNum, parseMath, parseMathDetachFactor, Rational, RefVar, Term } from "@parser";
 import { Grid, GridAttr } from "../../widget/grid";
 import { assert, initGrid, msg, MyError, range, Vec2 } from "@i18n";
 import { Digit, VariableUI } from "../arithmetic/arithmetic";
 import { LabelAttr, registerUI, UI, UIAttr } from "../../widget/core";
 import { Label } from "../../widget/text";
 
-function rowTex(uis:UI[]){
+export interface TermTex {
+    getTerm() : Rational | Term;
+}
+
+class LabelTex extends Label implements TermTex {  
+    term:Rational | Term;
+
+    constructor(term:Rational | Term, data : LabelAttr){
+        super(data);
+        this.term = term;
+    }  
+
+    getTerm() : Rational | Term {
+        return this.term;
+    }
+}
+
+class TmpTex extends Label implements TermTex {  
+    term:Rational | Term;
+
+    constructor(term:Rational | Term, data : LabelAttr){
+        super(data);
+        this.term = term;
+    }  
+
+    getTerm() : Rational | Term {
+        return this.term;
+    }
+}
+
+class GridTex extends Grid implements TermTex {
+    term : Term;
+
+    constructor(term : Term, data : GridAttr) {
+        super(data);
+        this.term = term;
+    }
+
+    getTerm() : Rational | Term {
+        return this.term;
+    }
+}
+
+export type MathTex = LabelTex | TmpTex | GridTex;
+
+export function selectTerms(selectedUIs: UI[]){
+    if(! selectedUIs.every(x => x instanceof LabelTex || x instanceof GridTex || x instanceof Digit || x instanceof TmpTex || x instanceof VariableUI)){
+        return;
+    }
+
+    const terms = selectedUIs.filter(x => !(x instanceof TmpTex)).map(x => x.getTerm());
+    msg("selected:" + terms.map(x => `${x}`). join(" | "));
+}
+
+function rowTex(term : Term, uis:UI[]){
     const attr : GridAttr = {
         children : uis,
         rows : "*"
     }
 
-    return new Grid(attr);
+    return new GridTex(term, attr);
 }
 
-function columnTex(uis:UI[]){
+function columnTex(term : Term, uis:UI[]){
     const attr : GridAttr = {
         children : uis,
         columns : "*"
     }
 
-    return new Grid(attr);
+    return new GridTex(term, attr);
 }
 
-function intTex(n : number) : Label {
+function intTex(value:Rational) : LabelTex {
+    const n = value.int();
     assert(n == Math.floor(n));
 
     const attr : LabelAttr = {
@@ -31,26 +86,46 @@ function intTex(n : number) : Label {
         padding: 0
     };
 
-    return new Label(attr);
+    return new LabelTex(value, attr);
 }
 
-function oprTex(a : string) : Label {
+function labelTex(term:Rational | Term, a : string) : LabelTex {
     const attr : LabelAttr = {
         text : a,
         padding: 0
     };
 
-    return new Label(attr);
+    return new LabelTex(term, attr);
 }
 
-function joinTex(uis:UI[], seperator:string) : UI[]{
+function tmpTex(term:Rational | Term, a : string) : LabelTex {
+    const attr : LabelAttr = {
+        text : a,
+        padding: 0
+    };
+
+    return new TmpTex(term, attr);
+}
+
+function oprTex(term:Rational | Term, a : string) : LabelTex {
+    const attr : LabelAttr = {
+        text : a,
+        padding: 0
+    };
+
+    return new LabelTex(term, attr);
+}
+
+function joinTex(app: App) : UI[]{
+    const argUIs = app.args.map(x => makeTex(x));
+
     const uis2 : UI[] = [];
-    for(const i of range(uis.length)){
+    for(const i of range(argUIs.length)){
         if(i != 0){
-            uis2.push(oprTex(seperator));
+            uis2.push(tmpTex(app.fnc, app.fncName));
         }
 
-        uis2.push(uis[i]);
+        uis2.push(argUIs[i]);
     }
 
     return uis2;
@@ -63,19 +138,19 @@ function appendValue(term:Term, ui : UI) : UI {
 
     if(term.value.isInt()){
         const uis : UI[] = [
-            intTex(term.value.int()),
-            oprTex("・"),
+            intTex(term.value),
+            tmpTex(term.value, "・"),
             ui
         ]
 
-        return rowTex(uis);
+        return rowTex(term, uis);
     }
 
     throw new MyError();
 }
 
 function makeSumTex(app: App) : UI {
-    const symbolUI = oprTex(app.fncName);
+    const symbolUI = labelTex(app.fnc, app.fncName);
     const targetUI = makeTex(app.args[0]);
     const varUI = makeTex(app.args[1]);
     const domain = app.args[2];
@@ -85,16 +160,16 @@ function makeSumTex(app: App) : UI {
         const fromUI = makeTex(domain.args[0]);
         const toUI = makeTex(domain.args[1]);
 
-        const subUI = rowTex([varUI, oprTex("="), fromUI ]);
-        headUI = columnTex([toUI, symbolUI, subUI])
+        const subUI = rowTex(app, [varUI, tmpTex(app, "="), fromUI ]);
+        headUI = columnTex(app, [toUI, symbolUI, subUI])
     }
     else{
         const domainUI = makeTex(domain);
-        const subUI = rowTex([varUI, oprTex("∈"), domainUI ]);
-        headUI = columnTex([symbolUI, subUI])
+        const subUI = rowTex(app, [varUI, tmpTex(app, "∈"), domainUI ]);
+        headUI = columnTex(app, [symbolUI, subUI])
     }
 
-    return rowTex([headUI, targetUI]);
+    return rowTex(app, [headUI, targetUI]);
 }
 
 function makeAppTexRaw(app : App) : UI {
@@ -102,18 +177,15 @@ function makeAppTexRaw(app : App) : UI {
         return makeSumTex(app);
     }
 
-    const args = app.args.map(x => makeTex(x));
-    let uis: UI[] = [];
-
     switch(app.fncName){
     case "+":
     case "*":
     case "=":
     case "..":{
-        return rowTex(joinTex(args, app.fncName));
+        return rowTex(app, joinTex(app));
     }
     case "^":
-        return rowTex(joinTex(args, app.fncName));
+        return rowTex(app, joinTex(app));
 
     default:
         throw new MyError();
@@ -161,7 +233,7 @@ export class ProofUI extends Grid {
 
 registerUI(ProofUI.name, (data : GridAttr & { expr: string }) => {
     data.columns = "*";
-    const app = parseMath(data.expr) as App;
+    const app = parseMathDetachFactor(data.expr) as App;
     assert(app instanceof App);
     return new ProofUI(data, app);
 });

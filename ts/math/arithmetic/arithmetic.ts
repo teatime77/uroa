@@ -2,7 +2,7 @@
 ///<reference path="../../widget/text.ts" />
 
 import { assert, MyError, msg, setRowColIdxOfChildren } from "@i18n";
-import { Term, ConstNum, RefVar, parseMath, App } from "@parser";
+import { Term, ConstNum, RefVar, parseMath, App, Rational, parseMathDetachFactor } from "@parser";
 import { Action, ActionAttr } from "../../action/action";
 import { MathExprUI } from "../../lesson/exercise";
 import { UI, TextUIAttr, UIAttr, registerAction, registerUI } from "../../widget/core";
@@ -11,6 +11,7 @@ import { Label } from "../../widget/text";
 import { makeMathExprLayout, MathExprLayout } from "../math-expr-layout";
 import { ColumnArithmetic } from "./column-method";
 import { ImageExpr, makeImageExprFromTerm } from "./image";
+import { TermTex } from "../equation/equation";
 
 export const digitSize = 60;
 
@@ -63,7 +64,7 @@ export function makeOperatorLabel(operator : string) : Label {
     return new Label({text : arithmeticOperator(operator), size : [digitSize, digitSize] });
 }
 
-export class Digit extends Label {
+export class Digit extends Label implements TermTex {
     value : ConstNum;
 
     constructor(term  : ConstNum){
@@ -77,6 +78,10 @@ export class Digit extends Label {
         this.value = term;
 
         addTermToUIs(term, this);
+    }
+
+    getTerm() : Rational | Term {
+        return this.value;
     }
 
     splitDigitPlaceValues() : Digit[] {
@@ -122,7 +127,7 @@ export class NumberUI extends Grid {
 }
 
 
-export class VariableUI extends Label {
+export class VariableUI extends Label implements TermTex {
     value : RefVar;
 
     constructor(term  : RefVar){
@@ -134,6 +139,10 @@ export class VariableUI extends Label {
         this.value = term;
 
         addTermToUIs(term, this);
+    }
+
+    getTerm() : Rational | Term {
+        return this.value;
     }
 
     toString() : string {
@@ -160,7 +169,7 @@ export class ArithmeticView extends Grid {
         super(grid_data);
         ArithmeticView.arithmeticViews.push(this);
 
-        this.term = parseMath(data.expr, true);
+        this.term = parseMathDetachFactor(data.expr);
 
         this.imageView = makeImageExprFromTerm(this.term);
         this.mathExpr  = makeMathExprLayout(this.term);

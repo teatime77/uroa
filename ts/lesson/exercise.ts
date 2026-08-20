@@ -1,5 +1,5 @@
 import { MyError, getRandomInt, msg, range2, shuffle, Vec2 } from "@i18n";
-import { App, parseMath } from "@parser";
+import { App, parseMath, parseMathDetachFactor } from "@parser";
 import { Action, ActionAttr } from "../action/action";
 import { Digit, VariableUI } from "../math/arithmetic/arithmetic";
 import { MathExprLayout, makeMathExprLayout } from "../math/math-expr-layout";
@@ -151,7 +151,7 @@ class CalcEx {
     ans : number;
 
     constructor(expr: string, ans: number) {
-        this.expr = parseMath(expr, true) as App;
+        this.expr = parseMathDetachFactor(expr) as App;
         this.ans  = ans;
     }
 

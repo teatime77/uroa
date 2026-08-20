@@ -11,6 +11,7 @@ import { PopupMenu, showPopupMenu } from "./menu";
 import { Thumb } from "./slider";
 import { Label, TextUI } from "./text";
 import { ContainerUI } from "./container";
+import { selectTerms } from "../math/equation/equation";
 
 let animationFrameId : number | null = null;
 
@@ -170,7 +171,6 @@ export class Canvas extends AbstractCanvas {
     }
 
     equationMove(pos:Vec2){        
-        this.selectedUIs = [];
         this.canvas.style.cursor = "default";
         const nearLeftRight = this.allUIs.find(ui => ui instanceof TextUI && ui.nearLeftRight(pos));
         if(nearLeftRight != undefined){
@@ -182,7 +182,7 @@ export class Canvas extends AbstractCanvas {
         if(this.startSelectText != undefined){
             this.selectedUIs = getSelectedUIs(this.startSelectText, pos);
             if(this.selectedUIs.length != 0){
-                msg("selected:" + this.selectedUIs.map(x => `${x}`).join(" "));
+                // msg("selected:" + this.selectedUIs.map(x => `${x}`).join(" "));
             }
         }
 
@@ -192,7 +192,9 @@ export class Canvas extends AbstractCanvas {
     equationUp(){        
         this.canvas.style.cursor = "default";
         this.startSelectText = undefined;
-        this.selectedUIs = [];
+        if(this.selectedUIs.length != 0){
+            selectTerms(this.selectedUIs);
+        }
 
         this.requestUpdateCanvas();
     }

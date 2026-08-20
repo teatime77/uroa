@@ -2,7 +2,7 @@
 ///<reference path="../../widget/text.ts" />
 
 import { range, assert, MyError, Vec2, setRowColIdxOfChildren } from "@i18n";
-import { App, Term, ConstNum, RefVar, parseMath } from "@parser";
+import { App, Term, ConstNum, RefVar, parseMath, parseMathDetachFactor } from "@parser";
 import { registerUI, UIAttr } from "../../widget/core";
 import { ContainerUI } from "../../widget/container";
 import { Grid, GridAttr } from "../../widget/grid";
@@ -207,7 +207,7 @@ export function makeImageExprFromTerm(term : Term) : ImageExpr {
 }
 
 export function makeImageExprFromJson(data : UIAttr & { expr: string }) : ImageExpr {
-    const term = parseMath(data.expr, true);
+    const term = parseMathDetachFactor(data.expr);
     return makeImageExprFromTerm(term);
 }
 

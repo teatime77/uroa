@@ -2,7 +2,7 @@
 ///<reference path="../../widget/text.ts" />
 
 import { assert, sum, Vec2 } from "@i18n";
-import { App, ConstNum, parseMath } from "@parser";
+import { App, ConstNum, parseMath, parseMathDetachFactor } from "@parser";
 import { registerUI, UIAttr, worldCanvas } from "../../widget/core";
 import { updateRoot } from "../../game_util";
 import { ContainerUI } from "../../widget/container";
@@ -113,7 +113,7 @@ export class ColumnArithmetic extends ContainerUI {
 }
 
 registerUI(ColumnArithmetic.name, (data) => {
-    const app = parseMath((data as (UIAttr & { expr: string })).expr, true ) as App;
+    const app = parseMathDetachFactor((data as (UIAttr & { expr: string })).expr ) as App;
     assert(app instanceof App);
     return new ColumnArithmetic(data as UIAttr, app);
 });
