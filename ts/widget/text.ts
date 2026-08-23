@@ -137,7 +137,7 @@ export abstract class TextUI extends UI {
 
         let fillStyle = textColor;
 
-        if(this.canvas != undefined && this.canvas.selectedUIs.includes(this)){
+        if(this.canvas != undefined && this.canvas.selectedTextUIs.includes(this)){
 
             ctx.strokeStyle = "white";
             fillStyle  = "blue";

@@ -35,7 +35,7 @@ function includedRight(ui: UI, x:number) : boolean {
     return  ui.getRightUI() - AbstractUI.nearMargin <= x;
 }
 
-function getSelectedUIs(startSelectText : TextUI, pos: Vec2) : TextUI[]{
+function getSelectedUIs(startSelectText : TextUI, pos: Vec2) : UI[]{
     let selectedUI : UI | undefined;
 
     for(let ui : TextUI | ContainerUI | undefined = startSelectText; ui != undefined && ui.parent != undefined; ui = ui.parent){
@@ -56,15 +56,14 @@ function getSelectedUIs(startSelectText : TextUI, pos: Vec2) : TextUI[]{
         const middles = ui.parent.children.slice(uiIdx).filter(x => includedRight(x, pos.x));
         assert(middles.length != 0);
 
-        const middleTextUIs = middles.map(x => x.getAllUI()).flat().filter(x => x instanceof TextUI);
-        return middleTextUIs;
+        return middles;
     }
 
     if(selectedUI == undefined){
         return [];
     }
     else{
-        return selectedUI.getAllUI().filter(x => x instanceof TextUI);
+        return [selectedUI];
     }
 }
 
@@ -76,6 +75,7 @@ export class Canvas extends AbstractCanvas {
     private startSelectText?: TextUI;
     
     selectedUIs : UI[] = [];
+    selectedTextUIs : TextUI[] = [];
 
     isIsometric : boolean = false;
 
@@ -157,6 +157,7 @@ export class Canvas extends AbstractCanvas {
 
     equationDown(pos:Vec2){        
         this.selectedUIs = [];
+        this.selectedTextUIs = [];
 
         this.startSelectText = this.allUIs.find(ui => ui.parent != undefined && ui instanceof TextUI && ui.nearLeft(pos)) as TextUI;
         if(this.startSelectText != undefined){
@@ -181,9 +182,7 @@ export class Canvas extends AbstractCanvas {
 
         if(this.startSelectText != undefined){
             this.selectedUIs = getSelectedUIs(this.startSelectText, pos);
-            if(this.selectedUIs.length != 0){
-                // msg("selected:" + this.selectedUIs.map(x => `${x}`).join(" "));
-            }
+            this.selectedTextUIs = this.selectedUIs.map(x => x.getAllUI()).flat().filter(x => x instanceof TextUI);
         }
 
         this.requestUpdateCanvas();

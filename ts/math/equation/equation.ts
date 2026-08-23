@@ -52,6 +52,7 @@ export type MathTex = LabelTex | TmpTex | GridTex;
 
 export function selectTerms(selectedUIs: UI[]){
     if(! selectedUIs.every(x => x instanceof LabelTex || x instanceof GridTex || x instanceof Digit || x instanceof TmpTex || x instanceof VariableUI)){
+        assert(false);
         return;
     }
 
