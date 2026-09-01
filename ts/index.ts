@@ -42,6 +42,7 @@ export async function initGame(){
             msg("dev mode");
         }
     }
+    setIsProof(true);
 
     initSpeech();
 
@@ -118,6 +119,7 @@ export async function loadWorld(target : string){
 export { worldCanvas };
 
 import { sleep } from "@i18n";
+import { setIsProof } from "@parser";
 
 export async function playGameWorld(target: string, stopCallback: () => boolean) {
     await loadWorld(target);
