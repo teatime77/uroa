@@ -23,14 +23,226 @@
   <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
   <script type="module" src="/diagram/ts/index.ts"></script>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+
+    margin: 40px;
+}
+
+.math-container {
+    display: inline-block;
+
+    position: relative;
+
+    min-width: 800px;
+
+    padding: 50px;
+
+    font-size: 30px;
+
+    border:
+        1px solid #cccccc;
+
+    border-radius:
+        6px;
+
+    user-select:
+        none;
+
+    cursor:
+        crosshair;
+}
+
+
+/*
+ * Selected mathematical subtree.
+ */
+
+.ast-selected {
+    color:
+        #075fd8 !important;
+
+    background-color:
+        rgba(
+            40,
+            120,
+            255,
+            0.18
+        );
+
+    outline:
+        2px solid
+        rgba(
+            40,
+            120,
+            255,
+            0.65
+        );
+
+    border-radius:
+        2px;
+}
+
+
+/*
+ * The rectangle directly drawn by the mouse.
+ */
+
+.selection-box {
+    position:
+        fixed;
+
+    display:
+        none;
+
+    pointer-events:
+        none;
+
+    z-index:
+        10000;
+
+    border:
+        1px solid
+        rgba(
+            30,
+            100,
+            220,
+            0.9
+        );
+
+    background-color:
+        rgba(
+            30,
+            100,
+            220,
+            0.06
+        );
+}
+
+/* >>==================================================>> accordion */
+.accordion summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 16px;
+  position: relative;
+}
+
+.accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+.accordion summary::after {
+  content: "▶";
+  position: absolute;
+  right: 16px;
+  transition: transform 0.2s;
+}
+
+.accordion[open] summary::after {
+  transform: rotate(90deg);
+}
+/* <<==================================================<<  */
+
+/* >>==================================================>> Formula Popup Menu */
+.formula-popup-menu {
+    position: fixed;
+    z-index: 1000;
+}
+
+.formula-menu {
+    min-width: 280px;
+
+    background: white;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px #0003;
+}
+
+.formula-menu-item {
+    display: grid;
+    grid-template-columns: minmax(100px, auto) 1fr;
+    gap: 16px;
+    align-items: center;
+
+    width: 100%;
+    padding: 8px 12px;
+
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.formula-menu-item:hover {
+    background: #eee;
+}
+
+.formula-menu-name {
+    white-space: nowrap;
+}
+
+.formula-menu-formula {
+    text-align: right;
+}
+
+.formula-submenu-container {
+    position: relative;
+}
+
+.formula-submenu {
+    display: none;
+
+    position: absolute;
+    left: 100%;
+    top: 0;
+}
+
+.formula-submenu-container:hover > .formula-submenu,
+.formula-submenu-container:focus-within > .formula-submenu {
+    display: block;
+}
+
+.formula-submenu-button {
+    grid-template-columns: 1fr auto;
+}
+
+.formula-submenu-arrow {
+    font-size: 0.7em;
+}
+/* <<==================================================<<  */
+
+</style>
+
 </head>
 <body>
+
+
+<h2>KaTeX AST Selection Example</h2>
+
+<p>Drag the mouse over part of the expression.</p>
+
+<div id="app">
+    <p>
+        Drag a rectangle around a mathematical subexpression.
+        The largest AST node completely contained in the rectangle will be selected."        
+    </p>
+</div>
+
+<div id="selection-box"></div>
+
+<pre id="result"></pre>
+
 <pre id="eqs">
 a + (b + c)
 a * 3 * 4 * b
 3 * a + 3 * b + 3 * c
 2 * a + 3 * b + 4 * a + 5 * b
 (2 * a + 2 * b) / 2 = (2 * c) / 2
-</pre>
+</pre> 
+
+<div id="formula-book"></div>
+
 </body>
 </html>

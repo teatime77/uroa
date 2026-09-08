@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "firebase": "^10.14.1",
-    "gl-matrix": "^3.4.4"
+    "gl-matrix": "^3.4.4",
+    "katex": "^0.18.5"
   }
 }
