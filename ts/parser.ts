@@ -76,14 +76,6 @@ export function parseMathDetachFactor(text: string) : Term {
     return trm;
 }
 
-export function setRefVars(root : Term){
-    const all_refs = allTerms(root).filter(x => x instanceof RefVar && isLetter(x.name[0]) && !isSystemName(x.name)) as RefVar[];
-    for(const ref of all_refs){
-        ref.refVar = variables.find(x => x.name == ref.name);
-        assert(ref.refVar != undefined);
-    }
-}
-
 export function isGreek(text : string) : boolean {
     assert(typeof text == "string");
     if(text.length == 0){

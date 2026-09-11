@@ -198,7 +198,11 @@ export function lexicalAnalysis(text : string) : Token[] {
             token_type = TokenType.newLine;
             pos++;
         }
-        else if (isLetterOrAt(ch1 + ch2) || isProof && ch1 == "#"){
+        else if(isProof && ch1 == "#"){
+            for (pos++; pos < text.length && text[pos] != "," && text[pos].trim() != ""; pos++);
+            token_type = TokenType.identifier;
+        }
+        else if (isLetterOrAt(ch1 + ch2)){
             // 識別子の最初の文字の場合
 
             // 識別子の文字の最後を探します。識別子の文字はユニコードカテゴリーの文字か数字か'_'。
