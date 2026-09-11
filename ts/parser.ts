@@ -10,6 +10,9 @@ let attachFactor : boolean = true;
 
 export function setIsProof(is_proof : boolean) : void {
     isProof = is_proof;
+    if(isProof){
+        attachFactor = false;
+    }
 }
 
 export function isShapeName(name : string) : boolean {
@@ -489,18 +492,6 @@ export abstract class Term {
             }
         }
 
-        if(this.parent != null && this != this.parent.fnc && this.parent.isAdd()){
-            const idx = this.argIdx();
-
-            if(idx != 0){
-
-                if(0 <= this.value.fval()){
-
-                    val = "+ " + val;
-                }
-            }
-        }
-
         if(in_tex){
 
             if(this.colored()){
@@ -521,10 +512,6 @@ export abstract class Term {
     }
 
     str() : string {
-        return this.strX();
-    }
-
-    strX() : string {
         const text = this.str2();
         return this.putValue(text, false);
     }
@@ -757,7 +744,7 @@ export class Path extends Term {
         throw new MyError();
     }
 
-    strX() : string {
+    str() : string {
         return `#${this.indexes.join(pathSep)}`;
     }
 
@@ -902,11 +889,7 @@ export class ConstNum extends Term{
         return cns;
     }
 
-    str2() : string {
-        return this.value.toString();        
-    }
-
-    strX() : string {
+    str() : string {
         return this.value.toString();        
     }
 
@@ -944,11 +927,7 @@ export class Str extends Term{
         return new Str(this.text);
     }
 
-    str2() : string {
-        return this.strid();        
-    }
-
-    strX() : string {
+    str() : string {
         return this.strid();        
     }
 
@@ -1073,23 +1052,30 @@ export class App extends Term{
             text = `${this.fncName}(${args_s})`;
         }
         else{
+            if(this.fncName == "+"){
+                text = "";
+                for(const [i, arg] of this.args.entries()){
+                    if(i == 0){
+                        text = args[0];
+                    }
+                    else{
 
-            switch(this.fncName){
-                case "+":
-                    switch(args.length){
-                    case 0: return " +[] ";
-                    case 1: return ` +[${args[0]}] `;
+                        if(arg.value.fval() < 0){
+
+                            text += ` ${args[i]}`;
+                        }
+                        else{
+
+                            text += ` + ${args[i]}`;
+                        }
                     }
-                    break
-    
-                case "/":
-                    if(this.args.length != 2){
-                        throw new MyError();
-                    }
-                    break
+                }
+            }
+            else{
+
+                text = args.join(` ${this.fncName} `);
             }
 
-            text = args.join(` ${this.fncName} `);
         }
 
         if(this.isOperator() && this.parent != null && this.parent.isOperator()){
