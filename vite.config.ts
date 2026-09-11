@@ -2,55 +2,73 @@ import { defineConfig, type Plugin } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'path';
 import { mkdir, writeFile } from 'node:fs/promises'
-import { dirname, resolve } from 'node:path'
+import { basename, resolve } from 'node:path'
 
 function saveDataPlugin(): Plugin {
-  return {
-    name: 'save-data',
+    return {
+        name: 'save-data',
 
-    configureServer(server) {
-      server.middlewares.use(async (req, res, next) => {
-        if (req.method !== 'POST' || req.url !== '/api/save') {
-          next()
-          return
-        }
+        configureServer(server) {
+            server.middlewares.use(async (req, res, next) => {
+                if (req.method !== 'POST' || req.url !== '/api/save') {
+                    next()
+                    return
+                }
 
-        try {
-          let body = ''
+                try {
+                    let body = ''
 
-          for await (const chunk of req) {
-            body += chunk
-          }
+                    for await (const chunk of req) {
+                        body += chunk
+                    }
 
-        //   const data = JSON.parse(body)
-        //   const filename = resolve(process.cwd(), 'data/output.json')
-          const filename = resolve(process.cwd(), 'public/algebra/output/output.txt')    //'data/output.txt'
+                    const {
+                        filename,
+                        type,
+                        data,
+                    } = JSON.parse(body)
 
-          await mkdir(dirname(filename), { recursive: true })
-          await writeFile(
-            filename,
-            body,
-            // JSON.stringify(data, null, 4),
-            'utf8'
-          )
+                    if (typeof filename !== 'string') {
+                        throw new Error('Invalid filename')
+                    }
 
-          res.statusCode = 200
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ ok: true }))
-        } catch (error) {
-          console.error(error)
+                    // Prevent filenames such as "../../something"
+                    const safe_filename = basename(filename)
 
-          res.statusCode = 500
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({
-            ok: false,
-            error: String(error)
-          }))
-        }
-      })
-    },
-  }
+                    const output_dir = resolve(process.cwd(), 'public/algebra/output')
+                    const output_path = resolve(output_dir, safe_filename)
+
+                    await mkdir(output_dir, { recursive: true })
+
+                    const text = type == "text" ? data : JSON.stringify(data, null, 4);
+
+                    await writeFile(
+                        output_path,
+                        text,
+                        'utf8',
+                    )
+
+                    res.statusCode = 200
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(JSON.stringify({
+                        ok: true,
+                        filename: safe_filename,
+                    }))
+                } catch (error) {
+                    console.error(error)
+
+                    res.statusCode = 500
+                    res.setHeader('Content-Type', 'application/json')
+                    res.end(JSON.stringify({
+                        ok: false,
+                        error: String(error),
+                    }))
+                }
+            })
+        },
+    }
 }
+
 
 export default defineConfig({
     root: '.',
