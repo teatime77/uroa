@@ -796,6 +796,16 @@ export class Variable {
         }
     }
 
+    clone() : Variable {
+        const type = this.type != undefined ? this.type.clone() : undefined;
+        const init = this.init != undefined ? this.init.clone() : undefined;
+
+        const va = new Variable(this.name, type, init);
+        va.expr = this.expr != undefined ? this.expr.clone() : undefined;
+        
+        return va;
+    }
+
     toString() : string {
         let s = this.name;
         if(this.type != undefined){
@@ -1349,6 +1359,34 @@ export class App extends Term{
     }
 }
 
+export class Binding extends App {
+    vars : Variable[] = [];
+
+    constructor(fnc: Term, args: Term[], vars : Variable[]){
+        super(fnc, args);
+        this.vars = vars.slice();
+    }
+
+    tex2() : string {
+        throw new MyError();
+    }
+
+    clone() : Binding {
+        const bnd = new Binding(this.fnc.clone(), this.args.map(x => x.clone()), this.vars.map(x => x.clone()));
+
+        this.copy(bnd);
+
+        return bnd;
+    }
+
+    strid() : string {
+        const strid = super.strid();
+        const vars = this.vars.map(x => `${x}`).join(", ");
+
+        return `[${vars}:${strid}]`;
+    }
+}
+
 export class Parser {
     tokens: Token[];
     tokens_cp: Token[];
@@ -1432,10 +1470,47 @@ export class Parser {
 
             if(this.token.text == '('){
 
-                let app = new App(refVar, []);
-                this.readArgs("(", ")", app);
+                if(["limit", "diff", "integrate"].includes(refVar.name) ){
+                    this.nextToken("(");
 
-                return app;
+                    const terms : Term[] = [];
+                    this.readList(terms);
+
+                    this.nextToken(")");
+
+                    let bnd : Binding;
+                    if(refVar.name == "limit"){
+                        assert(terms.length == 3 && terms[1] instanceof RefVar);
+                        const va = new Variable((terms[1] as RefVar).name, undefined, undefined);
+                        terms.splice(1, 1);
+                        bnd = new Binding(refVar, terms, [va]);
+                    }
+                    else if(refVar.name == "diff"){
+                        assert(terms.length == 2 && terms[1] instanceof RefVar);
+                        const va = new Variable((terms[1] as RefVar).name, undefined, undefined);
+                        terms.splice(1, 1);
+                        bnd = new Binding(refVar, terms, [va]);
+                        
+                    }
+                    else if(refVar.name == "integrate"){
+                        assert(terms.length == 4 && terms[1] instanceof RefVar);
+                        const va = new Variable((terms[1] as RefVar).name, undefined, undefined);
+                        terms.splice(1, 1);
+                        bnd = new Binding(refVar, terms, [va]);                        
+                    }
+                    else{
+                        throw new MyError();
+                    }
+
+                    return bnd;
+                }
+                else{
+
+                    let app = new App(refVar, []);
+                    this.readArgs("(", ")", app);
+
+                    return app;
+                }
             }
             else if(this.token.text == '['){
 
