@@ -3,29 +3,29 @@ namespace algebra
 law 分数
     let a, b : Real
     param c : Real
-1: a / b = (c * a) / (c * b)
+    a / b = (c * a) / (c * b)
 
 law 加法の交換法則
     let a, b : Real
-1: a + b = b + a
+    a + b = b + a
 
 law 加法の結合法則
     let a, b, c : Real
-1: a + (b + c) = (a + b) + c
+    a + (b + c) = (a + b) + c
 
 law 乗法の交換法則
     let a, b : Real
-1: a * b = b * a
+    a * b = b * a
 
 law 乗法の結合法則
     let a, b, c : Real
-1: a * (b * c) = (a * b) * c
+    a * (b * c) = (a * b) * c
 
 law 加法と乗法の分配法則
     let a, b, c : Real
-1: a * (b + c) = a * b + a * c
+    a * (b + c) = a * b + a * c
 
-2: (a + b) * c = a * c + b * c
+    (a + b) * c = a * c + b * c
 proof
 @ #乗法の交換法則.1, #0.L, #0.L
 @ #加法と乗法の分配法則.1
@@ -35,27 +35,27 @@ qed
 
 theorem 三角比の相互関係
     let θ : Real
-1:     tan(θ) = cos(θ) / sin(θ)
+    tan(θ) = cos(θ) / sin(θ)
 
-2:     sin(θ)^2 + cos(θ)^2 = 1
+    sin(θ)^2 + cos(θ)^2 = 1
 
-3:     1 + tan(θ)^2 = 1 / cos(θ)^2
+    1 + tan(θ)^2 = 1 / cos(θ)^2
 
 theorem π/2 - θ の三角比
     let θ : Real
-1:     sin(π/2 - θ) = cos(θ)
+    sin(π/2 - θ) = cos(θ)
 
-2:     cos(π/2 - θ) = sin(θ)
+    cos(π/2 - θ) = sin(θ)
 
-3:     tan(π/2 - θ) = 1 / tan(θ)
+    tan(π/2 - θ) = 1 / tan(θ)
 
 theorem π - θ の三角比
     let θ : Real
-1:     sin(π - θ) = sin(θ)
+    sin(π - θ) = sin(θ)
 
-2:     cos(π - θ) = -cos(θ)
+    cos(π - θ) = -cos(θ)
 
-3:     tan(π - θ) = -tan(θ)
+    tan(π - θ) = -tan(θ)
 
 // △ABCで頂点A,B,Cの角度をα, β, γとし、頂点A,B,Cの対辺の長さをa, b, c とする。
 // △ABCの外接円の半径をRとする。
@@ -69,31 +69,31 @@ let β = ∠(C,A)
 let γ = ∠(A,B)
 let R : Real
 
-1:     a / sin(α) = b / sin(β) = c / sin(γ) = 2 * R
+    a / sin(α) = b / sin(β) = c / sin(γ) = 2 * R
 
 // 三角形の角度が既知なら1辺の長さから残りの2辺の長さを求められる。
-2:     a = b * sin(α) / sin(β) = c * sin(α) / sin(γ) = 2 * R * sin(α)
-3:     b = a * sin(β) / sin(α) = c * sin(β) / sin(γ) = 2 * R * sin(β)
-4:     c = a * sin(γ) / sin(α) = b * sin(γ) / sin(β) = 2 * R * sin(γ)
+    a = b * sin(α) / sin(β) = c * sin(α) / sin(γ) = 2 * R * sin(α)
+    b = a * sin(β) / sin(α) = c * sin(β) / sin(γ) = 2 * R * sin(β)
+    c = a * sin(γ) / sin(α) = b * sin(γ) / sin(β) = 2 * R * sin(γ)
 
 
 law 三角関数
     let a : Real
 
-1:     sin(-a) = - sin(a)
+    sin(-a) = - sin(a)
 
-2:     cos(-a) = cos(a)
+    cos(-a) = cos(a)
 
-3:     tan(-a) = -tan(a)
+    tan(-a) = -tan(a)
 
 theorem 加法定理
     let a, b : Real
 
-1:     sin(a + b) = sin(a) * cos(b) + sin(b) * cos(a)
+    sin(a + b) = sin(a) * cos(b) + sin(b) * cos(a)
 
-2:     cos(a + b) = cos(a) * cos(b) - sin(a) * sin(b)
+    cos(a + b) = cos(a) * cos(b) - sin(a) * sin(b)
 
-3:     tan(a + b) = (tan(a) + tan(b)) / (1 - tan(a) * tan(b))
+    tan(a + b) = (tan(a) + tan(b)) / (1 - tan(a) * tan(b))
 
 proof
 @ #三角比の相互関係.1, #0.L, #0.L
@@ -106,76 +106,76 @@ law 数列の極限
 let a, b : 数列
 let c : 実数
 
-1:      limit(a[n] + b[n], n,  ∞) = limit(a[n], n,  ∞) + limit(b[n], n,  ∞)
+    limit(a[n] + b[n], n,  ∞) = limit(a[n], n,  ∞) + limit(b[n], n,  ∞)
 
-2:     limit(c * a[n], n,  ∞) = c * limit(a[n], n,  ∞)
+    limit(c * a[n], n,  ∞) = c * limit(a[n], n,  ∞)
 
 law 関数の極限
 let f, g : 関数
 let c, a : 実数
 
-1:     limit(f(x) + g(x), x, a) = limit(f(x), x,  a) + limit(g(x), x,  a)
+    limit(f(x) + g(x), x, a) = limit(f(x), x,  a) + limit(g(x), x,  a)
 
-2:     limit(c * f(x), x, a) = c * limit(f(x), x,  a)
+    limit(c * f(x), x, a) = c * limit(f(x), x,  a)
 
-3:     limit(f(x) + g(x), x, ∞) = limit(f(x), x,  ∞) + limit(g(x), x,  ∞)
+    limit(f(x) + g(x), x, ∞) = limit(f(x), x,  ∞) + limit(g(x), x,  ∞)
 
-4:     limit(c * f(x), x, ∞) = c * limit(f(x), x,  ∞)
+    limit(c * f(x), x, ∞) = c * limit(f(x), x,  ∞)
 
 
 theorem 積分の微分
 let f : 関数
 let x, t: Real
 
-1:     diff(integrate(f, x, t, 0), x) = f(x)
+    diff(integrate(f, x, t, 0), x) = f(x)
 
 
 formula quadratic(a, b, c):
     let x, a, b, c : Real
 
-1:     x = (-b + sqrt(b^2 - 4*a*c)) / (2*a)
+    x = (-b + sqrt(b^2 - 4*a*c)) / (2*a)
 
 formula square(x:Real):
     let x : Real
 
-1:     x^2 = x * x
+    x^2 = x * x
 
 theorem pythagorean(a, b, c):
     let a, b, c : Real
 
-1:     a^2 + b^2 = c^2
+    a^2 + b^2 = c^2
 
 
 theorem 二乗
     let a : Complex
 
-1:     a ^ 2 = a * a
+    a ^ 2 = a * a
 
 theorem 多項式
     let a, b, c, d : Real
 
-1:     (a + b) * (c + d) = a * c + a * d + b * c + b * d
+    (a + b) * (c + d) = a * c + a * d + b * c + b * d
 
 theorem 三乗
     let a : Complex
 
-1:     a ^ 3 = a * a * a
+    a ^ 3 = a * a * a
 
 theorem 三角関数の法則
     let a : Complex
 
-1:     1 - cos(a) = sin(a) * tan(a) = sin(a)^2 / cos(a)
+    1 - cos(a) = sin(a) * tan(a) = sin(a)^2 / cos(a)
 
 theorem 微分
     let Δ, x : Real
 
-1:     limit(sin(Δ)/Δ, Δ,  0) = 1
+    limit(sin(Δ)/Δ, Δ,  0) = 1
 
-2:     limit((1 - cos(Δ))/Δ, Δ,  0) = 0
+    limit((1 - cos(Δ))/Δ, Δ,  0) = 0
 
-3:     diff(sin(x), x) = limit ((sin(x + δ) - sin(x)) / δ, δ, 0) = limit ((sin(x) * cos(δ) + sin(δ) * cos(x) - sin(x)) / δ, δ, 0)
+    diff(sin(x), x) = limit ((sin(x + δ) - sin(x)) / δ, δ, 0) = limit ((sin(x) * cos(δ) + sin(δ) * cos(x) - sin(x)) / δ, δ, 0)
 
-4:     limit ((sin(x) * (cos(δ) -1 ) + sin(δ) * cos(x)) / δ, δ, 0) = cos(x)
+    limit ((sin(x) * (cos(δ) -1 ) + sin(δ) * cos(x)) / δ, δ, 0) = cos(x)
 
-5:     diff(cos(x), x) = limit( (cos(x + Δ) - cos(x))/δ, δ, 0) = limit((cos(x)*cos(Δ) - sin(x)*sin(δ) - cos(x))/δ, δ, 0)
-6:      = limit(((cos(x) - 1)*cos(Δ) - sin(x)*sin(δ))/δ, δ, 0) = -sin(x)
+    diff(cos(x), x) = limit( (cos(x + Δ) - cos(x))/δ, δ, 0) = limit((cos(x)*cos(Δ) - sin(x)*sin(δ) - cos(x))/δ, δ, 0)
+    = limit(((cos(x) - 1)*cos(Δ) - sin(x)*sin(δ))/δ, δ, 0) = -sin(x)
