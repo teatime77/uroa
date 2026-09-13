@@ -33,5 +33,4 @@ vite.config.ts.timestamp-*
 # IDE settings
 .vscode/
 .cursor/
-public/algebra/formula/example.math
 public/algebra/output
