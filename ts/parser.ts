@@ -255,7 +255,7 @@ export abstract class Term {
     canceled : boolean = false;
     colorName  : string | undefined;
     hash : bigint = 0n;
-    hash2:string = "";
+    cachedString : string = "";
 
     constructor(){
         this.id = termId++;
@@ -297,6 +297,8 @@ export abstract class Term {
 
         dst.canceled = this.canceled;
         dst.colorName  = this.colorName;
+
+        dst.cachedString = this.cachedString;
     }
 
 
@@ -702,12 +704,20 @@ export abstract class Term {
         }
     }
 
+    allTerms() : Term[] {
+        return [this];
+    }
+
     getAllTerms(terms : Term[]){
         terms.push(this);
         if(this instanceof App){
             this.fnc.getAllTerms(terms);
             this.args.forEach(x => x.getAllTerms(terms));
         }
+    }
+
+    setString(){
+        this.allTerms().forEach(x => x.cachedString = `${x}`);
     }
 
     includesTerm(term : Term) : boolean {
@@ -1911,24 +1921,28 @@ export class Parser {
         }
     }
 
-    RootExpression(){
+    RootExpression() : Term {
+        let ret : Term;
+
         if(this.token.text == "let"){
             this.next();
 
             const app = this.VariableDeclaration();
             if(this.token.text as any != ","){
-                return app;
+                ret = app;
             }
+            else{
 
-            const and = new App(operator("&&"), [app]);
-            while(this.token.text as any == ","){
-                this.next();
+                const and = new App(operator("&&"), [app]);
+                while(this.token.text as any == ","){
+                    this.next();
 
-                const app2 = this.VariableDeclaration();
-                and.addArg(app2);
+                    const app2 = this.VariableDeclaration();
+                    and.addArg(app2);
+                }
+
+                ret = and;
             }
-
-            return and;
         }
         else if(isRelationToken(this.token.text)){
             let app = new App(operator(this.token.text), []);
@@ -1937,13 +1951,15 @@ export class Parser {
             let trm = this.ArithmeticExpression();
             app.addArg(trm);
 
-            return app;
+            ret = app;
         }
         else{
     
-            return this.LogicalExpression();
+            ret = this.LogicalExpression();
         }
     
+        ret.setString();
+        return ret;
     }
 }
 
