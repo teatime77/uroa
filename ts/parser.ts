@@ -879,7 +879,18 @@ export class ConstNum extends Term{
     constructor(numerator : number, denominator : number = 1, text : string = ""){
         super();
         this.value = new Rational(numerator, denominator);
-        this.text = text;
+        if(text != ""){
+
+            this.text = text;
+        }
+        else{
+            if(denominator == 1){
+                this.text = `${numerator}`;
+            }
+            else{
+                this.text = `${numerator} / ${denominator}`;
+            }
+        }
     }
 
     equal(trm : Term) : boolean {
