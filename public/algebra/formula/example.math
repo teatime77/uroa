@@ -1,9 +1,14 @@
 namespace algebra
 
 law 分数
-    let a, b : Real
-    param c : Real
-    a / b = (c * a) / (c * b)
+    let a, b, c : Real
+    param x : Real
+
+    a / b = (x * a) / (x * b)
+
+    (a / b) * c = (a * c) / b
+
+    c * (a / b) = (c * a) / b
 
 law 加法の交換法則
     let a, b : Real
@@ -40,7 +45,7 @@ qed
 
 theorem 三角比の相互関係
     let θ : Real
-    tan(θ) = cos(θ) / sin(θ)
+    tan(θ) = sin(θ) / cos(θ)
 
     sin(θ)^2 + cos(θ)^2 = 1
 
@@ -105,6 +110,11 @@ proof
 // @ #加法定理.2, cos(a + b)
 // @ #加法定理.1, sin(a + b)
 // @ #分数.1, 1 / (cos(a) * cos(b))
+© 1, tan(a + b)
+@ tan(a + b), #三角比の相互関係.1.1, 2, sin(a + b) / cos(a + b) 
+@ cos(a + b), #加法定理.2.1, 2, sin(a + b) / (cos(a) * cos(b) - sin(a) * sin(b)) 
+@ sin(a + b), #加法定理.1.1, 2, (sin(a) * cos(b) + sin(b) * cos(a)) / (cos(a) * cos(b) - sin(a) * sin(b)) 
+@ (sin(a) * cos(b) + sin(b) * cos(a)) / (cos(a) * cos(b) - sin(a) * sin(b)), #分数.1.1, [["x", 1 / (cos(a) * cos(b))]], 2, (1 / (cos(a) * cos(b)) * (sin(a) * cos(b) + sin(b) * cos(a))) / (1 / (cos(a) * cos(b)) * (cos(a) * cos(b) - sin(a) * sin(b))) 
 qed
 
 law 数列の極限
@@ -182,5 +192,13 @@ theorem 微分
 
     limit ((sin(x) * (cos(δ) -1 ) + sin(δ) * cos(x)) / δ, δ, 0) = cos(x)
 
-    diff(cos(x), x) = limit( (cos(x + Δ) - cos(x))/δ, δ, 0) = limit((cos(x)*cos(Δ) - sin(x)*sin(δ) - cos(x))/δ, δ, 0)
-    = limit(((cos(x) - 1)*cos(Δ) - sin(x)*sin(δ))/δ, δ, 0) = -sin(x)
+    diff(cos(x), x) = -sin(x)
+proof
+    // limit( (cos(x + Δ) - cos(x))/δ, δ, 0) = limit((cos(x)*cos(Δ) - sin(x)*sin(δ) - cos(x))/δ, δ, 0)
+    // = limit(((cos(x) - 1)*cos(Δ) - sin(x)*sin(δ))/δ, δ, 0) 
+qed
+
+theorem テスト
+    let t, x : Real
+
+    t = limit( integrate( sqrt(1 + t^2) / (1 + t/(1+t*2+x)), t, 0, 1 ) / root( (1 + x^2) / (1 + x), 3), x, 0)
