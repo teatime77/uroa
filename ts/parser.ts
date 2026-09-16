@@ -1,4 +1,4 @@
-import { TokenType, isLetter, isLetterOrAt, Token, lexicalAnalysis, TokenSubType } from "./lex.js";
+import { TokenType, isLetter, isLetterOrAt, Token, lexicalAnalysis, TokenSubType, isUnicodeLetter } from "./lex.js";
 import { assert, MyError, msg, range, $ } from "./parser_util.js";
 
 export let isProof : boolean = false;
@@ -266,6 +266,10 @@ export abstract class Term {
     abstract clone() : Term;
     abstract strid() : string;
 
+    clone2() : Term {
+        return this.clone();
+    }
+
     uncolor(){
         this.colorName = undefined;
     }
@@ -319,7 +323,7 @@ export abstract class Term {
         assert(path.getTerm(root) == this);
 
         // ルートをコピーする。
-        const root_cp = root.clone();
+        const root_cp = root.clone2();
 
         // コピーしたルートから同じパスを辿って項を得る。
         const this_cp = path.getTerm(root_cp);
@@ -716,6 +720,10 @@ export abstract class Term {
         }
     }
 
+    allIdRefs() : RefVar[] {
+        return this.allTerms().filter(x => x instanceof RefVar && isUnicodeLetter(x.name[0])) as RefVar[];
+    }
+
     setString(){
         this.allTerms().forEach(x => x.cachedString = `${x}`);
     }
@@ -858,6 +866,13 @@ export class RefVar extends Term{
         this.copy(ref);
 
         return ref;
+    }
+
+    clone2() : Term {
+        const term = this.clone();
+        term.refVar = this.refVar;
+
+        return term;
     }
 
     str2() : string {
@@ -1033,6 +1048,14 @@ export class App extends Term{
 
     clone() : App {
         const app = new App(this.fnc.clone(), this.args.map(x => x.clone()));
+
+        this.copy(app);
+
+        return app;
+    }
+
+    clone2() : App {
+        const app = new App(this.fnc.clone2(), this.args.map(x => x.clone2()));
 
         this.copy(app);
 
