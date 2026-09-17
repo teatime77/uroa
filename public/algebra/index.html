@@ -9,16 +9,6 @@
 
 <title>Free STEM for All</title>
 <link rel="icon" href="favicon.ico" type="image/x-icon">
-<!------------------------------------ katex start   -------------------------------------->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.css" integrity="sha384-Wsr4Nh3yrvMf2KCebJchRJoVo1gTU6kcP05uRSh5NV3sj9+a8IomuJoQzf3sMq4T" crossorigin="anonymous">
-
-    <!-- The loading of KaTeX is deferred to speed up page rendering -->
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/katex.min.js" integrity="sha384-+W9OcrYK2/bD7BmUAk+xeFAyKp0QjyRQUCxeU31dfyTt/FrPsUgaBTLLkVf33qWt" crossorigin="anonymous"></script>
-
-    <!-- To automatically render math in text elements, include the auto-render extension: -->
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.28/dist/contrib/auto-render.min.js" integrity="sha384-hCXGrW6PitJEwbkoStFjeJxv+fSOOQKOPbJxSfM6G5sWZjAyWhXiTIIAmQqnlLlh" crossorigin="anonymous"
-        onload="renderMathInElement(document.body);"></script>
-<!------------------------------------ katex end   -------------------------------------->
 
   <script src="https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
@@ -38,9 +28,10 @@ body {
 
     min-width: 800px;
 
-    padding: 50px;
+    margin: 10px;
+    padding: 0px;
 
-    font-size: 30px;
+    font-size: 20px;
 
     border:
         1px solid #cccccc;
@@ -210,6 +201,13 @@ body {
 
 .formula-submenu-arrow {
     font-size: 0.7em;
+}
+/* <<==================================================<<  */
+
+
+/* >>==================================================>> katex */
+.math-container .katex-display {
+    margin: 1em 0;
 }
 /* <<==================================================<<  */
 

@@ -115,6 +115,7 @@ proof
 @ cos(a + b), #加法定理.2.1, 2, sin(a + b) / (cos(a) * cos(b) - sin(a) * sin(b)) 
 @ sin(a + b), #加法定理.1.1, 2, (sin(a) * cos(b) + sin(b) * cos(a)) / (cos(a) * cos(b) - sin(a) * sin(b)) 
 @ (sin(a) * cos(b) + sin(b) * cos(a)) / (cos(a) * cos(b) - sin(a) * sin(b)), #分数.1.1, [["x", 1 / (cos(a) * cos(b))]], 2, (1 / (cos(a) * cos(b)) * (sin(a) * cos(b) + sin(b) * cos(a))) / (1 / (cos(a) * cos(b)) * (cos(a) * cos(b) - sin(a) * sin(b))) 
+@ (1 / (cos(a) * cos(b)) * (cos(a) * cos(b) - sin(a) * sin(b))), #加法と乗法の分配法則.1.1, 2, (1 / (cos(a) * cos(b)) * (sin(a) * cos(b) + sin(b) * cos(a))) / (1 / (cos(a) * cos(b)) * (cos(a) * cos(b)) + 1 / (cos(a) * cos(b)) * - (sin(a) * sin(b))) 
 qed
 
 law 数列の極限
