@@ -141,6 +141,10 @@ export class Rational{
     denominator : number = 1;
     parent : Term | null = null;
 
+    static one() : Rational {
+        return new Rational(1);
+    }
+
     constructor(numerator : number, denominator : number = 1){
         this.numerator = numerator;
         this.denominator = denominator;
@@ -157,6 +161,11 @@ export class Rational{
     set(numerator : number, denominator : number = 1){
         this.numerator   = numerator;
         this.denominator = denominator;
+    }
+
+    copyFrom(r:Rational){
+        this.numerator   = r.numerator;
+        this.denominator = r.denominator;
     }
 
     clone() : Rational {
@@ -891,6 +900,10 @@ export class ConstNum extends Term{
         return new ConstNum(0);
     }
 
+    static one() : ConstNum {
+        return new ConstNum(1);
+    }
+
     constructor(numerator : number, denominator : number = 1, text : string = ""){
         super();
         this.value = new Rational(numerator, denominator);
@@ -1344,6 +1357,10 @@ export class App extends Term{
     addArg(trm : Term){
         this.args.push(trm);
         trm.parent = this;
+    }
+
+    clearArgs(){
+        this.args = [];
     }
 
     addArgs(trms : Term[]){

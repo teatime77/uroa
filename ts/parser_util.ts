@@ -1,4 +1,4 @@
-declare const katex: any;
+import katex from "katex";
 
 const $dic = new Map<string, HTMLElement>();
 
