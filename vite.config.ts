@@ -1,8 +1,44 @@
 import { defineConfig, type Plugin } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'path';
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
+
+// Public HTML is copied without Vite transforms. Reuse the shared entry's
+// generated asset tags for Hosting while keeping the source usable in dev.
+function buildAlgebraPagePlugin(): Plugin {
+    return {
+        name: 'build-algebra-page',
+        apply: 'build',
+        enforce: 'post',
+        async generateBundle(_options, bundle) {
+            const entry = bundle['index.html'];
+            if (!entry || entry.type !== 'asset') {
+                this.error('Missing built index.html for the algebra page');
+            }
+            const entryHtml = String(entry.source);
+            const assetTags = entryHtml.match(
+                /<script\b[^>]*\btype="module"[^>]*><\/script>|<link\b[^>]*\brel="(?:stylesheet|modulepreload)"[^>]*>/g
+            );
+            if (!assetTags?.some(tag => tag.startsWith('<script'))) {
+                this.error('Missing built module script for the algebra page');
+            }
+            const tags = assetTags!.map(tag =>
+                tag.replace(/\b(src|href)="\.\//g, '$1="../')
+            ).join('\n  ');
+            const source = await readFile(resolve(__dirname, 'public/algebra/index.html'), 'utf8');
+            const sourceTag = '<script type="module" src="/diagram/ts/index.ts"></script>';
+            if (!source.includes(sourceTag)) {
+                this.error('Missing shared TypeScript entry in public/algebra/index.html');
+            }
+            this.emitFile({
+                type: 'asset',
+                fileName: 'algebra/index.html',
+                source: source.replace(sourceTag, tags),
+            });
+        },
+    };
+}
 
 function saveDataPlugin(): Plugin {
     return {
@@ -118,6 +154,7 @@ export default defineConfig({
             ]
         })
         ,
-        saveDataPlugin()
+        saveDataPlugin(),
+        buildAlgebraPagePlugin()
     ]
 });

@@ -34,3 +34,4 @@ vite.config.ts.timestamp-*
 .vscode/
 .cursor/
 public/algebra/output
+.firebaserc
