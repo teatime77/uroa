@@ -1,5 +1,10 @@
 namespace algebra
 
+law 整数倍
+    let a : Real
+
+    2 * a = a + a
+
 law 分数
     let a, b, c, d : Real
     param x : Real
@@ -126,6 +131,15 @@ proof
 @ sin(a) / cos(a), #三角比の相互関係.1.2, 1, (tan(a) + tan(b)) / (1 - tan(a) * sin(b) / cos(b)) 
 @ sin(b) / cos(b), #三角比の相互関係.1.2, 1, (tan(a) + tan(b)) / (1 - tan(a) * tan(b)) 
 qed
+
+theorem 2倍角の公式
+    let a : Real
+
+    sin(2 * a) = 2 * sin(a) * cos(a)
+
+    cos(2 * a) = cos(a) ^ 2 - sin(a) ^ 2
+
+    tan(2 * a) = (2 * tan(a)) / (1 - tan(a) ^ 2)
 
 law 数列の極限
 let a, b : 数列
