@@ -1,0 +1,14 @@
+install.bat
+debug.log
+
+ts/@types
+
+public/katex
+public/lib/i18n
+public/lib/plane
+public/lib/layout
+public/lib/parser
+public/lib/tsconfig.tsbuildinfo
+dist
+tsconfig.tsbuildinfo
+lib
