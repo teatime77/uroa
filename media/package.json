@@ -1,0 +1,6 @@
+{
+  "name": "@stem/media",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
