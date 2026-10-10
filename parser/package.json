@@ -1,0 +1,6 @@
+{
+  "name": "@stem/parser",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

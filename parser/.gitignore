@@ -1,0 +1,12 @@
+.vscode/settings.json
+install.bat
+
+ts/@types
+
+public/lib/parser/parser.d.ts
+public/lib/parser/parser.js
+public/lib/i18n
+public/lib/tsconfig.tsbuildinfo
+dist
+tsconfig.tsbuildinfo
+lib
