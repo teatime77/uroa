@@ -1,0 +1,15 @@
+tmp
+public/lib/algebra
+public/lib/i18n
+public/lib/parser
+public/lib/layout
+public/lib/plane
+public/lib/webgpu
+public/lib/diagram
+ts/@types
+copy.sh
+public/static/lib/diagram/img/camera.png
+public/lib/tsconfig.tsbuildinfo
+dist
+tsconfig.tsbuildinfo
+lib

@@ -1,0 +1,6 @@
+{
+  "name": "@stem/diagram",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
