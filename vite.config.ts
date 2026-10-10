@@ -6,15 +6,23 @@ import { basename, resolve } from 'node:path'
 
 // Public HTML is copied without Vite transforms. Reuse the shared entry's
 // generated asset tags for Hosting while keeping the source usable in dev.
-function buildAlgebraPagePlugin(): Plugin {
+function buildAppPagesPlugin(): Plugin {
+    const pages = [
+        ['algebra', 'public/algebra/index.html'],
+        ['game', 'public/game/index.html'],
+        ['diagram', 'public/diagram/index.html'],
+        ['movie', 'public/movie/index.html'],
+        ['webgpu', 'webgpu/public/index.html'],
+    ] as const;
+
     return {
-        name: 'build-algebra-page',
+        name: 'build-app-pages',
         apply: 'build',
         enforce: 'post',
         async generateBundle(_options, bundle) {
             const entry = bundle['index.html'];
             if (!entry || entry.type !== 'asset') {
-                this.error('Missing built index.html for the algebra page');
+                this.error('Missing built index.html for the app pages');
             }
             const entryHtml = String(entry.source);
             const assetTags = entryHtml.match(
@@ -26,16 +34,18 @@ function buildAlgebraPagePlugin(): Plugin {
             const tags = assetTags!.map(tag =>
                 tag.replace(/\b(src|href)="\.\//g, '$1="../')
             ).join('\n  ');
-            const source = await readFile(resolve(__dirname, 'public/algebra/index.html'), 'utf8');
             const sourceTag = '<script type="module" src="/diagram/ts/index.ts"></script>';
-            if (!source.includes(sourceTag)) {
-                this.error('Missing shared TypeScript entry in public/algebra/index.html');
+            for (const [app, sourcePath] of pages) {
+                const source = await readFile(resolve(__dirname, sourcePath), 'utf8');
+                if (!source.includes(sourceTag)) {
+                    this.error(`Missing shared TypeScript entry in ${sourcePath}`);
+                }
+                this.emitFile({
+                    type: 'asset',
+                    fileName: `${app}/index.html`,
+                    source: source.replace(sourceTag, tags),
+                });
             }
-            this.emitFile({
-                type: 'asset',
-                fileName: 'algebra/index.html',
-                source: source.replace(sourceTag, tags),
-            });
         },
     };
 }
@@ -106,7 +116,7 @@ function saveDataPlugin(): Plugin {
 }
 
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
     root: '.',
     base: './', // baseConfigから引き継ぎ
     build: {
@@ -147,7 +157,10 @@ export default defineConfig({
             targets: [
                 {
                     // 絶対パスではなく、スラッシュ(/)区切りの相対パス文字列を指定する
-                    src: 'webgpu/public/**/*',
+                    // The build plugin emits this HTML. Keep serving the source in dev.
+                    src: command === 'build'
+                        ? ['webgpu/public/**/*', '!webgpu/public/index.html']
+                        : 'webgpu/public/**/*',
                     dest: 'webgpu',
                     rename: { stripBase: 2 }
                 }
@@ -155,6 +168,6 @@ export default defineConfig({
         })
         ,
         saveDataPlugin(),
-        buildAlgebraPagePlugin()
+        buildAppPagesPlugin()
     ]
-});
+}));

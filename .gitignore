@@ -35,3 +35,5 @@ vite.config.ts.timestamp-*
 .cursor/
 public/algebra/output
 .firebaserc
+docs/validation/2026-10-10/
+docs/validation/2026-10-10-fixes/
