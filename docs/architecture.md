@@ -6,7 +6,7 @@
 
 uroaは数学・科学教材を作成／再生するWebアプリ群。TypeScriptを中心に、KaTeXによる数式表示、Canvasによる図形・ゲーム描画、ブラウザー音声合成、Firebaseによる保存、WebGPUによる計算・描画を組み合わせる。
 
-[.gitmodules](../.gitmodules)には12個のGitサブモジュールが定義される。algebraは2026-10-11に通常フォルダーへ移行し、旧履歴も統合した（[移行記録](algebra-monorepo.md)）。[package.json](../package.json)のnpm workspaces登録は9個で、サブモジュールと同じ一覧ではない。[tsconfig.sys.json](../tsconfig.sys.json)と [tsc-all.bat](../tsc-all.bat)は13個のTypeScriptプロジェクトを参照する。
+2026-10-11に旧13サブモジュールをすべて通常フォルダーへ移行し、旧履歴もuroaへ統合した（[移行記録](monorepo-migration.md)）。`.gitmodules`は廃止した。[package.json](../package.json)のnpm workspaces登録は従来どおり9個。[tsconfig.sys.json](../tsconfig.sys.json)と [tsc-all.bat](../tsc-all.bat)は13個のTypeScriptプロジェクトを参照する。
 
 実装の中心は各モジュールの `ts/`。ルートの `public/` には各画面のHTML、翻訳辞書、教材・ゲーム・ブロック図のデータがある。WebGPU実行資産は `webgpu/public/` にあり、ルートVite設定でコピーされる。
 
@@ -162,7 +162,9 @@ CLIが生成するのはJSONとDSLであり、WGSLの計算コードは別ソー
 
 Vite開発サーバーの `POST /api/save` は数式関連のテキスト／JSONを `public/algebra/output/` に保存する。この開発用ミドルウェアが、静的HostingやFlask配信にも存在するとは扱わない。
 
-以下は2026-10-09の静的調査で整理したコマンド例。後日の実行結果はcurrent-state.mdへ記録する。依存関係、plotの未実装、外部資産などを含む一括ビルドの成功は未確認。
+ルートの `npm run install:all` は `npm install` を実行し、共通依存と登録済み9 workspacesを準備する。残る4プロジェクト（lesson、media、movie、plot）は独自のnpm依存を宣言していない。`npm run build:all` は `tsc -b tsconfig.sys.json` で13プロジェクトを処理する。各プロジェクトの旧buildスクリプトも `tsc -b` だけだったため、サブモジュール単位の重複実行を外した。
+
+以下は現行のコマンド例。2026-10-11の移行時にTypeScript全体の強制ビルドとViteビルドを確認した（[移行記録](monorepo-migration.md)）。依存の新規インストール、Python経由の一括ビルドと配信は今回確認していない。
 
 ```powershell
 # 作業ディレクトリ: uroa

@@ -14,8 +14,8 @@
     "diagram"
   ],
   "scripts": {
-    "build:all": "tsc -b tsconfig.sys.json && git submodule foreach \"npm run build\"",
-    "install:all": "git submodule foreach \"npm install\""
+    "build:all": "tsc -b tsconfig.sys.json",
+    "install:all": "npm install"
   },
   "devDependencies": {
     "@types/gl-matrix": "^2.4.5",
