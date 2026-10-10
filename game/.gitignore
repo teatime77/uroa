@@ -1,0 +1,9 @@
+public/lib
+public/img
+ts/@types
+tmp
+vite.config.d.ts.map
+vite.config.js
+dist
+tsconfig.tsbuildinfo
+lib

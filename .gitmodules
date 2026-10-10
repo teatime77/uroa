@@ -1,6 +1,3 @@
-[submodule "game"]
-	path = game
-	url = https://github.com/teatime77/game.git
 [submodule "i18n"]
 	path = i18n
 	url = https://github.com/teatime77/i18n.git
