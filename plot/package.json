@@ -1,0 +1,6 @@
+{
+  "name": "@stem/plot",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

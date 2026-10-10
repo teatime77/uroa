@@ -1,6 +1,3 @@
-[submodule "plot"]
-	path = plot
-	url = https://github.com/teatime77/plot.git
 [submodule "webgpu"]
 	path = webgpu
 	url = https://github.com/teatime77/webgpu.git
