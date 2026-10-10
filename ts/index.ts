@@ -71,6 +71,7 @@ export async function initGame(){
     worldCanvas.setAllUIs();
     
     worldCanvas.isReady = true;
+    msg("game ready");
 }
 
 export async function loadWorld(target : string){

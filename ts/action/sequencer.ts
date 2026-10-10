@@ -48,6 +48,9 @@ export class ParallelAction extends CompositeAction {
         }
 
         this.finished = true;
+        if(this == Sequencer.rootParallelAction){
+            msg("root-parallel-action end")
+        }
         return "para end";
     }
 }
