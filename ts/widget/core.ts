@@ -3,6 +3,7 @@ import type { AbstractUIAttr } from "@i18n";
 import type { ContainerUI } from "./container";
 import type { TreeNode } from "./tree";
 import type { Canvas } from "./canvas";
+import type { Button, Label } from "./text";
 
 const objMap : Map<string, UI> = new Map<string, UI>();
 
@@ -537,6 +538,9 @@ export function registerUI(name: string, creator: UICreator) {
     UIRegistry[name] = creator;
 }
 
+export function makeUIFromJSON(obj: TextUIAttr & { className: "Button" }): Button;
+export function makeUIFromJSON(obj: LabelAttr & { className: "Label" }): Label;
+export function makeUIFromJSON(obj: any): UI;
 export function makeUIFromJSON(obj: any) : UI {
     if(obj instanceof UI){
         return obj;
