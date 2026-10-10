@@ -269,7 +269,7 @@ export async function initWebGPU(){
     testPackages = JSON.parse(test_text) as Package[];
 
     makeButtons(params);
-    console.log('初期化完了');
+    msg("webgpu ready");
 }
 
 let divButtons = $div("span-buttons");
