@@ -1,0 +1,7 @@
+install.bat
+public/lib/i18n/i18n.js
+public/lib/i18n/i18n.d.ts
+public/lib/tsconfig.tsbuildinfo
+dist
+tsconfig.tsbuildinfo
+lib

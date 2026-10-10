@@ -1,0 +1,6 @@
+{
+  "name": "@stem/i18n",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

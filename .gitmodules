@@ -1,6 +1,3 @@
-[submodule "i18n"]
-	path = i18n
-	url = https://github.com/teatime77/i18n.git
 [submodule "layout"]
 	path = layout
 	url = https://github.com/teatime77/layout.git
