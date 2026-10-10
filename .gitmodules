@@ -1,6 +1,3 @@
-[submodule "lesson"]
-	path = lesson
-	url = https://github.com/teatime77/lesson.git
 [submodule "media"]
 	path = media
 	url = https://github.com/teatime77/media.git

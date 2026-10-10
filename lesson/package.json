@@ -1,0 +1,6 @@
+{
+  "name": "@stem/lesson",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
