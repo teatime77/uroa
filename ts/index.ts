@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await initGame();
         await initWebGPU();
         await initMovie();
+        msg("diagram ready")
     }
     else if(pathName.startsWith("/movie")){
         await initMovie();        
