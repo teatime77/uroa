@@ -13,7 +13,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - ブロック編集・統合入口: `diagram/ts/`。`index.ts`がURLに応じてアプリを初期化する。
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
-- 13フォルダーはGitサブモジュール。変更時は親リポジトリと対象サブモジュールの状態を確認する。
+- algebraはuroaの通常フォルダーとして管理する。残る12フォルダーはGitサブモジュール。変更時は親リポジトリと対象サブモジュールの状態を確認する。algebraの履歴統合・検証結果は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
 - `dist/`、各モジュールの `lib/`、`node_modules/` は主な編集対象のソースではない。`tmp/zip/`には過去の展開コピーがある。
 
 ## 現在の境界

@@ -6,7 +6,7 @@
 
 uroaは数学・科学教材を作成／再生するWebアプリ群。TypeScriptを中心に、KaTeXによる数式表示、Canvasによる図形・ゲーム描画、ブラウザー音声合成、Firebaseによる保存、WebGPUによる計算・描画を組み合わせる。
 
-[.gitmodules](../.gitmodules)には13個のGitサブモジュールが定義される。一方、[package.json](../package.json)のnpm workspaces登録は9個で、同じ一覧ではない。[tsconfig.sys.json](../tsconfig.sys.json)と [tsc-all.bat](../tsc-all.bat)は13個のTypeScriptプロジェクトを参照する。
+[.gitmodules](../.gitmodules)には12個のGitサブモジュールが定義される。algebraは2026-10-11に通常フォルダーへ移行し、旧履歴も統合した（[移行記録](algebra-monorepo.md)）。[package.json](../package.json)のnpm workspaces登録は9個で、サブモジュールと同じ一覧ではない。[tsconfig.sys.json](../tsconfig.sys.json)と [tsc-all.bat](../tsc-all.bat)は13個のTypeScriptプロジェクトを参照する。
 
 実装の中心は各モジュールの `ts/`。ルートの `public/` には各画面のHTML、翻訳辞書、教材・ゲーム・ブロック図のデータがある。WebGPU実行資産は `webgpu/public/` にあり、ルートVite設定でコピーされる。
 

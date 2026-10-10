@@ -1,6 +1,3 @@
-[submodule "algebra"]
-	path = algebra
-	url = https://github.com/teatime77/algebra.git
 [submodule "diagram"]
 	path = diagram
 	url = https://github.com/teatime77/diagram.git

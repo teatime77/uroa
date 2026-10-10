@@ -100,6 +100,12 @@ WebGPUでは [GraphManager.step()](../webgpu/ts/control.ts) とrequestReadback()
 
 完了条件は、通常のcloneから必要な手順で全体を準備でき、P1の確認が再現し、サブモジュール操作に依存しないこと。公開・pushや旧リポジトリの廃止は、この移行検証とは別の作業として扱う。
 
+### 2026-10-11: algebraの先行移行
+
+algebraだけを通常フォルダーへ移行し、旧HEADとその祖先59コミットを履歴へ接続した。検証用コピーで手順を確認した後、実際の移行直後に54ファイルのSHA-256一致と、旧追跡ファイル17件のGitツリー一致を確認した。型確認とViteビルドも成功した。詳細・バックアップ・実行コマンドは [algebra-monorepo.md](algebra-monorepo.md) に記録する。
+
+残る12サブモジュールの移行とビルド整理は未実施。既存の大規模Playwrightテストは変更せず、今回は再実行していない。diagramとFirebaseの機能修正は保留する。
+
 ## P3: 共通入口と起動・終了の整理
 
 1. app/ts/main.tsなどに共通入口を置き、[diagram/ts/index.ts](../diagram/ts/index.ts)のURLによる振り分けを移す。最初は現行URLとHTMLを維持する。

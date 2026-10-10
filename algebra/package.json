@@ -1,0 +1,6 @@
+{
+  "name": "@stem/algebra",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
