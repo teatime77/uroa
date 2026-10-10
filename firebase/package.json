@@ -1,0 +1,10 @@
+{
+  "name": "@stem/firebase",
+  "scripts": {
+    "build": "tsc -b"
+  }
+  ,
+  "dependencies": {
+    "firebase": "^10.14.1"
+  }
+}
