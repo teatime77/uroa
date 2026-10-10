@@ -1,6 +1,3 @@
-[submodule "plane"]
-	path = plane
-	url = https://github.com/teatime77/plane.git
 [submodule "plot"]
 	path = plot
 	url = https://github.com/teatime77/plot.git
