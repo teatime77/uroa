@@ -1,6 +1,8 @@
+/// <reference types="vite/client" />
+
 import { parseMath, setIsProof } from "@parser";
 import { initTexTest } from "./tex.js";
-import { testProof } from "./math_file_parser.js";
+import { testProof, saveProofOutput } from "./math_file_parser.js";
 import { msg, Speech } from "@i18n";
 import { simplify } from "./simplifier.js";
 import { initSysVars } from "./formula.js";
@@ -15,6 +17,16 @@ export async function initAlgebra(){
     initSysVars();
     initTexTest();
     await testProof();
+
+    // Exporting the parsed sample is a development convenience, not a startup requirement.
+    if(import.meta.env.DEV){
+        try {
+            await saveProofOutput();
+        }
+        catch(error){
+            console.warn("Could not save development proof output:", error);
+        }
+    }
 
     const pre = document.getElementById("eqs") as HTMLPreElement;
     const text = pre.innerText.split("\n");

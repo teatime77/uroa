@@ -3,7 +3,6 @@ import { App, ConstNum, Rational, Term } from "@parser";
 import { FormulaMenuEntry, ProofStep } from "./algebra_util";
 import { makeProofStepDiv } from "./ProofStep";
 import { toTex } from "./tex";
-import { assembleSupSub } from "katex/src/functions/utils/assembleSupSub.js";
 
 
 function allMuls(term : Term) : App[] {

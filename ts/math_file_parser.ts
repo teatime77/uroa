@@ -287,7 +287,9 @@ export async function testProof(){
     const text = await fetchText("./formula/example.math");
     parseMathFile(text);
 
-    await saveData("output.math", mathLib.toString());
-
     return true;
+}
+
+export async function saveProofOutput(){
+    await saveData("output.math", mathLib.toString());
 }
