@@ -18,7 +18,9 @@ import { initHashTerm, setHashTerm, simplify } from "@algebra";
 import { AngleEqualityReason, ExprTransformReason, IsoscelesTriangleReason, LengthEqualityReason, LineKind, ParallelogramReason, ParallelReason, PropositionReason, RhombusReason, ShapeEquationReason, ShapeMode, ShapeType } from "./enums";
 import { defaultLineWidth, dependColor, GlobalState, enumToImgName, AppServices, IShapesSelector, setLinesSelector_2, supplementaryAngles, MySet, setToolList } from "./inference";
 import { MathEntity, TextBlock, TermRect } from "./json";
-import { addShapeSetRelations, Arc__getAngles, Builder__cancelTool, calcLineLineIntersection, getCommonLineOfPoints, getCommonPointOfLines, isPerpendicular, makeShapeButton, makeShapeEquation, MinMaxXY, showPrompt, sortShape, toClockwisePoints } from "./all_functions";
+import { Arc__getAngles, Builder__cancelTool, calcLineLineIntersection, makeShapeButton, makeShapeEquation, MinMaxXY, showPrompt, sortShape } from "./all_functions";
+import { addShapeSetRelations, getCommonLineOfPoints, getCommonPointOfLines, isPerpendicular } from "./relations";
+import { toClockwisePoints } from "./geometry_order";
 import { calcFootFrom2Pos } from "./geometry_math";
 
 import { Shape, AbstractLine, CircleArc, Point, Polygon, Triangle, Quadrilateral, Circle, CircleByPoint, CircleByRadius, Ellipse, ArcByPoint, Arc, ArcByLengthSymbol, ArcByCircle, LineByPoints, ParallelLine } from "./shape";

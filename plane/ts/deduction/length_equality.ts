@@ -3,7 +3,8 @@ import { msg, Reading, TT, MyError } from "@i18n";
 import { LengthEqualityReason } from "../enums";
 import { AppServices, ilinesSelector_2 } from "../inference";
 import { MathEntity, registerEntity } from "../json";
-import { addEqualLengths, LengthSymbol__setEqualLengthKinds, reasonMsg } from "../all_functions";
+import { LengthSymbol__setEqualLengthKinds, reasonMsg } from "../all_functions";
+import { addEqualLengths } from "../relations";
 
 import type { AbstractLine, Circle } from "../shape";
 import type { LengthSymbol } from "../dimension_symbol";

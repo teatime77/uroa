@@ -159,10 +159,20 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 - `plane/ts/geometry_math.ts` に `calcFootFrom2Pos`、`distanceFromLine`、`calcCirclePointTangent` の3関数を移した。計算式・引数・戻り値は変更していない。
 - 新しいモジュールの依存は `Vec2` の型だけ。`all_functions.ts`、`index.ts`、図形状態・UIを参照しない。
 - `geometry.ts`、`shape.ts`、`tool.ts` は新しいモジュールから直接importする。`all_functions.ts` の互換用再exportと、垂線計算からの利用は維持する。
-- `calcLineLineIntersection` は図形の `calc()` を呼ぶため、図形の更新と座標計算の境界を調べる後続作業として残した。関係管理、保存復元、再生、画面イベント、AppServicesの整理は未実施。
+- `calcLineLineIntersection` は図形の `calc()` を呼ぶため、図形の更新と座標計算の境界を調べる後続作業として残した。関係管理は次項で分離し、保存復元、再生、画面イベント、AppServicesの整理は引き続き後続作業とする。
 - 機能索引と構成文書に役割・参照先を記録した。既存の `tests/test.py` は変更しない。
 
 型確認・公開ビルド・成果物チェックは成功。変更前後の3関数と利用側の処理を比較し、計算式・その他の処理が保持され、生成した計算モジュールに実行時importがないことを確認した。ブラウザー確認の条件・結果は [current-state.md](current-state.md) に記録する。今回の範囲は独立した座標計算の先行分離で、P4の残りは上記の後続作業として進める。
+
+### 2026-10-11: 関係管理の分離
+
+- `plane/ts/relations.ts` に51関数を移した。点・直線・円の関係、平行・垂直、等長・等角、合同・相似の登録・検索と、初期化・再計算・関係ログの取り消し・再適用を担当する。
+- 点の並び順判定2関数は `geometry_order.ts`、従来の画面・コンソールへのログ出力は `logging.ts` に分離した。
+- 処理本体、関係データ、関係ログ、AppServicesの接続、公開APIを維持する。新しいモジュールから `all_functions.ts` や公開入口、図形クラスへの実行時importを追加しない。
+- 利用側を直接importへ変更し、`all_functions.ts` からの互換用再exportも維持した。同ファイルは約2,380行から約1,540行になった。
+- 保存復元、再生、画面イベント、プロパティ表示・作図・命題生成の補助処理、AppServicesの役割整理は後続の作業として残る。
+
+型確認・公開ビルド・成果物チェックは成功。構文木で移した処理と残した処理の一致、公開APIの維持、plane内の実行時依存を確認した。開発環境では登録・検索・初期化・再計算、18件の関係ログの取り消し・再適用、51関数の互換exportを追加確認した。5アプリの回帰確認は [current-state.md](current-state.md) に条件・結果を記録する。
 
 ## P5: robotの全機能の取り込み
 

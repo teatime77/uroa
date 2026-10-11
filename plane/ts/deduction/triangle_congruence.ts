@@ -1,7 +1,7 @@
 import { assert, Reading, sleep, TT } from "@i18n";
 
 import { MathEntity, registerEntity } from "../json";
-import { addCongruentTriangles } from "../all_functions";
+import { addCongruentTriangles } from "../relations";
 
 import { Triangle } from "../shape";
 import { Statement } from "../statement";

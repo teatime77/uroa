@@ -6,7 +6,8 @@ import { App, parseMath } from "@parser";
 
 import { AppServices } from "./inference";
 import { MathEntity, TextBlock, registerEntity } from "./json"
-import { addEqualAngles, addEqualLengths, addParallelLines, addPerpendicularPairs, Angle__setEqualAngleMarks, lastShape, LengthSymbol__setEqualLengthKinds, sortShape } from "./all_functions";
+import { Angle__setEqualAngleMarks, lastShape, LengthSymbol__setEqualLengthKinds, sortShape } from "./all_functions";
+import { addEqualAngles, addEqualLengths, addParallelLines, addPerpendicularPairs } from "./relations";
 
 import { Shape, Point, AbstractLine, LineByPoints } from "./shape";
 import { LengthSymbol, Angle } from "./dimension_symbol";

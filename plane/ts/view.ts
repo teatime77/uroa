@@ -4,7 +4,8 @@ import { bgColor, fgColor } from "@layout";
 import { LineKind, ShapeMode } from "./enums";
 import { Angle__radius1Pix, classCounters, defaultLineWidth, equalLengths, GlobalState, idMap, Point__radiusPix, RelationLog, supplementaryAngles } from "./inference";
 import { Widget, MathEntity, TextBlock } from "./json";
-import { addToShapeHistory, clearShapeList, getModeColor, getParallelLines, getPerpendicularLines, getPointsFromLine, initRelations, linear, modeLineWidth, modePointRadius, popShapeList, pushShapeList, recalc, removeDiv } from "./all_functions";
+import { addToShapeHistory, clearShapeList, getModeColor, linear, modeLineWidth, modePointRadius, popShapeList, pushShapeList, recalc, removeDiv } from "./all_functions";
+import { getParallelLines, getPerpendicularLines, getPointsFromLine, initRelations } from "./relations";
 
 import { Shape, Point, AbstractLine, CircleArcEllipse } from "./shape";
 import { Angle, LengthSymbol, DimensionLine } from "./dimension_symbol";

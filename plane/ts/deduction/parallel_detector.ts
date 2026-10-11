@@ -1,7 +1,7 @@
 import { Reading, TT, assert } from "@i18n";
 
 import { registerEntity } from "../json";
-import { addParallelLines } from "../all_functions";
+import { addParallelLines } from "../relations";
 
 import { AbstractLine } from "../shape";
 import { Statement } from "../statement";

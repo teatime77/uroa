@@ -6,7 +6,8 @@ import { fgColor } from "@layout"
 import { LineKind, ShapeMode } from "./enums";
 import { pointOnLines, pointOnCircleArcs, congruentTriangles, similarTriangles, defaultLineWidth, OverLineWidth, GlobalState, AppServices } from "./inference";
 import { MathEntity, fromXPixScale, fromYPixScale, registerEntity, TextBlock } from "./json";
-import { addCenterOfCircleArcs, addEqualCircleArcs, addParallelLines, addPointOnCircleArcs, addPointOnLines, Arc__getAngles, calcFootOfPerpendicular, getCircleArcsByPoint, getCommonLineOfPoints, getCommonPointOfLines, getLinesByPoint, getModeColor, isBetweenAngles, isParallelogramPoints, modePointRadius, Point__zero } from "./all_functions";
+import { Arc__getAngles, calcFootOfPerpendicular, getModeColor, isBetweenAngles, modePointRadius, Point__zero } from "./all_functions";
+import { addCenterOfCircleArcs, addEqualCircleArcs, addParallelLines, addPointOnCircleArcs, addPointOnLines, getCircleArcsByPoint, getCommonLineOfPoints, getCommonPointOfLines, getLinesByPoint, isParallelogramPoints } from "./relations";
 import { distanceFromLine } from "./geometry_math";
 
 import type { Constraint } from "./constraint";

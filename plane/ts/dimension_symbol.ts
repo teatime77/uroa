@@ -4,7 +4,8 @@ import { assert, MyError, range, Reading, TT, permutation, areSetsEqual, Vec2 } 
 
 import { rightAngles, angleMap, equalLengths, pointsToLengthSymbol, centerOfCircleArcs, Angle__outerAngleScale, Angle__numMarks, GlobalState } from "./inference";
 import { MathEntity, fromXPixScale, fromYPixScale, registerEntity, TextBlock } from "./json";
-import { addEqualLengths, angleKey, drawLine, getCommonLineOfPoints, getCommonPointOfLines, inRange, Mylist, pairKey, toDegree } from "./all_functions";
+import { drawLine, inRange, pairKey, toDegree } from "./all_functions";
+import { addEqualLengths, angleKey, getCommonLineOfPoints, getCommonPointOfLines, Mylist } from "./relations";
 
 import { Shape, AbstractLine, Point, CircleByRadius, ArcByRadius } from "./shape";
 import { Midpoint } from "./geometry";

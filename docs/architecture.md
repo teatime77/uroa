@@ -73,9 +73,13 @@ parserの `parseMath()` は `Term`、`App`、`RefVar`、`ConstNum`、`Rational`�
 
 algebraでは [formula.ts](../algebra/ts/formula.ts)、[proof.ts](../algebra/ts/proof.ts)が定理・証明モデル、[math_file_parser.ts](../algebra/ts/math_file_parser.ts)が独自 `.math` ファイル、[manipulation.ts](../algebra/ts/manipulation.ts)が書き換え・簡約の操作を担当する。[tex.ts](../algebra/ts/tex.ts)は数式の部分選択と木構造・表示の対応を管理する。[galois.ts](../algebra/ts/galois.ts)には互除法や置換・群に関する実験コードがある。
 
-planeでは [geometry_math.ts](../plane/ts/geometry_math.ts)が座標だけを使う垂線の足・直線からの距離・円への接点の計算、[geometry.ts](../plane/ts/geometry.ts)が図形クラス、[matrix.ts](../plane/ts/matrix.ts)が行列計算を担当する。[factories.ts](../plane/ts/factories.ts)がツール・命題などの生成、[inference.ts](../plane/ts/inference.ts)と [all_functions.ts](../plane/ts/all_functions.ts)が状態・関係・サービス接続を担う。[operation.ts](../plane/ts/operation.ts)、[play.ts](../plane/ts/play.ts)、[json.ts](../plane/ts/json.ts)は操作記録・再生・保存復元、[plane_ui.ts](../plane/ts/plane_ui.ts)と [view.ts](../plane/ts/view.ts)は画面を担当する。
+planeでは [geometry_math.ts](../plane/ts/geometry_math.ts)が座標だけを使う垂線の足・直線からの距離・円への接点の計算、[geometry_order.ts](../plane/ts/geometry_order.ts)が点の並び順、[geometry.ts](../plane/ts/geometry.ts)が図形クラス、[matrix.ts](../plane/ts/matrix.ts)が行列計算を担当する。[factories.ts](../plane/ts/factories.ts)がツール・命題などの生成、[inference.ts](../plane/ts/inference.ts)が共有状態とサービス定義、[relations.ts](../plane/ts/relations.ts)が関係の登録・検索・初期化・再計算と関係ログの取り消し・再適用を担う。[all_functions.ts](../plane/ts/all_functions.ts)には互換用再exportと、今後分離する保存復元・再生・画面イベントなどが残る。[operation.ts](../plane/ts/operation.ts)、[play.ts](../plane/ts/play.ts)、[json.ts](../plane/ts/json.ts)は操作記録・再生・保存復元、[plane_ui.ts](../plane/ts/plane_ui.ts)と [view.ts](../plane/ts/view.ts)は画面を担当する。
 
 2026-10-11に座標計算3関数を `all_functions.ts` から `geometry_math.ts` へ分離した。新しいモジュールは `Vec2` の型だけをimportし、実行時のimport、図形状態、登録処理、UIへの依存を持たない。`geometry.ts`、`shape.ts`、`tool.ts` の利用側は直接importする。既存の参照を維持するため `all_functions.ts` からも同じ関数を再exportする。`calcFootOfPerpendicular` は図形の位置・方向を取り出す処理、`calcLineLineIntersection` は `line.calc()` による図形の再計算を伴う処理のため、今回は同ファイルに残した。計算式・引数・戻り値と、従来の退化入力の扱いは変更していない。
+
+続いて同日に関係管理の51関数を `relations.ts` へ分離した。平行・垂直と等しい円の内部コレクションも同じモジュールへ移し、`inference.ts` の共有コレクション・GlobalState・関係ログ・AppServicesの接続方法は維持した。図形・View・命題・数式の型は `import type` で参照し、実行時に `all_functions.ts`、`index.ts`、図形クラスをimportしない。利用側は機能別モジュールから直接importし、公開入口と `all_functions.ts` の既存exportも維持する。
+
+点の並び順判定2関数は `geometry_order.ts`、planeの `msg` は [logging.ts](../plane/ts/logging.ts) に移した。`msg` は従来どおり `Log.log()` を使い、画面のログとコンソールの出力を維持する。登録・検索・取り消し・再適用の処理本体は変更していない。確認条件と結果は [current-state.md](current-state.md) に記録する。
 
 これらに証明や幾何の関係管理コードはあるが、任意の定理・問題を自動的に解く完全な証明器という保証は今回確認していない。
 

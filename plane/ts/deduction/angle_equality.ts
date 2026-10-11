@@ -3,7 +3,8 @@ import { MyError, msg, Reading, TT } from "@i18n";
 import { AngleEqualityReason } from "../enums";
 import { AppServices } from "../inference";
 import { MathEntity, registerEntity } from "../json";
-import { addEqualAngles, Angle__setEqualAngleMarks, reasonMsg } from "../all_functions";
+import { Angle__setEqualAngleMarks, reasonMsg } from "../all_functions";
+import { addEqualAngles } from "../relations";
 
 import type { Quadrilateral } from "../shape";
 import type { Angle } from "../dimension_symbol";

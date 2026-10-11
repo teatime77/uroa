@@ -1,7 +1,7 @@
 import { Reading, TT } from "@i18n";
 
 import { MathEntity, registerEntity } from "../json";
-import { addSimilarTriangles } from "../all_functions";
+import { addSimilarTriangles } from "../relations";
 
 import { Triangle } from "../shape";
 import { Statement } from "../statement";
