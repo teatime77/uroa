@@ -2,6 +2,9 @@ import { mat4, vec3 } from 'gl-matrix';
 
 export class OrbitCamera {
     private canvas: HTMLCanvasElement;
+    private listeners = new AbortController();
+
+    dispose(): void { this.listeners.abort(); }
     
     // --- カメラの極座標パラメータ ---
     public target = [0.0, 0.0, 0.0]; // 注視点 (パンで移動)
@@ -27,13 +30,13 @@ export class OrbitCamera {
             this.dragButton = e.button;
             this.lastMouseX = e.clientX;
             this.lastMouseY = e.clientY;
-        });
+        }, { signal: this.listeners.signal });
 
         // マウスを離した時 (画面外に出た時も考慮してwindowに付与)
         window.addEventListener('mouseup', () => {
             this.isDragging = false;
             this.dragButton = -1;
-        });
+        }, { signal: this.listeners.signal });
 
         // マウスを動かした時
         window.addEventListener('mousemove', (e) => {
@@ -81,7 +84,7 @@ export class OrbitCamera {
                 vec3.scaleAndAdd(this.target, this.target, right, -dx * panSpeed);
                 vec3.scaleAndAdd(this.target, this.target, up, dy * panSpeed);
             }
-        });
+        }, { signal: this.listeners.signal });
 
         // ホイールを回した時
         this.canvas.addEventListener('wheel', (e) => {
@@ -89,10 +92,10 @@ export class OrbitCamera {
             // 【ホイール：ズーム (Zoom)】
             this.distance += e.deltaY * this.distance * 0.001;
             this.distance = Math.max(1.0, this.distance); // 近づきすぎ防止
-        }, { passive: false });
+        }, { passive: false, signal: this.listeners.signal });
         
         // 右クリック時のブラウザメニューを無効化
-        this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+        this.canvas.addEventListener('contextmenu', e => e.preventDefault(), { signal: this.listeners.signal });
     }
 
     // 極座標から実際のカメラの[x, y, z]座標を計算する

@@ -1,6 +1,8 @@
+import { animationSignal } from "../session";
 import { msg } from "@i18n";
 
 export async function runFeynmanSimulation(device: GPUDevice) {
+    const signal = animationSignal();
     msg("Starting Beta Decay Phase Space Simulation...");
 
     // --- 1. シミュレーション定数 ---
@@ -77,6 +79,7 @@ export async function runFeynmanSimulation(device: GPUDevice) {
 
     // GPUの処理完了を待機
     await device.queue.onSubmittedWorkDone();
+    if (signal.aborted) return;
 
     // --- 6. 結果の読み取り ---
     await readbackBuffer.mapAsync(GPUMapMode.READ);

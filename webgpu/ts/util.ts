@@ -5,6 +5,9 @@ import { initEditor } from "./editor.js";
 
 export let g_device : GPUDevice;
 export let g_presentationFormat : GPUTextureFormat;
+let shaderBasePath = ".";
+
+export function setShaderBasePath(path: string): void { shaderBasePath = path; }
 
 export type number123 = [number] | [number, number] | [number, number, number];
 
@@ -25,7 +28,7 @@ export function getColor(name : string){
 }
 
 export async function fetchShaderText(shader_name: string) : Promise<string> {
-    const text = await fetchText(`./wgsl/${shader_name}.wgsl`);
+    const text = await fetchText(`${shaderBasePath}/wgsl/${shader_name}.wgsl`);
     return text;
 }
 
@@ -81,6 +84,12 @@ export async function asyncBodyOnLoad(){
 }
 
 let g_context : GPUCanvasContext | null = null;
+
+export function disposeGPU(): void {
+    g_context?.unconfigure();
+    g_context = null;
+    g_device?.destroy();
+}
 
 export function initContext(canvas: HTMLCanvasElement, alpha_mode : GPUCanvasAlphaMode) : GPUCanvasContext {
     if(g_context != null){

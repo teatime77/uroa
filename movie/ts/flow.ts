@@ -8,6 +8,7 @@ import { stopAudio } from "./timeline";
 export let allData : { type:string, version:number, docs:any[]};
 export const newDocs : any[] = [];
 export let isJson = true;
+let playbackGeneration = 0;
 
 export async function fetchAllData(){
     allData = await fetchJson(`${urlBase}/all-kyozai.json`);
@@ -85,13 +86,15 @@ export async function playLangs(){
 }
 
 export function stopPlay(){
+    playbackGeneration++;
     msg("stop play");
     cancelSpeech();
     stopAudio();
     setPlayMode(PlayMode.stop);
 }
 
-export async function playAllGraph(){
+export async function playAllGraph(shouldStop: () => boolean = () => false){
+    const generation = ++playbackGeneration;
     hideGraph();
 
     const graph = getGraph();
@@ -102,11 +105,13 @@ export async function playAllGraph(){
 
     setPlayMode(PlayMode.fastForward);
     for(const doc of graph.docs){
+        if (shouldStop() || generation !== playbackGeneration) return;
         // msg(`graph-doc ${doc.id}:${doc.title}`);
         
         usedReasons.clear();
 
-        await readDoc(doc.id);
+        await readDoc(doc.id, () => shouldStop() || generation !== playbackGeneration);
+        if (shouldStop() || generation !== playbackGeneration) return;
 
         for(const reason of usedReasons){
             const reason_doc_id = reasonToDoc.get(reason);

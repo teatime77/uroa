@@ -85,8 +85,8 @@ export class Canvas extends AbstractCanvas {
         this.canvas.width  = rect.width;
         this.canvas.height = rect.height;
 
-        this.canvas.addEventListener("contextmenu", this.contextmenu.bind(this));
-        this.canvas.addEventListener('keydown', this.keydown.bind(this));
+        this.canvas.addEventListener("contextmenu", this.contextmenu.bind(this), { signal: this.listeners.signal });
+        this.canvas.addEventListener('keydown', this.keydown.bind(this), { signal: this.listeners.signal });
 
         msg(`canvas w:${canvas_html.width} h:${canvas_html.height}`);
     }
@@ -263,7 +263,7 @@ export class Canvas extends AbstractCanvas {
     }
 
     requestUpdateCanvas(){
-        if (this.isReady && animationFrameId == null) {
+        if (!this.disposed && this.isReady && animationFrameId == null) {
 
             animationFrameId = requestAnimationFrame(()=>{
                 animationFrameId = null;
@@ -273,6 +273,13 @@ export class Canvas extends AbstractCanvas {
             });
 
         }        
+    }
+
+    override dispose(): void {
+        super.dispose();
+        this.isReady = false;
+        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
     }
 
     async pointerup(ev:PointerEvent) : Promise<void> {

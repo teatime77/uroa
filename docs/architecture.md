@@ -6,13 +6,13 @@
 
 uroaは数学・科学教材を作成／再生するWebアプリ群。TypeScriptを中心に、KaTeXによる数式表示、Canvasによる図形・ゲーム描画、ブラウザー音声合成、Firebaseによる保存、WebGPUによる計算・描画を組み合わせる。
 
-2026-10-11に旧13サブモジュールをすべて通常フォルダーへ移行し、旧履歴もuroaへ統合した（[移行記録](monorepo-migration.md)）。`.gitmodules`は廃止した。[package.json](../package.json)のnpm workspaces登録は従来どおり9個。[tsconfig.sys.json](../tsconfig.sys.json)と [tsc-all.bat](../tsc-all.bat)は13個のTypeScriptプロジェクトを参照する。
+2026-10-11に旧13サブモジュールをすべて通常フォルダーへ移行し、旧履歴もuroaへ統合した（[移行記録](monorepo-migration.md)）。`.gitmodules`は廃止した。[package.json](../package.json)のnpm workspaces登録は従来どおり9個。P3で共通入口用の `app` を追加し、[tsconfig.sys.json](../tsconfig.sys.json)は計14個のTypeScriptプロジェクトを参照する。
 
 実装の中心は各モジュールの `ts/`。ルートの `public/` には各画面のHTML、翻訳辞書、教材・ゲーム・ブロック図のデータがある。WebGPU実行資産は `webgpu/public/` にあり、ルートVite設定でコピーされる。
 
 ## アプリの入口と連携
 
-[index.html](../index.html)は `diagram/ts/index.ts` を読み込み、各アプリへのリンクを置く。[diagram/ts/index.ts](../diagram/ts/index.ts)は `DOMContentLoaded` 時にURLパスで初期化先を選ぶ。
+[index.html](../index.html)と5アプリのソースHTMLは `app/ts/main.ts` を読み込む。[main.ts](../app/ts/main.ts)がDOMの準備後にURLパスで初期化先を選ぶ。公開ビルドでは従来どおり生成済みJavaScript/CSSをHTMLへ組み込む。
 
 | パスの先頭 | 初期化 |
 |---|---|
@@ -23,13 +23,15 @@ uroaは数学・科学教材を作成／再生するWebアプリ群。TypeScript
 | `/movie` | `initMovie()` |
 | その他 | `no project`を出力。ルート画面は各アプリへの入口 |
 
-この入口が13モジュールすべてを直接起動するわけではない。共通ライブラリーは各アプリが利用し、lessonなどには個別の入口がある。
+この入口は5アプリを初期化する。共通ライブラリーは各アプリが利用し、lessonなどには個別の入口がある。
 
 `diagram/ts/procedure.ts`の `PlayGameBlock` は `playGameWorld()`、`PlayMovieBlock` は `playAllGraph()`、`PlayWebGPUBlock` は `playWebGPUPackage()`を呼ぶ。`diagram_util.ts`の `switchActiveModule()`が画面レイヤーを切り替える。
 
+P3で [AppLifecycle](../app/ts/lifecycle.ts) を導入した。同じdocumentでは初期化Promiseを共有し、失敗・中断・破棄の状態を管理する。ブロック実行状態は [diagram/runtime.ts](../diagram/ts/runtime.ts) に分離し、子アプリの停止処理を共通入口で接続する。停止と破棄の違い、資源の所有、再読み込みが必要な範囲は [app-lifecycle.md](app-lifecycle.md) を参照する。
+
 ```mermaid
 flowchart TD
-    Entry[diagram/ts/index.ts: URLによる初期化] --> Algebra[algebra]
+    Entry[app/ts/main.ts: URLによる初期化] --> Algebra[algebra]
     Entry --> Diagram[diagram: ブロック編集・実行]
     Entry --> Game[game]
     Entry --> Movie[movie]
@@ -50,6 +52,7 @@ flowchart TD
 
 | フォルダー | 機能 | 主要ソース |
 |---|---|---|
+| `app` | URLによる起動先選択、初期化・停止・破棄の管理 | [main.ts](../app/ts/main.ts)、[lifecycle.ts](../app/ts/lifecycle.ts) |
 | `parser` | 数式の字句・構文解析、変数・有理数・演算・関数・束縛の木構造、LaTeX表示 | [parser.ts](../parser/ts/parser.ts)、[lex.ts](../parser/ts/lex.ts)、[tex.ts](../parser/ts/tex.ts) |
 | `algebra` | 移項、代入、方程式の加算・除算、同類項整理、約分、定理照合、証明手順、数式の部分選択・書き換え | [algebra.ts](../algebra/ts/algebra.ts)、[simplifier.ts](../algebra/ts/simplifier.ts)、[formula_matcher.ts](../algebra/ts/formula_matcher.ts)、[ProofStep.ts](../algebra/ts/ProofStep.ts) |
 | `plane` | 点・直線・円・楕円・円弧・多角形の作図、等長・等角・平行・垂直の制約、合同・相似などの関係管理、操作記録・再生 | [shape.ts](../plane/ts/shape.ts)、[tool.ts](../plane/ts/tool.ts)、[constraint.ts](../plane/ts/constraint.ts)、[deduction/](../plane/ts/deduction/) |
@@ -164,7 +167,7 @@ CLIが生成するのはJSONとDSLであり、WGSLの計算コードは別ソー
 
 Vite開発サーバーの `POST /api/save` は数式関連のテキスト／JSONを `public/algebra/output/` に保存する。この開発用ミドルウェアが、静的HostingやFlask配信にも存在するとは扱わない。
 
-ルートの `npm run install:all` は `npm install` を実行し、共通依存と登録済み9 workspacesを準備する。残る4プロジェクト（lesson、media、movie、plot）は独自のnpm依存を宣言していない。`npm run build:all` は `tsc -b tsconfig.sys.json` で13プロジェクトを処理する。各プロジェクトの旧buildスクリプトも `tsc -b` だけだったため、サブモジュール単位の重複実行を外した。
+ルートの `npm run install:all` は `npm install` を実行し、共通依存と登録済み9 workspacesを準備する。lesson、media、movie、plotと共通入口appは独自のnpm依存を宣言していない。`npm run build:all` は `tsc -b tsconfig.sys.json` で14プロジェクトを処理する。各プロジェクトの旧buildスクリプトも `tsc -b` だけだったため、サブモジュール単位の重複実行を外した。
 
 2026-10-11に `build`、`verify`、開発・preview・回帰テストのnpmコマンドを追加した。`verify` はTypeScript・公開ビルド・成果物の静的確認を行い、Playwrightは `test:e2e` で明示的に実行する。Python一括ビルドの旧同期処理は廃止した。準備手順と今回の検証範囲は [build-and-test.md](build-and-test.md) を参照する。
 
@@ -227,7 +230,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 
 2026-10-10追記。ユーザーによると、planeのall_functions.tsはnamespaceからモジュールへの移行時に循環参照を回避するため作られた。分割を検討するときは、既存のimport type、AppServices、生成関数登録による依存の整理を維持する。
 
-ユーザーはrobotの全機能をuroaへ組み込む方針を示した。単一リポジトリ化、5アプリの回帰テスト、アニメーションの手動進行・状態取得、共通入口と責任分担の整理を含む作業案は [improvement-plan.md](improvement-plan.md) に記録する。これは改善の提案であり、Git統合や実機連携が完了したことを示さない。
+ユーザーはrobotの全機能をuroaへ組み込む方針を示した。単一リポジトリ化、5アプリの回帰テスト、共通入口と責任分担の整理を含む作業案と実施結果は [improvement-plan.md](improvement-plan.md) に記録する。単一リポジトリ化は完了済み。robotの取り込み・実機連携は未実施。
 
 ## 2026-10-10: 機能索引と実行確認
 

@@ -34,7 +34,7 @@ function buildAppPagesPlugin(): Plugin {
             const tags = assetTags!.map(tag =>
                 tag.replace(/\b(src|href)="\.\//g, '$1="../')
             ).join('\n  ');
-            const sourceTag = '<script type="module" src="/diagram/ts/index.ts"></script>';
+            const sourceTag = '<script type="module" src="/app/ts/main.ts"></script>';
             for (const [app, sourcePath] of pages) {
                 const source = await readFile(resolve(__dirname, sourcePath), 'utf8');
                 if (!source.includes(sourceTag)) {

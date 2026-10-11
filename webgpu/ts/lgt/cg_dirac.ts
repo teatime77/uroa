@@ -1,6 +1,8 @@
+import { animationSignal } from "../session";
 import { fetchText } from "@i18n";
 
 export async function runDiracCGSolver(device: GPUDevice) {
+    const signal = animationSignal();
     const L = 128;
     const N = L * L;
     const spinorSize = N * 16; // vec4<f32> = 16 bytes
@@ -104,6 +106,7 @@ export async function runDiracCGSolver(device: GPUDevice) {
 
     device.queue.submit([commandEncoder.finish()]);
     await device.queue.onSubmittedWorkDone();
+    if (signal.aborted) return;
 
     const endTime = performance.now();
     console.log(`Dirac CG Solver finished in ${endTime - startTime} ms`);

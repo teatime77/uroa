@@ -154,7 +154,7 @@ export class Canvas extends AbstractCanvas {
     }
 
     requestUpdateCanvas(){
-        if (animationFrameId == null) {
+        if (!this.disposed && animationFrameId == null) {
 
             animationFrameId = requestAnimationFrame(()=>{
                 animationFrameId = null;
@@ -162,6 +162,12 @@ export class Canvas extends AbstractCanvas {
             });
 
         }        
+    }
+
+    override dispose(): void {
+        super.dispose();
+        if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
     }
 
     async pointerup(ev:PointerEvent) : Promise<void> {

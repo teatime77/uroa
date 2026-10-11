@@ -7,6 +7,8 @@ export let onSpeak : (text : string) => void;
 let cancelSpeechFlag : boolean = false;
 
 const voiceMap = new Map<string, SpeechSynthesisVoice[]>();
+const activeSpeeches = new Set<Speech>();
+let speechListeners: AbortController | undefined;
 
 export const langCodeList : [string, string][] = [
     ["ara", "ar-EG"],
@@ -85,6 +87,13 @@ export class Speech extends AbstractSpeech {
     id     : number;
     voice? : SpeechSynthesisVoice;
     text!   : string;
+    private emulateTimer?: ReturnType<typeof setInterval>;
+
+    cancel(): void {
+        clearInterval(this.emulateTimer);
+        this.speaking = false;
+        activeSpeeches.delete(this);
+    }
 
     constructor(){ 
         super();
@@ -138,6 +147,7 @@ export class Speech extends AbstractSpeech {
                 clearInterval(id);
             }
         }, 1);
+        this.emulateTimer = id;
     }
 
     async speak(text : string) : Promise<void> {
@@ -151,6 +161,7 @@ export class Speech extends AbstractSpeech {
         }
 
         this.speaking = true;
+        activeSpeeches.add(this);
 
         if(onSpeak != undefined){
             onSpeak(this.text);
@@ -212,11 +223,13 @@ export class Speech extends AbstractSpeech {
     }
 
     onEnd(ev: SpeechSynthesisEvent) : void {
+        if (!this.speaking) return;
         // msg(`Speech end: id:${this.id} idx:${ev.charIndex} name:${ev.name} type:${ev.type} text:[${this.text.substring(this.prevCharIndex)}]`);
         if(this.callback != undefined){
             this.callback(this.text.length);
         }
         this.speaking = false;
+        activeSpeeches.delete(this);
     }
     
     onMark(ev: SpeechSynthesisEvent) : void {
@@ -324,17 +337,14 @@ function initSpeechSub(){
 }
 
 export function initSpeech(){
+    if (speechListeners) return;
+    speechListeners = new AbortController();
     initSpeechSub();
-
-    speechSynthesis.onvoiceschanged = function(){
-        msg("voices changed 1");
-        setVoiceList();
-    };
 
     speechSynthesis.addEventListener("voiceschanged", (ev:Event)=>{
         setVoiceList();
         msg("voices changed 2");
-    })
+    }, { signal: speechListeners.signal });
 
 }
 
@@ -352,5 +362,12 @@ export async function asyncInitSpeech() : Promise<void> {
 
 export function cancelSpeech(){
     cancelSpeechFlag = true;
+    for (const speech of activeSpeeches) speech.cancel();
     speechSynthesis.cancel();
+}
+
+export function disposeSpeech(): void {
+    cancelSpeech();
+    speechListeners?.abort();
+    speechListeners = undefined;
 }

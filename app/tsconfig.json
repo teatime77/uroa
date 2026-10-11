@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "rootDir": "./ts",
+    "outDir": "./lib",
+    "declaration": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["vite/client", "@webgpu/types"],
+    "paths": {
+      "@i18n": ["../i18n/ts/index"],
+      "@algebra": ["../algebra/ts/index"],
+      "@diagram": ["../diagram/ts/index"],
+      "@game": ["../game/ts/index"],
+      "@movie": ["../movie/ts/index"],
+      "@webgpu": ["../webgpu/ts/index"]
+    }
+  },
+  "include": ["ts"],
+  "references": [
+    { "path": "../i18n" },
+    { "path": "../algebra" },
+    { "path": "../diagram" },
+    { "path": "../game" },
+    { "path": "../movie" },
+    { "path": "../webgpu" }
+  ]
+}

@@ -1,5 +1,5 @@
 import { msg, Speech, sleep, MyError, assert, setVoiceLanguageCode, Vec2 } from "@i18n";
-import { runBlockChain, stopFlag } from "./index";
+import { runBlockChain, stopFlag, waitProcedure } from "./runtime";
 import { tab, Attr } from "./ui";
 import { Block, makeFunctionBlockByTypeName } from "./block";
 import { NumberPort, Port, TextPort } from "./port";
@@ -210,7 +210,7 @@ export class SleepBlock extends ActionBlock {
 
     async run(){
         const second = this.inputPort.numberValue();
-        await sleep(second * 1000);
+        await waitProcedure(second * 1000);
     }
 }
 
@@ -415,7 +415,7 @@ export class InfiniteLoop extends NestBlock {
                     break;
                 }
 
-                await sleep(100);
+                await waitProcedure(100);
             }
         }
     }
@@ -430,8 +430,11 @@ export class PlayMovieBlock extends ActionBlock {
     }
     async run(){
         switchActiveModule("layer-movie");
-        await playAllGraph();
-        switchActiveModule("layer-diagram");
+        try {
+            await playAllGraph(() => stopFlag);
+        } finally {
+            switchActiveModule("layer-diagram");
+        }
     }
 }
 
@@ -447,8 +450,11 @@ export class PlayGameBlock extends ActionBlock {
     async run(){
         const target = this.inputPort.stringValue().trim();
         switchActiveModule("layer-game");
-        await playGameWorld(target, () => stopFlag);
-        switchActiveModule("layer-diagram");
+        try {
+            await playGameWorld(target, () => stopFlag);
+        } finally {
+            switchActiveModule("layer-diagram");
+        }
     }
 }
 
@@ -464,8 +470,11 @@ export class PlayWebGPUBlock extends ActionBlock {
     async run(){
         const pkgName = this.inputPort.stringValue().trim();
         switchActiveModule("layer-webgpu");
-        await playWebGPUPackage(pkgName);
-        switchActiveModule("layer-diagram");
+        try {
+            await playWebGPUPackage(pkgName);
+        } finally {
+            switchActiveModule("layer-diagram");
+        }
     }
 }
 

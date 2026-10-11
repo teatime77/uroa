@@ -733,8 +733,8 @@ export async function speakAndHighlight(shape : MathEntity, speech : AbstractSpe
 // ts\plane_event.ts
 
 export function dropEvent(view : View){
-    view.canvas.addEventListener('dragover', handleDragOver, false);
-    view.canvas.addEventListener('drop', handleFileSelect, false);
+    view.canvas.addEventListener('dragover', handleDragOver, { signal: view.eventSignal });
+    view.canvas.addEventListener('drop', handleFileSelect, { signal: view.eventSignal });
 
 }
 

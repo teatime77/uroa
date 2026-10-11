@@ -20,43 +20,45 @@ export function setDoc(doc : DbDoc | undefined){
     theDoc = doc;
 }
 
+const movieListeners = new AbortController();
+
 function setupEventListeners() {
     document.getElementById('play-all-graph')?.addEventListener('click', async () => {
         await playAllGraph();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('convert-movie')?.addEventListener('click', async () => {
         await convert();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('backup-movie')?.addEventListener('click', async () => {
         await backup();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('play-backup')?.addEventListener('click', async () => {
         await playBackUp();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('add-graph-section')?.addEventListener('click', async () => {
         await addGraphSection();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('add-graph-item')?.addEventListener('click', async () => {
         await addGraphItem();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('change-display')?.addEventListener('click', async () => {
         await changeDisplay();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('update-graph')?.addEventListener('click', async () => {
         await updateGraph();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('rename-doc')?.addEventListener('click', async () => {
         await renameDoc();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('delete-doc')?.addEventListener('click', async () => {
         await deleteDoc();
-    });
+    }, { signal: movieListeners.signal });
     document.getElementById('rename-section')?.addEventListener('click', async () => {
         await renameSection();
-    });
+    }, { signal: movieListeners.signal });
 }
 
-export async function initMovie(){
+export async function initMovie(signal?: AbortSignal){
     setupEventListeners();
 
     let pathname: string;
@@ -67,6 +69,7 @@ export async function initMovie(){
     msg(`params:${JSON.stringify(urlParams) }`);
 
     await fetchAllData();
+    if (signal?.aborted) return;
 
     document.body.style.color = fgColor;
     document.body.style.backgroundColor = bgColor;
@@ -102,6 +105,7 @@ export async function initMovie(){
     msg(`lang voice:${voiceLanguageCode} text:${text_lang} nav:${navigator.language}`);
 
     await initI18n();
+    if (signal?.aborted) return;
 
     const plane = new Plane();
     let root : Grid;
@@ -212,6 +216,7 @@ export async function initMovie(){
     Layout.initLayout(root, layerMovie || document.body);
 
     await initPlane(plane, root);
+    if (signal?.aborted) return;
     
     await includeDialog(`${urlBase}/../firebase/dialog.html`);
     await includeDialog(`${urlBase}/dialog.html`);
@@ -220,6 +225,7 @@ export async function initMovie(){
     initSpeech();
 
     await initFirebase();
+    if (signal?.aborted) return;
 
     initForMovie(readDoc);
 
@@ -239,7 +245,7 @@ export async function initMovie(){
 
     const buttons = document.getElementsByClassName("lang_button") as HTMLCollectionOf<HTMLButtonElement>;
     for(const button of buttons){
-        button.addEventListener("click", langButtonClicked);
+        button.addEventListener("click", langButtonClicked, { signal: movieListeners.signal });
     }
 
     if(appMode == AppMode.lessonPlay){
@@ -271,7 +277,7 @@ async function undo_redo_test(){
     }
 }
 
-export async function loadOperationsAndPlay(id:number, name: string, parent:number, data : any) {
+export async function loadOperationsAndPlay(id:number, name: string, parent:number, data : any, shouldStop: () => boolean = () => false) {
     const view = GlobalState.View__current!;
 
     let operations : Operation[];
@@ -281,11 +287,13 @@ export async function loadOperationsAndPlay(id:number, name: string, parent:numb
     else{
         operations = await loadOperationsText(data);
     }
+    if (shouldStop()) return;
 
     const num_operations = operations.length;
     operations.forEach(x => view.addOperation(x));
 
     await playBack(PlayMode.fastForward);
+    if (shouldStop()) return;
     assert(num_operations == view.operations.length);
 
     // await undo_redo_test();
@@ -299,7 +307,7 @@ export async function loadOperationsAndPlay(id:number, name: string, parent:numb
     newDocs.push(doc);
 }
 
-export async function readDocJson(docs:any[], doc_id : number) {
+export async function readDocJson(docs:any[], doc_id : number, shouldStop: () => boolean = () => false) {
 
     removeDiv();
 
@@ -311,12 +319,12 @@ export async function readDocJson(docs:any[], doc_id : number) {
 
     msg(`read doc json:${doc.id} ${doc.name}`);
 
-    await loadOperationsAndPlay(doc.id, doc.name, doc.parent != null ? doc.parent.id : NaN, doc);
+    await loadOperationsAndPlay(doc.id, doc.name, doc.parent != null ? doc.parent.id : NaN, doc, shouldStop);
 }
 
-export async function readDoc(doc_id : number) {
+export async function readDoc(doc_id : number, shouldStop: () => boolean = () => false) {
     if(isJson){
-        await readDocJson(allData.docs, doc_id);
+        await readDocJson(allData.docs, doc_id, shouldStop);
         return;
     }
 
@@ -326,6 +334,7 @@ export async function readDoc(doc_id : number) {
     view.clearCanvas();
     // msg(`id:${id}`);
     theDoc = await getMyDoc(doc_id);
+    if (shouldStop()) return;
     if(theDoc != undefined){
 
         msg(`read doc:${theDoc.id} ${theDoc.name}`);
@@ -333,7 +342,7 @@ export async function readDoc(doc_id : number) {
 
         if(2 <= data.version){
 
-            await loadOperationsAndPlay(theDoc.id, theDoc.name, theDoc.parent != null ? theDoc.parent.id : NaN, data);
+            await loadOperationsAndPlay(theDoc.id, theDoc.name, theDoc.parent != null ? theDoc.parent.id : NaN, data, shouldStop);
         }
         else{
 
@@ -367,3 +376,14 @@ export function SignUp(){
 }
 
 export { playAllGraph };
+
+export function stopMovie(): void {
+    stopPlay();
+}
+
+export function disposeMovie(): void {
+    stopMovie();
+    movieListeners.abort();
+    GlobalState.View__current?.dispose();
+    Layout.dispose();
+}

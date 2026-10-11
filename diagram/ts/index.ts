@@ -1,18 +1,17 @@
 import { msg, assert, $, sleep } from "@i18n";
-import { initWebGPU } from "@webgpu";
-import { initGame } from "@game";
-import { initMovie } from "@movie";
 import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, ServoMotorBlock, CameraBlock, FaceDetectionBlock, CalcBlock, UltrasonicDistanceSensorBlock, ConditionGate, InputBlock } from "./block";
 import { Canvas, Editor, getTopActions } from "./canvas";
-import { fetchImage, initUI, initURL, pathName, repaintCount, sendData, startButton, theCanvas, urlOrigin } from "./diagram_util";
+import { fetchImage, initUI, repaintCount, sendData, startButton, theCanvas, urlOrigin } from "./diagram_util";
 import { saveJson, theEditor } from "./json-util";
 import { IfBlock, InfiniteLoop, TTSBlock, SleepBlock, TriggerGate, ActionBlock, makeBlockByTypeName, PlayMovieBlock, PlayGameBlock, PlayWebGPUBlock } from "./procedure";
 import { Block } from "./block"
 import { Port } from "./port";
-import { initAlgebra } from "@algebra";
 
-export let stopFlag : boolean = false;
-let isRunning : boolean = false;
+import { isRunning, runBlockChain, runProcedures, stopDiagram, stopFlag } from "./runtime";
+export { stopDiagram } from "./runtime";
+
+const listeners = new AbortController();
+let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
 class Variable {
     name! : string;
@@ -33,44 +32,6 @@ export class DataType {
 
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
-    if ((window as any).diagramEntryInitialized) {
-        console.log("duplicate load of diagram/ts/index.ts");
-        return;
-    }
-    (window as any).diagramEntryInitialized = true;
-
-    // msg("loaded in diagram-ts");
-    console.log("loaded in diagram-ts", {
-        url: import.meta.url,
-        timeOrigin: performance.timeOrigin,
-    });
-    initURL();
-
-    if(pathName.startsWith("/algebra")){
-        await initAlgebra();
-    }
-    else if(pathName.startsWith("/webgpu")){
-        await initWebGPU();
-    }
-    else if(pathName.startsWith("/game")){
-        await initGame();        
-    }
-    else if(pathName.startsWith("/diagram")){
-        await initDiagram();
-        // background initialization for sub-modules
-        await initGame();
-        await initWebGPU();
-        await initMovie();
-        msg("diagram ready")
-    }
-    else if(pathName.startsWith("/movie")){
-        await initMovie();        
-    }
-    else{
-        msg("no project")
-    }
-});  
 
 
 export class Main {
@@ -123,12 +84,7 @@ export class Main {
         const canvas_html = document.getElementById('world-diagram') as HTMLCanvasElement;
         this.canvas = new Canvas(canvas_html);
 
-        // Initial resize when the page loads
-        // Use DOMContentLoaded to ensure the canvas element exists before trying to access it
-        document.addEventListener('DOMContentLoaded', this.canvas.resizeCanvas.bind(this.canvas));
-
-        // Add an event listener to resize the canvas whenever the window is resized
-        window.addEventListener('resize', this.canvas.resizeCanvas.bind(this.canvas));
+        window.addEventListener('resize', this.canvas.resizeCanvas.bind(this.canvas), { signal: listeners.signal });
 
         setDragDrop(this.canvas.canvas);
 
@@ -210,65 +166,50 @@ async function periodicTask() {
         theCanvas.requestUpdateCanvas();
     }
 
-    setTimeout(periodicTask, 100);
-}
-
-export async function runBlockChain(top_block : ActionBlock){
-    for(let block : ActionBlock | undefined = top_block; block != undefined; block = block.nextBlock()){
-        await block.run();
-
-        if(stopFlag){
-            break;
-        }
-    }
+    if (!listeners.signal.aborted) periodicTimer = setTimeout(periodicTask, 100);
 }
 
 async function startProcedures() {
     startButton.innerText = "Stop";
 
-    isRunning = true;
-    stopFlag = false;
-
-    const input_blocks = theEditor.blocks.filter(x => x instanceof InputBlock);
-    input_blocks.forEach(x => x.updatePort());
-
-
-    const top_blocks = getTopActions();
-    for(const top_block of top_blocks){
-        msg(`top proc:${top_block.constructor.name}`);
-        await runBlockChain(top_block);
-
-        if(stopFlag){
-            break;
-        }
+    try {
+        await runProcedures(async () => {
+            const input_blocks = theEditor.blocks.filter(x => x instanceof InputBlock);
+            input_blocks.forEach(x => x.updatePort());
+            for (const top_block of getTopActions()) {
+                if (stopFlag) break;
+                msg(`top proc:${top_block.constructor.name}`);
+                await runBlockChain(top_block);
+            }
+            msg("procedures complete.");
+        });
+    } finally {
+        startButton.innerText = "Start";
     }
-
-    msg("procedures complete.");
-    isRunning = false;
-    startButton.innerText = "Start";
 }
 
-export async function initDiagram(){
+export async function initDiagram(_signal?: AbortSignal){
     initUI();
     
     $("clear-btn").addEventListener("click", (ev : MouseEvent)=>{
         theEditor.clearBlock();
-    });
+    }, { signal: listeners.signal });
 
     startButton.addEventListener("click", async(ev : MouseEvent)=>{
         if(isRunning){
 
-            stopFlag = true;
+            stopDiagram();
         }
         else{
-            await startProcedures();
+            try { await startProcedures(); }
+            catch (error) { console.error("diagram procedure failed", error); }
         }
-    });
+    }, { signal: listeners.signal });
 
     const downloadBtn = $("download-btn") as HTMLButtonElement;
     downloadBtn.addEventListener("click", async(ev : MouseEvent)=>{
         saveJson();
-    });
+    }, { signal: listeners.signal });
 
 
     new Main();
@@ -342,20 +283,20 @@ function setDragDrop(canvas : HTMLCanvasElement){
     canvas.addEventListener("dragenter", (ev : DragEvent)=>{
         preventDefaults(ev);
         msg("drag enter");
-    });
+    }, { signal: listeners.signal });
 
     canvas.addEventListener("dragover", (ev : DragEvent)=>{
         preventDefaults(ev);
         canvas.classList.add('dragover')
 
         msg("drag over");
-    });
+    }, { signal: listeners.signal });
 
     canvas.addEventListener("dragleave", (ev : DragEvent)=>{
         preventDefaults(ev);
         canvas.classList.remove('dragover');
         msg("drag leave");
-    });
+    }, { signal: listeners.signal });
 
     canvas.addEventListener("drop", async (ev : DragEvent)=>{
         preventDefaults(ev);
@@ -379,6 +320,7 @@ function setDragDrop(canvas : HTMLCanvasElement){
             const reader = new FileReader();
 
             reader.onload = async() => {
+                if (listeners.signal.aborted) return;
                 const json = reader.result as string;
                 const obj  = JSON.parse(json);
 
@@ -392,9 +334,10 @@ function setDragDrop(canvas : HTMLCanvasElement){
 
                 // port positions are set on paing.
                 // edges can be drawn after port position settings.
-                while(repaint_count == repaintCount){
+                while(repaint_count == repaintCount && !listeners.signal.aborted){
                     await sleep(100);
                 }
+                if (listeners.signal.aborted) return;
 
                 // draw input elements in blocks.
                 theEditor.blocks.forEach(x => x.setBlockPortPosition(x.position));
@@ -405,21 +348,12 @@ function setDragDrop(canvas : HTMLCanvasElement){
 
 
         }
-    });    
+    }, { signal: listeners.signal });
 }
 
-// uroa側のテスト用コード（起動時に読み込まれる場所に追加）
-declare global {
-    interface Window {
-        injectTestData: (data: any) => void;
-    }
+export function disposeDiagram(): void {
+    stopDiagram();
+    listeners.abort();
+    clearTimeout(periodicTimer);
+    Main.one?.canvas.dispose();
 }
-
-window.injectTestData = (data: any) => {
-    console.log("AI Agentからのデータを受信しました:", data);
-    // TODO: ここで受け取ったJSONデータを元に、2D描画(plane)や
-    // シミュレーション(webgpu)のコンポーネントを更新・再描画する処理を呼び出す
-    
-    // テストとして画面の背景色を変えるなど、視覚的にわかる変化をつけるのも有効です
-    document.body.style.backgroundColor = data.bgColor || "white";
-};

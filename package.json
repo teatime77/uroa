@@ -21,6 +21,8 @@
     "check:dist": "node scripts/check-dist.mjs",
     "verify": "npm run build && npm run check:dist",
     "test:e2e": "python tests/test.py",
+    "test:lifecycle": "npm run build:all && node --test tests/lifecycle.test.mjs",
+    "test:e2e:lifecycle": "python tests/test_lifecycle.py",
     "install:all": "npm install"
   },
   "devDependencies": {

@@ -10,7 +10,8 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 
 - 共通機能: `i18n/ts/`、`parser/ts/`、`layout/ts/`。
 - 数学・教材: `algebra/ts/`、`plane/ts/`、`game/ts/`、`movie/ts/`、`lesson/ts/`。
-- ブロック編集・統合入口: `diagram/ts/`。`index.ts`がURLに応じてアプリを初期化する。
+- 共通入口: `app/ts/main.ts`。URLによるアプリ選択と初期化順序を管理する。起動・停止・破棄の状態管理は `app/ts/lifecycle.ts`。
+- ブロック編集: `diagram/ts/`。`index.ts`はdiagramのUI初期化、`runtime.ts`はブロック実行・停止・キャンセル可能な待機を担当する。
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
 - 旧13サブモジュールはすべてuroaの通常フォルダーとして管理する。変更・コミットはuroaで行う。履歴統合・検証結果は [docs/monorepo-migration.md](docs/monorepo-migration.md)、algebraの先行移行は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
@@ -28,6 +29,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 ビルド構成・コマンドは設計文書に記載。変更した機能に応じた確認を行う。文書だけの変更ではリンク・記述・差分を確認する。
 
 現在のビルド・テスト手順は [docs/build-and-test.md](docs/build-and-test.md) を参照する。`npm run verify` は型・公開ビルド・成果物の静的確認であり、既存の大規模回帰テストは `tests/test.py` を別途実行する。
+起動・終了を変更する場合は [docs/app-lifecycle.md](docs/app-lifecycle.md) と、追加した `tests/lifecycle.test.mjs`、`tests/test_lifecycle.py` も参照する。初期化済みの画面の再生は停止後に再実行できる。破棄後の同一documentの再初期化は行わず、ページを再読み込みする。
 
 モジュールの役割、公開API、通信方式、データ形式、実装範囲を変更したら設計文書の該当箇所も更新する。既存の作業中の変更を保持し、秘密情報を文書へ転記しない。
 

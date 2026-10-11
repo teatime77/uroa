@@ -12,11 +12,12 @@ export { initHashTerm, setHashTerm } from "./algebra_util.js";
 export { simplify } from "./simplifier.js";
 export { testGalois } from "./galois.js";
 
-export async function initAlgebra(){
+export async function initAlgebra(signal?: AbortSignal){
     setIsProof(true);
     initSysVars();
     initTexTest();
     await testProof();
+    if (signal?.aborted) return;
 
     // Exporting the parsed sample is a development convenience, not a startup requirement.
     if(import.meta.env.DEV){
@@ -35,6 +36,7 @@ export async function initAlgebra(){
     const speech = new Speech();
     // setPlayMode(PlayMode.fastForward);
     for(const eq of eqs){
+        if (signal?.aborted) return;
         const term = parseMath(eq);
 
         const span = document.createElement("span");
@@ -45,6 +47,7 @@ export async function initAlgebra(){
         document.body.appendChild(span);
     
         await simplify(speech, span, term);
+        if (signal?.aborted) return;
 
         const hr = document.createElement("hr");
         document.body.appendChild(hr);

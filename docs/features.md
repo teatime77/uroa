@@ -1,6 +1,6 @@
 # 機能索引
 
-更新日: 2026-10-10（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
+更新日: 2026-10-11（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
 
 全体の依存関係は [architecture.md](architecture.md)、改善の順序は [improvement-plan.md](improvement-plan.md)、実際に確認した条件・結果は [現状確認](current-state.md) を参照する。この索引にソースが載っていることは、その機能を実行検証済みであることを意味しない。
 
@@ -9,7 +9,8 @@
 | ID | やりたいこと | 最初に見るソース・入口 | 関連資産・注意点 |
 |---|---|---|---|
 | ENTRY-01 | トップ画面のリンクを変える | [index.html](../index.html) | algebra、webgpu、game、diagram、movieの5リンク |
-| ENTRY-02 | URLによる起動先を変える | [diagram/index.ts](../diagram/ts/index.ts): DOMContentLoaded | 全体起動を兼ねる。初期化済みフラグだけでは個別アプリの初期化成功を判定できない |
+| ENTRY-02 | URLによる起動先を変える | [app/main.ts](../app/ts/main.ts): boot | DOM準備後の振り分け、diagram → game → webgpu → movieの順序 |
+| ENTRY-04 | 起動重複・停止・終了を変える | [app/lifecycle.ts](../app/ts/lifecycle.ts): AppLifecycle | Promise共有、失敗・中断状態、逆順の破棄。[起動・終了仕様](app-lifecycle.md) |
 | ENTRY-03 | diagramから教材・ゲーム・GPU表示を起動する | [procedure.ts](../diagram/ts/procedure.ts): PlayMovieBlock、PlayGameBlock、PlayWebGPUBlock | [diagram_util.ts](../diagram/ts/diagram_util.ts): switchActiveModule。起動後の停止と画面復帰も確認する |
 
 ## 数式解析・代数・証明
@@ -44,7 +45,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 |---|---|---|---|
 | DIAGRAM-01 | ブロック配置・選択・接続を変える | [canvas.ts](../diagram/ts/canvas.ts): Canvas、Editor、[port.ts](../diagram/ts/port.ts) | [ui.ts](../diagram/ts/ui.ts)、[画面](../public/diagram/index.html) |
 | DIAGRAM-02 | 入力・計算・比較ブロックを追加する | [block.ts](../diagram/ts/block.ts): 入力、CalcBlock、CompareBlock | ポートの値・型、生成関数、保存項目 |
-| DIAGRAM-03 | 条件・繰り返し・待機・読み上げを変える | [procedure.ts](../diagram/ts/procedure.ts): IfBlock、InfiniteLoop、SleepBlock、TTSBlock | [index.ts](../diagram/ts/index.ts): runBlockChain、Start/Stop。停止時の非同期処理 |
+| DIAGRAM-03 | 条件・繰り返し・待機・読み上げを変える | [procedure.ts](../diagram/ts/procedure.ts): IfBlock、InfiniteLoop、SleepBlock、TTSBlock | [runtime.ts](../diagram/ts/runtime.ts): runBlockChain、runProcedures、stopDiagram、waitProcedure。index.tsはStart/StopのUI |
 | DIAGRAM-04 | ブロック図を保存・読込する | [json-util.ts](../diagram/ts/json-util.ts): saveJson、[index.ts](../diagram/ts/index.ts): loadJsonとdrop処理 | [diagram.json](../public/diagram/data/diagram.json)。ファイルdrop、Download、Clear、ポート参照の復元 |
 | DIAGRAM-05 | サーボ指令・センサー連携を変える | [block.ts](../diagram/ts/block.ts): ServoMotorBlockなど、[diagram_util.ts](../diagram/ts/diagram_util.ts): sendData | 現行はPOST /send_data。対応サーバーは未確認、センサー定期取得はdiy_sbc=false。BLE接続は未実装 |
 
@@ -101,7 +102,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 
 | ID | やりたいこと | 最初に見る設定・処理 | 注意点 |
 |---|---|---|---|
-| BUILD-01 | TypeScript対象や依存を変える | [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat)、[package.json](../package.json) | TS参照13、workspaces 9。`build:all` は型・lib生成、`build` は続けて公開Viteビルド |
+| BUILD-01 | TypeScript対象や依存を変える | [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat)、[package.json](../package.json) | TS参照14（app追加）、workspaces 9。`build:all` は型・lib生成、`build` は続けて公開Viteビルド |
 | BUILD-02 | HTML・モジュール・公開資産の配信を変える | [vite.config.ts](../vite.config.ts)、[build_all.py](../build_all.py)、[scripts/check-dist.mjs](../scripts/check-dist.mjs) | `verify` は公開ビルドと成果物確認。Pythonも同じnpmビルドを呼ぶ。ブラウザ確認は [tests/test.py](../tests/test.py) を別途実行 |
 | BUILD-03 | Flask・Firebase Hostingで配信する | [web.py](../web.py)、[firebase.json](../firebase.json) | Flaskはdistの静的配信。Vite開発用APIが自動的に配信先へ移るわけではない |
 

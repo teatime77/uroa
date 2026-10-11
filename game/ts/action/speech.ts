@@ -7,6 +7,8 @@ let languageRegion : string;
 let cancelSpeechFlag : boolean = false;
 let onSpeak : ((text : string) => void) | undefined;
 let currentVoice : SpeechSynthesisVoice;
+let speechListeners: AbortController | undefined;
+const activeSpeeches = new Set<AbstractSpeech>();
 
 const langCodeList : [string, string][] = [
     ["ara", "ar-EG"],
@@ -115,6 +117,8 @@ function getVoiceByLangCode(lang_code : string) : SpeechSynthesisVoice | undefin
 }
 
 export function initSpeech(){
+    if (speechListeners) return;
+    speechListeners = new AbortController();
     if ('speechSynthesis' in window) {
         msg("このブラウザは音声合成に対応しています。🎉");
 
@@ -123,16 +127,23 @@ export function initSpeech(){
         msg("このブラウザは音声合成に対応していません。😭");
     }    
 
-    speechSynthesis.onvoiceschanged = function(){
-        msg("voices changed 1");
-        setVoiceList();
-    };
-
     speechSynthesis.addEventListener("voiceschanged", (ev:Event)=>{
         setVoiceList();
         msg("voices changed 2");
-    })
+    }, { signal: speechListeners.signal });
 
+}
+
+export function stopSpeech(): void {
+    cancelSpeechFlag = true;
+    for (const speech of activeSpeeches) speech.cancel();
+    speechSynthesis.cancel();
+}
+
+export function disposeSpeech(): void {
+    stopSpeech();
+    speechListeners?.abort();
+    speechListeners = undefined;
 }
 
 export abstract class AbstractSpeech extends Action  {
@@ -141,6 +152,13 @@ export abstract class AbstractSpeech extends Action  {
     text!   : string;
     prevCharIndex = 0;
     speaking : boolean = false;
+    protected emulateTimer?: ReturnType<typeof setInterval>;
+
+    cancel(): void {
+        clearInterval(this.emulateTimer);
+        this.speaking = false;
+        activeSpeeches.delete(this);
+    }
 
     abstract speak(text : string) : void;
 
@@ -180,6 +198,7 @@ export abstract class AbstractSpeech extends Action  {
     onEnd(ev: SpeechSynthesisEvent) : void {
         // msg(`Speech end: id:${this.id} idx:${ev.charIndex} name:${ev.name} type:${ev.type} text:[${this.text.substring(this.prevCharIndex)}]`);
         this.speaking = false;
+        activeSpeeches.delete(this);
     }
 }
 
@@ -204,6 +223,7 @@ export class Speech extends AbstractSpeech {
         }
 
         this.speaking = true;
+        activeSpeeches.add(this);
 
         if(onSpeak != undefined){
             onSpeak(this.text);
@@ -243,6 +263,8 @@ registerAction(Speech.name, (obj) => new Speech(obj));
 
 export class EmulationSpeech extends AbstractSpeech {
     speak(text : string) : void{
+        this.speaking = true;
+        activeSpeeches.add(this);
         let charIndex = 0;
 
         const id = setInterval(()=>{
@@ -271,5 +293,6 @@ export class EmulationSpeech extends AbstractSpeech {
                 clearInterval(id);
             }
         }, 1);
+        this.emulateTimer = id;
     }
 }

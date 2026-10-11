@@ -1,3 +1,4 @@
+import { animationSignal } from "../session";
 import { $, $inp, fetchText, msg } from "@i18n";
 import { stopAnimation } from "../instance";
 
@@ -8,6 +9,7 @@ let kappaValue: number = 1.0;
 let massValue: number = 1.0; // クォークの軽さ (小さいほどCGが重くなる)
 
 export async function runDynamicalFermions(device: GPUDevice, mode: "C" | "E"): Promise<() => void> {
+    const signal = animationSignal();
     msg("Starting Dynamical Fermions (HMC + CG Solver) simulation...");
     stopAnimation();
 
@@ -29,7 +31,7 @@ export async function runDynamicalFermions(device: GPUDevice, mode: "C" | "E"): 
 
             writeParams();
             msg(`beta :${betaValue} kappa :${kappaValue} mass :${massValue}`);
-        });
+        }, { signal });
     }
 
     // ========================================================================
@@ -71,8 +73,9 @@ export async function runDynamicalFermions(device: GPUDevice, mode: "C" | "E"): 
             const timerId = setInterval(()=>{
                 triggerDebug = true;
             }, 10 * 1000);
+            signal.addEventListener("abort", () => clearInterval(timerId), { once: true });
         }
-    });    
+    }, { signal });
 
     // ========================================================================
     // 2. レイアウトとパイプラインの構築
@@ -243,6 +246,7 @@ export async function runDynamicalFermions(device: GPUDevice, mode: "C" | "E"): 
     // (writeParams と Hot Start の部分はそのまま残してください)
 
     function frame() {
+        if (signal.aborted) return;
         const commandEncoder = device.createCommandEncoder();
 
         if (hmc_state === 0) {

@@ -1,3 +1,4 @@
+import { animationSignal } from "./session";
 import { fetchText } from "@i18n";
 
 // Helper to get a seeded random number generator
@@ -61,13 +62,19 @@ async function readBuffer(device: GPUDevice, buffer: GPUBuffer): Promise<Float32
 
 // This function runs the entire HMC simulation.
 export async function runHMC() {
+    const signal = animationSignal();
 
     // --- 0. Setup ---
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
         throw new Error("WebGPU not supported");
     }
+    if (signal.aborted) return;
     const device = await adapter.requestDevice();
+    if (signal.aborted) { device.destroy(); return; }
+    const cancel = () => device.destroy();
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
     const rand = mulberry32(42);
     const randn = randomNormal(rand);
 
@@ -186,6 +193,7 @@ export async function runHMC() {
     
     // The main loop. A standard for-loop is used for maximum performance.
     for (let i = 0; i < iterations; i++) {
+        if (signal.aborted) return;
         const commandEncoder = device.createCommandEncoder();
         const pass = commandEncoder.beginComputePass();
         pass.setPipeline(hmcStepPipeline);
@@ -269,4 +277,10 @@ export async function runHMC() {
     samples_buffer.destroy();
     resultsReadBuffer.destroy();
     acceptedReadBuffer.destroy();
+    } catch (error) {
+        if (!signal.aborted) throw error;
+    } finally {
+        signal.removeEventListener("abort", cancel);
+        device.destroy();
+    }
 }

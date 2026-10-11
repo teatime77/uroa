@@ -100,7 +100,16 @@ export async function sendData(dataToSend : any) : Promise<any> {
     
 }
 
+let activeModule = "layer-diagram";
+let onLeaveModule: (moduleId: string) => void = () => {};
+
+export function setOnLeaveModule(handler: (moduleId: string) => void): void {
+    onLeaveModule = handler;
+}
+
 export function switchActiveModule(moduleId: string) {
+    if (moduleId !== activeModule) onLeaveModule(activeModule);
+    activeModule = moduleId;
     const ids = ["layer-diagram", "layer-game", "layer-webgpu", "layer-movie"];
     for (const id of ids) {
         const layer = document.getElementById(id);

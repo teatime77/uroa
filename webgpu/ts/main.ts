@@ -34,11 +34,20 @@ import { buildUI } from './sim_ui';
 
 // ホットリロード(HMR)時の二重起動を防ぐためのグローバル変数
 let animationId: number | null = null;
+let schemaGeneration = 0;
+let releaseSchema: (() => void) | undefined;
+
+export function disposeGraphSchema(): void {
+    stopGraphSchemaAnimation();
+    releaseSchema?.();
+    releaseSchema = undefined;
+}
 
 /** Default wall time for `schema=all` before switching to the next physics engine. */
 export const PHYSICS_SCHEMA_DEMO_DWELL_MS = 3_000;
 
 export function stopGraphSchemaAnimation(): void {
+    schemaGeneration++;
     if (animationId !== null) {
         cancelAnimationFrame(animationId);
         animationId = null;
@@ -48,6 +57,7 @@ export function stopGraphSchemaAnimation(): void {
 export interface InitControlOptions {
     /** If set, stop the render loop after this many ms (sequential `schema=all` demos). */
     dwellMs?: number;
+    signal?: AbortSignal;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -179,11 +189,15 @@ function setupCapturePanel(canvas: HTMLCanvasElement, schemaName: string): void 
 // ※ 上部に sphereSchema と wgslCodes が定義されている前提です。
 
 export async function initControl(schemaName: string, options?: InitControlOptions): Promise<void> {
-    stopGraphSchemaAnimation();
+    disposeGraphSchema();
+    const generation = schemaGeneration;
+    const cancelled = () => options?.signal?.aborted || generation !== schemaGeneration;
 
     // 1. WebGPUデバイスとCanvasの取得
     const adapter = await navigator.gpu.requestAdapter();
+    if (cancelled()) return;
     const device = await adapter!.requestDevice();
+    if (cancelled()) { device.destroy(); return; }
     const canvas = document.getElementById('world-webgpu') as HTMLCanvasElement;
     const context = canvas.getContext('webgpu') as GPUCanvasContext;
     context.unconfigure(); 
@@ -191,6 +205,7 @@ export async function initControl(schemaName: string, options?: InitControlOptio
     context.configure({ device, format, alphaMode: 'premultiplied' });
 
     const camera = new OrbitCamera(canvas);
+    releaseSchema = () => { camera.dispose(); context.unconfigure(); device.destroy(); };
     // ========================================================
     // 🌟 ステップ 3: テクスチャのロードとリソースの注入
     // ========================================================
@@ -199,6 +214,7 @@ export async function initControl(schemaName: string, options?: InitControlOptio
     // ※ プロジェクト内に 'matcap.jpg' などの画像を用意してください
     const response = await fetch('matcap.png'); 
     const imageBitmap = await createImageBitmap(await response.blob());
+    if (cancelled()) return;
     const texture = device.createTexture({
         size: [imageBitmap.width, imageBitmap.height, 1],
         format: 'rgba8unorm',
@@ -229,6 +245,7 @@ export async function initControl(schemaName: string, options?: InitControlOptio
     const arrowVertices = makeArrowMesh({numDivision: 16} as ShapeInfo);
     
     const schema = await fetchJson(`${simulationAssetBaseUrl(schemaName)}/${schemaName}.json`) as SimulationSchema;
+    if (cancelled()) return;
 
     schema.metadata.baseSphereFloatCount = sphereVertices.length;
     schema.metadata.baseSphereVertexCount = sphereVertices.length / 6; // x,y,z,nx,ny,nz
@@ -237,6 +254,7 @@ export async function initControl(schemaName: string, options?: InitControlOptio
     schema.metadata.baseArrowVertexCount = arrowVertices.length / 6;
 
     await engine.parseSchemaScript(schema);
+    if (cancelled()) return;
 
 
     // ④ スキーマのロード（ここでバッファが確保される）
@@ -295,6 +313,7 @@ export async function initControl(schemaName: string, options?: InitControlOptio
     // メインループ
     // ========================================================
     function frame() {
+        if (cancelled()) return;
         // 1. 画面のアスペクト比(縦横比)を計算
         const aspect = canvas.width / canvas.height;
         

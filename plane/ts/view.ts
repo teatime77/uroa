@@ -22,6 +22,9 @@ export abstract class AbstractCanvas {
     uiOrgPos : Vec2 = Vec2.zero();
     pointerId : number = NaN;
     moved : boolean = false;
+    protected listeners = new AbortController();
+    get eventSignal(): AbortSignal { return this.listeners.signal; }
+    protected disposed = false;
 
     constructor(canvas_html : HTMLCanvasElement){
         this.canvas = canvas_html;
@@ -30,11 +33,16 @@ export abstract class AbstractCanvas {
             console.error("Canvas context not supported!");
         }
 
-        this.canvas.addEventListener("pointerdown",  this.pointerdown.bind(this));
-        this.canvas.addEventListener("pointermove",  this.pointermove.bind(this));
+        this.canvas.addEventListener("pointerdown", this.pointerdown.bind(this), { signal: this.listeners.signal });
+        this.canvas.addEventListener("pointermove", this.pointermove.bind(this), { signal: this.listeners.signal });
         this.canvas.addEventListener("pointerup"  , async (ev:PointerEvent)=>{
             await this.pointerup(ev);
-        });
+        }, { signal: this.listeners.signal });
+    }
+
+    dispose(): void {
+        this.disposed = true;
+        this.listeners.abort();
     }
 
     abstract getPositionInCanvas(event : MouseEvent) : Vec2;
@@ -47,6 +55,12 @@ export abstract class AbstractCanvas {
 }
 
 export class View extends AbstractCanvas {
+    private frameId?: number;
+
+    override dispose(): void {
+        super.dispose();
+        if (this.frameId !== undefined) cancelAnimationFrame(this.frameId);
+    }
 
     name  : string = "";
     grid : CanvasGrid;
@@ -232,6 +246,7 @@ export class View extends AbstractCanvas {
     }
 
     drawShapes(){
+        if (this.disposed) return;
         if(this.dirty){
             this.dirty = false;
 
@@ -263,7 +278,7 @@ export class View extends AbstractCanvas {
             }
         }
 
-        window.requestAnimationFrame(this.drawShapes.bind(this));
+        this.frameId = window.requestAnimationFrame(this.drawShapes.bind(this));
     }
 
     async click(event : MouseEvent){

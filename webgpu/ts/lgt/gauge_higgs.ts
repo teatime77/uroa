@@ -1,3 +1,4 @@
+import { animationSignal } from "../session";
 import { fetchText, msg } from "@i18n";
 import { stopAnimation } from "../instance";
 
@@ -9,6 +10,7 @@ let kappaValue: number = 0.5;
  * HTML側のUIを使用してパラメータを制御します。
  */
 export async function runGaugeHiggs(device: GPUDevice, theory: 'U1' | 'SU2', mode :"C" | "E"): Promise<() => void> {
+    const signal = animationSignal();
     msg("Starting Full Scale SU(2) Gauge-Higgs (Electroweak) simulation.");
     stopAnimation();
 
@@ -126,8 +128,8 @@ export async function runGaugeHiggs(device: GPUDevice, theory: 'U1' | 'SU2', mod
     const onKappaChange = () => writeParams(betaValue, parseFloat(kappaSlider.value));
     
     // リスナー登録
-    betaSlider.addEventListener('input', onBetaChange);
-    kappaSlider.addEventListener('input', onKappaChange);
+    betaSlider.addEventListener('input', onBetaChange, { signal });
+    kappaSlider.addEventListener('input', onKappaChange, { signal });
 
     // --- 4. コンピュートパイプラインの作成 ---
     const computeBindGroupLayout = device.createBindGroupLayout({
@@ -235,6 +237,7 @@ export async function runGaugeHiggs(device: GPUDevice, theory: 'U1' | 'SU2', mod
     const sweepsPerFrame = 1;
 
     function frame() {
+        if (signal.aborted) return;
         const commandEncoder = device.createCommandEncoder();
 
         // 物理更新ステップ

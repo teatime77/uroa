@@ -8,6 +8,7 @@ import { CalcRenderPipeline, ComputeRenderPipeline, RenderPipeline } from "./pri
 import { initUI3D, ui3D, waitClick } from "./ui.js";
 import { asyncBodyOnLoadDemo } from "./demo.js";
 import { asyncBodyOnLoadTex } from "./texture.js";
+import { animationSignal } from "./session";
 
 export let requestId : number = 0;
 
@@ -131,7 +132,7 @@ class Run {
 
 
 export function stopAnimation(){
-    // validFrame = false;
+    validFrame = false;
     if(requestId != 0){
         cancelAnimationFrame(requestId);
         requestId = 0;
@@ -139,11 +140,13 @@ export function stopAnimation(){
 }
 
 export async function startAnimation(comps : ComputePipeline[], meshes: RenderPipeline[]){
+    const signal = animationSignal();
     stopAnimation();
     validFrame = false;
 
     const run = new Run();
     await run.init(comps, meshes);
+    if (signal.aborted) return;
     validFrame = true;
     requestId = requestAnimationFrame(run.frame.bind(run));
 }
@@ -186,6 +189,7 @@ export function makeComputeRenderPipelines(compShaderText : string, globalGrid :
 }
 
 export async function startPackage(pkg : Package){
+    const signal = animationSignal();
     $("orbital-panel").style.display = "none";
 
     const comps : ComputePipeline[] = [];
@@ -196,6 +200,7 @@ export async function startPackage(pkg : Package){
             msg(`-------------------------------------------------- ${info.compName}`);
 
             const compShaderText = await fetchShaderText(info.compName);
+            if (signal.aborted) return;
 
             const [comp, comp_meshes] = makeComputeRenderPipelines(compShaderText, info.globalGrid, info.shapes);
             comps.push(comp);
@@ -210,15 +215,17 @@ export async function startPackage(pkg : Package){
     
     await startAnimation(comps, meshes);
 
-    await waitClick("next-button");
+    await waitClick("next-button", signal);
 }
 
 export async function asyncBodyOnLoadPackage(package_name : string){
+    const signal = animationSignal();
     msg(`Load Package:${package_name}`);
     const test_text = await fetchText(`./package/${package_name}.json`);
     const packages = JSON.parse(test_text) as Package[];
 
     for(const pkg of packages){
+        if (signal.aborted) return;
         await startPackage(pkg);
     }
 }

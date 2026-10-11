@@ -1,3 +1,4 @@
+import { animationSignal } from "../session";
 import { $, fetchText, msg, MyError } from "@i18n";
 import { stopAnimation } from "../instance";
 
@@ -23,6 +24,7 @@ let W_1_1 = NaN;
  * which is typical in WebGPU applications and seems to be the case in your framework.
  */
 export async function runLGT(device: GPUDevice, theory: 'U1' | 'SU2' | 'SU3' = 'U1', vizMode: 'plaquette' | 'vortex' | "wilson" = 'plaquette'): Promise<() => void> {
+    const signal = animationSignal();
     thermalizationSweeps = (theory == "SU3" ? 1500 : 1000);
     msg(`Starting 2D ${theory} Lattice Gauge Theory simulation. sweeps:${thermalizationSweeps}`);
     autoBeta = true;
@@ -436,6 +438,7 @@ export async function runLGT(device: GPUDevice, theory: 'U1' | 'SU2' | 'SU3' = '
 
     // 5. Start a custom animation loop to run the update shader
     function frame() {
+        if (signal.aborted) return;
         // If thermalization is in progress, just idle and wait for the next frame.
         if (isMeasuring) {
             animationId = requestAnimationFrame(frame);
@@ -505,6 +508,7 @@ export async function runLGT(device: GPUDevice, theory: 'U1' | 'SU2' | 'SU3' = '
                 isMeasuring = true;
 
                 await MeasureAvgPlaquette();
+                if (signal.aborted) return;
 
                 if(theory == "SU3" && betaValue < 30){
                     if(vizMode == "plaquette"){
@@ -536,6 +540,7 @@ export async function runLGT(device: GPUDevice, theory: 'U1' | 'SU2' | 'SU3' = '
                 updatePipelineCnt = 0;
                 isMeasuring = false;
             }, 1000);
+            signal.addEventListener("abort", () => clearInterval(timeoutId), { once: true });
         }
     }
 
@@ -543,6 +548,7 @@ export async function runLGT(device: GPUDevice, theory: 'U1' | 'SU2' | 'SU3' = '
     
     // Return a "stopper" function to be called when this animation should end.
     return () => {
+        clearInterval(timeoutId);
         if (animationId) {
             cancelAnimationFrame(animationId);
             animationId = null;

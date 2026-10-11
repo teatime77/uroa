@@ -1229,8 +1229,11 @@ export class Log extends UI {
 
 export class Layout {
     static root : Grid;
+    private static listeners?: AbortController;
 
     static initLayout(root : Grid, parentElement : HTMLElement = document.body){
+        Layout.listeners?.abort();
+        Layout.listeners = new AbortController();
         Layout.root = root;
 
         parentElement.append(root.div);
@@ -1238,9 +1241,14 @@ export class Layout {
     
         window.addEventListener("resize", (ev : UIEvent)=>{
             Layout.root.updateRootLayout();
-        });
+        }, { signal: Layout.listeners.signal });
 
         modalDlg = $div("modal_dlg");
+    }
+
+    static dispose(): void {
+        Layout.listeners?.abort();
+        Layout.root?.div.remove();
     }
 }
 

@@ -63,6 +63,7 @@ export class Sequencer  {
     static generator : Generator<any> | undefined;
 
     static init(actions : Action[]){
+        Sequencer.stop();
         if(actions.length != 0){
             Sequencer.rootParallelAction = new ParallelAction({ actions });
         }
@@ -72,6 +73,7 @@ export class Sequencer  {
     }
 
     static start(){
+        Sequencer.stop();
         if(Sequencer.rootParallelAction == undefined){
             msg("no actions");
             return;
@@ -95,5 +97,10 @@ export class Sequencer  {
         }
 
         worldCanvas.requestUpdateCanvas();
+    }
+
+    static stop(): void {
+        Sequencer.generator?.return(undefined);
+        Sequencer.generator = undefined;
     }
 }

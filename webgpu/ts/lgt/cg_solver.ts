@@ -1,6 +1,8 @@
+import { animationSignal } from "../session";
 import { fetchText } from "@i18n";
 
 export async function runCGSolver(device: GPUDevice) {
+    const signal = animationSignal();
     const L = 128;
     const N = L * L;
     const arraySize = N * 4; // f32 = 4 bytes
@@ -95,6 +97,7 @@ export async function runCGSolver(device: GPUDevice) {
 
     // --- 4. 結果の待機と確認 ---
     await device.queue.onSubmittedWorkDone();
+    if (signal.aborted) return;
     const endTime = performance.now();
     console.log(`CG Solver finished in ${endTime - startTime} ms`);
 

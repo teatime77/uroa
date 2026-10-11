@@ -1,6 +1,6 @@
 # 現状確認と改修前の基準
 
-初回確認・修正後確認: 2026-10-10（日本時間）。初回の失敗記録は履歴として残し、最新結果は末尾の「修正後の確認」に記録する。[改善計画](improvement-plan.md)のP0として、現行ソースの機能索引、Git状態、ビルド、5画面の起動と代表操作を確認した。機能の入口は [features.md](features.md)、全体構成は [architecture.md](architecture.md) を参照する。
+初回確認・修正後確認: 2026-10-10（日本時間）。初回の失敗記録は履歴として残し、最新結果は末尾の確認記録に追記する。[改善計画](improvement-plan.md)のP0として、現行ソースの機能索引、Git状態、ビルド、5画面の起動と代表操作を確認した。機能の入口は [features.md](features.md)、全体構成は [architecture.md](architecture.md) を参照する。2026-10-11のP3確認は [build-and-test.md](build-and-test.md) に記録する。
 
 **開発環境では5画面の表示と一部の代表操作を確認できた。一方、型確認は失敗し、ルートViteビルドの配信では5アプリの正常起動を確認できなかった。** これらを改修前の既知の問題として記録する。全機能の検証や回帰テストの導入完了を意味しない。
 
@@ -157,3 +157,15 @@ algebraの3通りの完了確認は、隔離ChromeでspeechSynthesis.speakの音
 diagram/movieの既存Firebase CDN要求は引き続きERR_BLOCKED_BY_ORBとなる。今回の画面起動の合否はローカルの入口・UIを対象とし、この外部通信失敗は別の残件として証跡に残した。Viteの既存チャンク警告も残る。Python一括ビルド・Firebase実サービス・Android・ESP32は今回未確認。
 
 次はSTATE-04の旧diagramデータの互換性を整理し、P1の継続的な回帰テストを導入する。今回はサブモジュール構成を変更せず、algebraとgameの変更はそれぞれの作業ツリーに未コミットのまま残した。
+
+## 2026-10-11: P3の確認
+
+単一リポジトリ化とビルド統合後、共通入口・起動・停止・破棄を整理した。[起動・終了仕様](app-lifecycle.md) と [実行手順・検証結果](build-and-test.md) に現行の構成を記録する。
+
+- 共通入口は `app/ts/main.ts`、実行状態管理は `app/ts/lifecycle.ts`、diagramのチェーン・停止・待機は `diagram/ts/runtime.ts`。
+- `npm.cmd run verify` 成功。TypeScript診断0、公開HTML6ページと92項目のWebGPU資産を確認。
+- `npm.cmd run test:lifecycle` は5件成功。
+- 既存 `tests/test.py` は変更せず、開発・previewの両方で5アプリ成功。単独での開発環境の最終再実行も全アプリ成功。
+- `tests/test_lifecycle.py` は開発・previewの両方で成功。直接・重複起動と破棄、60秒待機の停止・再実行、diagramからmovie・game・webgpuの実行と停止・画面復帰、停止後のGPU追加送信なし、初期化失敗の後片付けを確認。
+
+連携確認で見つけたdiagram経由のWGSL取得先と、movieの停止後に全操作完走を前提とするassertは修正した。旧diagram教材の互換性、Firebaseの機能、全GPUデモの数値・停止、実際の音声、Android・ESP32はこの確認で解決・検証済みとは扱わない。作業用のVite・previewサーバーは検証後に終了する。

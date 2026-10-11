@@ -1,6 +1,7 @@
 import { $, fetchText } from "@i18n";
 import { g_device, initContext } from "./util";
 import { initUI3D } from "./ui";
+import { animationSignal } from "./session";
 
 function getComputeShader(orbitalType: string): string {
   // We define the specific math for each orbital here.
@@ -165,7 +166,11 @@ function setupRender(
     // A typed array to hold our 4x4 matrix
     const matrixData: Float32Array = new Float32Array(16);
 
+    const signal = animationSignal();
+    let frameId: number;
+    signal.addEventListener("abort", () => cancelAnimationFrame(frameId), { once: true });
     function frame(time: number): void {
+        if (signal.aborted) return;
         // 3. Calculate a Y-axis rotation matrix based on time
         const angle: number = time * 0.001; // Convert ms to seconds
         const cosT: number = Math.cos(angle);
@@ -202,13 +207,15 @@ function setupRender(
         passEncoder.end();
 
         device.queue.submit([commandEncoder.finish()]);
-        requestAnimationFrame(frame);
+        frameId = requestAnimationFrame(frame);
     }
 
-    requestAnimationFrame(frame);
+    frameId = requestAnimationFrame(frame);
 }
 
 export async function showElectrons(){
+    const signal = animationSignal();
+    const listeners = new AbortController();
     $("orbital-panel").style.display = "inline-block";
 
     const canvas = $('world-webgpu') as HTMLCanvasElement;
@@ -226,6 +233,7 @@ export async function showElectrons(){
 
     // const compShader = await fetchText('./wgsl/electrons-comp.wgsl');
     const renderShader = await fetchText('./wgsl/electrons-vert-frag.wgsl');
+    if (signal.aborted) { volumeTexture.destroy(); return () => {}; }
 
 
     const selectElement = document.getElementById('orbital-select') as HTMLSelectElement;
@@ -243,7 +251,7 @@ export async function showElectrons(){
     selectElement.addEventListener('change', (event: Event) => {
         const target = event.target as HTMLSelectElement;
         updateOrbital(target.value);
-    });
+    }, { signal: listeners.signal });
 
     // 3. Initial setup
     // Run the compute shader for whatever is currently selected in the HTML
@@ -252,6 +260,7 @@ export async function showElectrons(){
     // Start the render loop (it just keeps reading the volumeTexture, 
     // so it will automatically show the new orbital as soon as compute finishes!)
     setupRender(g_device, context, volumeTexture, renderShader);
+    return () => { listeners.abort(); volumeTexture.destroy(); };
 }
 
 

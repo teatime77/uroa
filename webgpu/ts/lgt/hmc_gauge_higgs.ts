@@ -1,3 +1,4 @@
+import { animationSignal } from "../session";
 import { fetchText, msg } from "@i18n";
 import { stopAnimation } from "../instance";
 
@@ -8,6 +9,7 @@ let kappaValue: number = 1.0;
  * U(1) Gauge-Higgs モデル (HMC版)
  */
 export async function runHMCGaugeHiggs(device: GPUDevice, mode: "C" | "E"): Promise<() => void> {
+    const signal = animationSignal();
     msg("Starting U(1) Gauge-Higgs HMC simulation...");
     stopAnimation();
 
@@ -103,8 +105,8 @@ export async function runHMCGaugeHiggs(device: GPUDevice, mode: "C" | "E"): Prom
     updateParams(betaValue, kappaValue);
     const onBetaChange = () => updateParams(parseFloat(betaSlider.value), kappaValue);
     const onKappaChange = () => updateParams(betaValue, parseFloat(kappaSlider.value));
-    betaSlider.addEventListener('input', onBetaChange);
-    kappaSlider.addEventListener('input', onKappaChange);
+    betaSlider.addEventListener('input', onBetaChange, { signal });
+    kappaSlider.addEventListener('input', onKappaChange, { signal });
 
     // --- 4. コンピュートパイプラインの作成 ---
     const computeBindGroupLayout = device.createBindGroupLayout({
@@ -197,6 +199,7 @@ export async function runHMCGaugeHiggs(device: GPUDevice, mode: "C" | "E"): Prom
     const md_steps = 15;
 
     function frame() {
+        if (signal.aborted) return;
         const commandEncoder = device.createCommandEncoder();
         const pass = commandEncoder.beginComputePass();
 

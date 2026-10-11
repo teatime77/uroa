@@ -1,3 +1,4 @@
+import { animationSignal } from "../session";
 import { fetchText, msg } from "@i18n"; // 環境に合わせてインポート元を調整してください
 import { stopAnimation } from "../instance";
 
@@ -8,6 +9,7 @@ let lambdaValue: number = 1.0;
  * 2D ヒッグス場 (O(2) 複素スカラー場) シミュレーション
  */
 export async function runHiggs(device: GPUDevice): Promise<() => void> {
+    const signal = animationSignal();
     msg("Starting 2D Higgs Field (Spontaneous Symmetry Breaking) simulation.");
     stopAnimation();
 
@@ -95,8 +97,8 @@ export async function runHiggs(device: GPUDevice): Promise<() => void> {
     const onLambdaChange = () => writeParams(kappaValue, parseFloat(lambdaSlider.value));
     
     // リスナー登録
-    kappaSlider.addEventListener('input', onKappaChange);
-    lambdaSlider.addEventListener('input', onLambdaChange);
+    kappaSlider.addEventListener('input', onKappaChange, { signal });
+    lambdaSlider.addEventListener('input', onLambdaChange, { signal });
 
     // --- 4. パイプラインの作成 ---
     const computeBindGroupLayout = device.createBindGroupLayout({
@@ -170,6 +172,7 @@ export async function runHiggs(device: GPUDevice): Promise<() => void> {
     const sweepsPerFrame = 15;
 
     function frame() {
+        if (signal.aborted) return;
         const commandEncoder = device.createCommandEncoder();
 
         for (let s = 0; s < sweepsPerFrame; s++) {

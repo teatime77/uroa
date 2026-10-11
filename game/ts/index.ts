@@ -5,7 +5,7 @@ import './widget/scroll_view';
 import './widget/misc';
 import './action/speech';
 
-import { initSpeech } from "./action/speech";
+import { initSpeech, stopSpeech, disposeSpeech } from "./action/speech";
 import { Sequencer } from "./action/sequencer";
 import { getUIFromId } from "./game_util";
 import { initIsometric, clearIsometric } from "./isometric/isometric";
@@ -24,7 +24,7 @@ export let isDev : boolean = false;
 export let basePath : string = ".";
 let worldData : JsonData;
 
-export async function initGame(){
+export async function initGame(signal?: AbortSignal){
     msg("loaded");
     let pathname  : string;
     let params = new Map<string, string>();
@@ -67,6 +67,7 @@ export async function initGame(){
     testEx();
 
     const map = await fetchJson(`${basePath}/data/map.json?id=${Math.random()}`);
+    if (signal?.aborted) return;
     initIsometric(worldCanvas, map);
     worldCanvas.setAllUIs();
     
@@ -74,7 +75,7 @@ export async function initGame(){
     msg("game ready");
 }
 
-export async function loadWorld(target : string){
+export async function loadWorld(target : string, shouldStop: () => boolean = () => false){
     clearIsometric();
 
     const canvas : Canvas   = worldCanvas;
@@ -88,10 +89,12 @@ export async function loadWorld(target : string){
     termToUIs.clear();
 
     const stageData = await SymbolRef.importLibrary(target);
+    if (shouldStop()) return;
 
     if(data.imports != undefined){
         for(const path of data.imports){
             await SymbolRef.importLibrary(path);
+            if (shouldStop()) return;
         }
     }
 
@@ -123,12 +126,31 @@ import { sleep } from "@i18n";
 import { setIsProof } from "@parser";
 
 export async function playGameWorld(target: string, stopCallback: () => boolean) {
-    await loadWorld(target);
+    const generation = ++playGeneration;
+    await loadWorld(target, () => stopCallback() || generation !== playGeneration);
+    if (stopCallback() || generation !== playGeneration) return;
     Sequencer.start();
 
     // シーケンサーが終了する、またはdiagram側からstopフラグが立つまで待機
     while (Sequencer.rootParallelAction && !Sequencer.rootParallelAction.finished) {
-        if (stopCallback()) break;
+        if (stopCallback() || generation !== playGeneration) {
+            if (generation === playGeneration) stopGame();
+            break;
+        }
         await sleep(100);
     }
+}
+
+let playGeneration = 0;
+
+export function stopGame(): void {
+    playGeneration++;
+    Sequencer.stop();
+    stopSpeech();
+}
+
+export function disposeGame(): void {
+    stopGame();
+    worldCanvas?.dispose();
+    disposeSpeech();
 }

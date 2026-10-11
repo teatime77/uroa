@@ -286,11 +286,11 @@ export async function initPlane(plane : Plane, root : Grid){
 export function viewEvent(view : View){
     view.canvas.addEventListener("click"      , async (ev : MouseEvent)=>{
         await view.click(ev);
-    }); 
+    }, { signal: view.eventSignal });
 
     view.canvas.addEventListener("dblclick"   , async (ev : MouseEvent)=>{
         await view.dblclick(ev);
-    });
+    }, { signal: view.eventSignal });
 
     view.canvas.addEventListener("contextmenu", async (ev : MouseEvent)=>{
         msg("contextmenu");
@@ -327,13 +327,13 @@ export function viewEvent(view : View){
                 await GlobalState.Builder__tool.finish(view);
             }
         }
-    });    
+    }, { signal: view.eventSignal });
 
-    window.addEventListener("resize", view.resizeCanvas.bind(view));
+    window.addEventListener("resize", view.resizeCanvas.bind(view), { signal: view.eventSignal });
 
     // Passive event listeners
     // https://github.com/WICG/EventListenerOptions/blob/gh-pages/explainer.md
-    view.canvas.addEventListener("wheel"      , view.wheel.bind(view), {"passive" : false } );
+    view.canvas.addEventListener("wheel", view.wheel.bind(view), { passive: false, signal: view.eventSignal });
 
     dropEvent(view);
     

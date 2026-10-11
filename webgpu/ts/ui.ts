@@ -2,6 +2,7 @@ declare var glMatrix: any;
 
 import { assert } from "@i18n";
 import { editor } from "./editor.js";
+import { animationSignal } from "./session";
 
 const $dic = new Map<string, HTMLElement>();
 
@@ -60,17 +61,21 @@ class UI3D {
     tick               : number = 0;
     env                : Float32Array = new Float32Array([0,0,0,0]);
 
+    private listeners = new AbortController();
+
+    dispose(): void { this.listeners.abort(); }
+
     constructor(canvas : HTMLCanvasElement){
         this.startTime = Date.now();
 
         this.canvas = canvas;
-        canvas.addEventListener('pointerdown', this.pointerdown.bind(this));
-        canvas.addEventListener('pointerup', this.pointerup.bind(this));
-        canvas.addEventListener('pointermove', this.pointermove.bind(this));
-        canvas.addEventListener("wheel", this.wheel.bind(this), { passive: false });
-        canvas.addEventListener('contextmenu', e => e.preventDefault());
+        canvas.addEventListener('pointerdown', this.pointerdown.bind(this), { signal: this.listeners.signal });
+        canvas.addEventListener('pointerup', this.pointerup.bind(this), { signal: this.listeners.signal });
+        canvas.addEventListener('pointermove', this.pointermove.bind(this), { signal: this.listeners.signal });
+        canvas.addEventListener("wheel", this.wheel.bind(this), { passive: false, signal: this.listeners.signal });
+        canvas.addEventListener('contextmenu', e => e.preventDefault(), { signal: this.listeners.signal });
 
-        $inp("auto-rotate").addEventListener("click", this.click.bind(this));
+        $inp("auto-rotate").addEventListener("click", this.click.bind(this), { signal: this.listeners.signal });
 
         this.autoRotate = $inp("auto-rotate").checked;
     }
@@ -152,6 +157,7 @@ class UI3D {
 export let ui3D : UI3D;
 
 export function initUI3D(canvas : HTMLCanvasElement){
+    ui3D?.dispose();
     ui3D = new UI3D(canvas);
 }
 
@@ -167,15 +173,16 @@ export function makeLightDir(){
     return v;
 }
 
-export function waitClick(id:string): Promise<void> {
-    return new Promise((resolve) => {
+export function waitClick(id: string, signal: AbortSignal = animationSignal()): Promise<void> {
+    if (signal.aborted) return Promise.resolve();
+    return new Promise(resolve => {
         const button = $(id);
-
-        const handler = (ev: MouseEvent) => {
-            button.removeEventListener("click", handler);
+        const done = () => {
+            button.removeEventListener("click", done);
+            signal.removeEventListener("abort", done);
             resolve();
         };
-
-        button.addEventListener("click", handler);
+        button.addEventListener("click", done, { once: true });
+        signal.addEventListener("abort", done, { once: true });
     });
 }
