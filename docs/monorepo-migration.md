@@ -62,7 +62,7 @@ gitlinkは0件になり、`.gitmodules`と親のローカルsubmodule設定を�
 
 旧13フォルダーのbuildスクリプトはすべて `tsc -b` だったため、既存のルート参照ビルドで処理できる。npm workspaces登録は9個のまま。登録外のlesson、media、movie、plotは独自のnpm依存を宣言していない。ロックファイル、TypeScript参照、Vite設定、WebGPU資産コピーは変更していない。
 
-## 検証と残作業
+## 移行直後の検証と残作業
 
 - `npm.cmd run build:all -- --force --pretty false`: 13プロジェクトを強制ビルドし、診断なしで終了コード0。
 - `node node_modules/vite/bin/vite.js build`: 終了コード0。gameの静的・動的importが混在する旨の警告2件は引き続き出る。
@@ -70,3 +70,11 @@ gitlinkは0件になり、`.gitmodules`と親のローカルsubmodule設定を�
 - 依存の新規インストール、Python経由のビルド・配信、Android、外部サービス、実機の検証は行っていない。
 
 次のビルド整理では、workspacesとロックファイルの扱い、複数のビルド経路の役割、新規環境での再現、共通確認コマンドを検討する。push、mainへの反映、旧リポジトリや旧Gitデータの廃止は未実施。
+
+## 2026-10-11: 新規インストールと依存更新の確認
+
+移行後、ユーザーが通常のローカルcloneで作成した `uroa-install-check` に対し、`npm.cmd ci`、TypeScriptビルド、Viteビルドを実行して成功した。移行後の既存Playwrightテストもユーザーが再実行して問題なかったと報告した。
+
+続いて検証用コピーで `npm.cmd audit fix` を実行し、TypeScript・Viteビルドと、そのコピーから起動したViteサーバーに対するPlaywrightテストの成功をユーザーが確認した。この依存更新をuroaへ反映する作業で、`webgpu/package.json` が既存のignore設定によってGit管理から漏れていることを確認したため、既存ファイルを管理対象に含め、ロックファイルのワークスペース登録を復元した。
+
+依存更新の差分、検証結果、残る脆弱性は [dependency-update.md](dependency-update.md) に記録する。上の「未実施」は移行直後の記録であり、後から得られた確認結果はこの節と依存更新記録で区別する。

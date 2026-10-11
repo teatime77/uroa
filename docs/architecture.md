@@ -164,7 +164,7 @@ Vite開発サーバーの `POST /api/save` は数式関連のテキスト／JSON
 
 ルートの `npm run install:all` は `npm install` を実行し、共通依存と登録済み9 workspacesを準備する。残る4プロジェクト（lesson、media、movie、plot）は独自のnpm依存を宣言していない。`npm run build:all` は `tsc -b tsconfig.sys.json` で13プロジェクトを処理する。各プロジェクトの旧buildスクリプトも `tsc -b` だけだったため、サブモジュール単位の重複実行を外した。
 
-以下は現行のコマンド例。2026-10-11の移行時にTypeScript全体の強制ビルドとViteビルドを確認した（[移行記録](monorepo-migration.md)）。依存の新規インストール、Python経由の一括ビルドと配信は今回確認していない。
+以下は現行のコマンド例。2026-10-11の移行時にTypeScript全体の強制ビルドとViteビルドを確認した（[移行記録](monorepo-migration.md)）。その後、ユーザーが通常のcloneで依存の新規インストール、ビルド、既存Playwrightテストを確認した。`npm audit fix` 後の依存更新とWebGPUのワークスペース登録の補修は [dependency-update.md](dependency-update.md) に記録する。Python経由の一括ビルドと配信は未確認。
 
 ```powershell
 # 作業ディレクトリ: uroa

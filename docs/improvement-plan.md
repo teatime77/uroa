@@ -110,7 +110,13 @@ algebraだけを通常フォルダーへ移行し、旧HEADとその祖先59コ�
 
 残る12フォルダーも通常フォルダーへ移行し、それぞれの旧HEADと祖先履歴を統合した。各 `.gitignore` とファイル内容を維持し、`.gitmodules`を廃止した。`build:all` はルートのTypeScript参照ビルド、`install:all` はルートのnpm installへ置き換えた。作業・照合・バックアップの詳細は [monorepo-migration.md](monorepo-migration.md) を参照する。
 
-Git管理の移行とサブモジュール依存コマンドの置換は完了。P2全体の完了判断には、依存インストールの新規環境での再現と、既存Playwrightテストの再実行が残る。workspacesやロックファイルの整理、共通確認コマンドの導入は別の作業とする。
+Git管理の移行とサブモジュール依存コマンドの置換は完了。この時点では、新規環境での依存インストールと既存Playwrightテストの再実行は未確認だった。後続の確認結果は次節に記録する。複数のビルド経路の役割整理、共通確認コマンドの導入は別の作業とする。
+
+### 2026-10-11: 新規インストールと依存更新
+
+ユーザーが `uroa-install-check` を通常のcloneで作成し、`npm.cmd ci`、TypeScript・Viteビルド、既存Playwrightテストの成功を確認した。続いて `npm.cmd audit fix` 後にもビルドと、そのコピーのViteサーバーに対するPlaywrightテストを確認した。
+
+検証済みの依存更新をuroaへ反映した。Git管理から漏れていた既存の `webgpu/package.json` を管理対象に含め、9 workspacesの構成を揃えた。反映後の依存再インストールとTypeScript・Viteビルドにも成功した。実行結果と残る脆弱性は [dependency-update.md](dependency-update.md) を参照する。次のビルド整理では、共通確認コマンドとPython・Viteのビルド経路を扱う。diagram・Firebaseの機能修正やFirebase SDKの大きなバージョン変更は保留する。
 
 ## P3: 共通入口と起動・終了の整理
 
