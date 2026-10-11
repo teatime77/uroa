@@ -303,10 +303,6 @@ export abstract class UI extends AbstractUI {
     }
 
     layout(pos : Vec2, size : Vec2, nest : number){
-        if(appMode == AppMode.lessonPlay){            
-            msg(`${" ".repeat(4 * nest)} id:${this.constructor.name} x:${pos.x.toFixed()} y:${pos.y.toFixed()} position:${this.position} ${this.html().style.position}`);
-        }
-
         this.setSize(size);
         if(this.horizontalAlign == "center"){
             pos.x += 0.5 * (size.x - this.netSize.x);

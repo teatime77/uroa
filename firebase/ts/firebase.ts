@@ -224,12 +224,6 @@ export async function initFirebase() {
 
 export function initForMovie(fnc : (id : number) => Promise<void>){
     readDocFnc = fnc;
-
-
-    if(appMode == AppMode.lessonPlay){
-        refId = "wutfxujVE0GGD5YW";
-        msg(`set ref-ID:[${refId}]`);
-    }
 }
 
 export function getDocRef(id : string, ref_id = refId){

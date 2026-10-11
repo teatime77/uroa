@@ -3,7 +3,6 @@ import { DbDoc, getMyDoc, getRootFolder, initFirebase, initForMovie, makeDocsGra
 import { $button, $flex, bgColor, Button, fgColor, getPhysicalSize, Grid, Layout } from "@layout";
 import { getOperationsText, GlobalState, initPlane, initRelations, loadData, loadOperationsText, Plane, playBack, removeDiv } from "@plane";
 import { stopPlay, playAllGraph, convert, backup, playBackUp, newDocs, isJson, allData, fetchAllData } from "./flow";
-import { playLesson, initLesson, makeLessonPlayGrid, makeLessonEditGrid, initLessonPlay } from "./lesson";
 import { getCookie, showLangDlg, makePlayEditGrid, langButtonClicked } from "./movie_ui";
 import { includeDialog } from "./movie_util";
 import { loadOperationsJSON } from "../../plane/ts/factories";
@@ -125,12 +124,6 @@ export async function initMovie(signal?: AbortSignal){
                     await playBack(PlayMode.normal);
                     playStopButton.setImgUrl(`${urlBase}/../plane/images/play.png`);
                     break;
-
-                case AppMode.lessonPlay:
-                case AppMode.lessonEdit:
-                    await playLesson();
-                    break;
-
                 default:
                     throw new MyError();
                 }
@@ -140,12 +133,6 @@ export async function initMovie(signal?: AbortSignal){
                 case AppMode.edit:
                 case AppMode.play:
                     stopPlay();
-                    break;
-
-                case AppMode.lessonPlay:
-                case AppMode.lessonEdit:
-                    stopPlay();
-                    // await stopLesson();
                     break;
 
                 default:
@@ -194,17 +181,6 @@ export async function initMovie(signal?: AbortSignal){
 
 
     switch(appMode){
-    case AppMode.lessonPlay:
-        initLesson();
-        root = makeLessonPlayGrid(button_size);
-        playStopButton.button.style.visibility = "hidden";
-        break;
-    
-    case AppMode.lessonEdit:
-        initLesson();
-        root = makeLessonEditGrid(play_buttons, button_size);
-        break;
-
     case AppMode.edit:
     case AppMode.play:
     default:
@@ -247,14 +223,7 @@ export async function initMovie(signal?: AbortSignal){
     for(const button of buttons){
         button.addEventListener("click", langButtonClicked, { signal: movieListeners.signal });
     }
-
-    if(appMode == AppMode.lessonPlay){
-        await initLessonPlay();
-    }
-    else if(appMode != AppMode.lessonEdit){
-
-        await makeDocsGraph();
-    }
+    await makeDocsGraph();
 }
 
 async function undo_redo_test(){

@@ -10,8 +10,6 @@ export let isEdge : boolean = false;
 export enum AppMode {
     edit,
     play,
-    lessonEdit,
-    lessonPlay,
 }
 
 export let textLanguageCode : string = "eng";
@@ -460,23 +458,13 @@ export async function initI18n(){
 
     [ urlOrigin, , urlParams, urlBase] = parseURL();
 
-    if(urlParams.get("lesson") != undefined){
-
-        appMode = AppMode.lessonPlay;
-    }
-    else{
-
-        switch(urlParams.get("mode")){
-        case "edit":
-            appMode = AppMode.edit;
-            break;
-        case "lesson":
-            appMode = AppMode.lessonEdit;
-            break;
-        default:
-            appMode = AppMode.play;
-            break;
-        }
+    switch(urlParams.get("mode")){
+    case "edit":
+        appMode = AppMode.edit;
+        break;
+    default:
+        appMode = AppMode.play;
+        break;
     }
     
     if(quotationMarks.has(textLanguageCode)){
