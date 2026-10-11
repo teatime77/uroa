@@ -151,10 +151,12 @@ CLIが生成するのはJSONとDSLであり、WGSLの計算コードは別ソー
 
 | ファイル | 役割 |
 |---|---|
-| [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat) | TypeScript一括ビルド |
+| [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat) | TypeScript一括ビルド。バッチはルートのnpmコマンドを呼ぶ |
 | [vite.config.ts](../vite.config.ts) | 共通入口、モジュール別名、WebGPU資産コピー、5アプリの公開用HTML生成 |
-| [vite.config.base.ts](../vite.config.base.ts) | 共通Vite設定の補助ファイル |
-| [build_all.py](../build_all.py) | TypeScriptビルド呼び出し、条件付き子プロジェクトViteビルド、親distへの成果物・公開資産同期 |
+| [vite.config.base.ts](../vite.config.base.ts) | 現在は参照されていない共通設定の補助ファイル |
+| [build_all.py](../build_all.py) | ルートの `npm run build` を呼び、終了コードを返す互換用入口 |
+| [scripts/check-dist.mjs](../scripts/check-dist.mjs) | 5アプリの公開HTML・参照資産・WebGPUコピー資産の静的確認 |
+| [tests/test.py](../tests/test.py) | 既存5アプリ回帰テスト。接続先URLを引数または環境変数で指定 |
 | [web.py](../web.py) | Flaskでdistを配信。ポート5000 |
 | [firebase.json](../firebase.json) | Firebase Hostingの公開先をdistに設定 |
 | [movie/python/make_audio.py](../movie/python/make_audio.py) | Azure Speechによる教材音声生成 |
@@ -164,12 +166,16 @@ Vite開発サーバーの `POST /api/save` は数式関連のテキスト／JSON
 
 ルートの `npm run install:all` は `npm install` を実行し、共通依存と登録済み9 workspacesを準備する。残る4プロジェクト（lesson、media、movie、plot）は独自のnpm依存を宣言していない。`npm run build:all` は `tsc -b tsconfig.sys.json` で13プロジェクトを処理する。各プロジェクトの旧buildスクリプトも `tsc -b` だけだったため、サブモジュール単位の重複実行を外した。
 
-以下は現行のコマンド例。2026-10-11の移行時にTypeScript全体の強制ビルドとViteビルドを確認した（[移行記録](monorepo-migration.md)）。その後、ユーザーが通常のcloneで依存の新規インストール、ビルド、既存Playwrightテストを確認した。`npm audit fix` 後の依存更新とWebGPUのワークスペース登録の補修は [dependency-update.md](dependency-update.md) に記録する。Python経由の一括ビルドと配信は未確認。
+2026-10-11に `build`、`verify`、開発・preview・回帰テストのnpmコマンドを追加した。`verify` はTypeScript・公開ビルド・成果物の静的確認を行い、Playwrightは `test:e2e` で明示的に実行する。Python一括ビルドの旧同期処理は廃止した。準備手順と今回の検証範囲は [build-and-test.md](build-and-test.md) を参照する。
+
+移行時の検証は [移行記録](monorepo-migration.md)、ユーザーによる新規インストール・依存更新後のPlaywright成功は [dependency-update.md](dependency-update.md) に記録する。Flask配信は今回未確認。
 
 ```powershell
 # 作業ディレクトリ: uroa
-npm run build:all
-npx vite build
+npm.cmd run dev
+npm.cmd run verify
+npm.cmd run preview
+# 既存Python入口もルートのnpmビルドを呼ぶ
 python build_all.py
 python web.py
 ```

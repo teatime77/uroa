@@ -14,7 +14,13 @@
     "diagram"
   ],
   "scripts": {
+    "dev": "vite",
     "build:all": "tsc -b tsconfig.sys.json",
+    "build": "npm run build:all && vite build",
+    "preview": "vite preview",
+    "check:dist": "node scripts/check-dist.mjs",
+    "verify": "npm run build && npm run check:dist",
+    "test:e2e": "python tests/test.py",
     "install:all": "npm install"
   },
   "devDependencies": {

@@ -101,8 +101,8 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 
 | ID | やりたいこと | 最初に見る設定・処理 | 注意点 |
 |---|---|---|---|
-| BUILD-01 | TypeScript対象や依存を変える | [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat)、[package.json](../package.json) | TS参照13、workspaces 9。型確認とViteビルドは別の確認 |
-| BUILD-02 | HTML・モジュール・公開資産の配信を変える | [vite.config.ts](../vite.config.ts)、[build_all.py](../build_all.py) | 5アプリの公開用HTML書換え、WebGPUの資産コピー、開発時のみPOST /api/save。ビルド成功と5画面の起動成功を分ける |
+| BUILD-01 | TypeScript対象や依存を変える | [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat)、[package.json](../package.json) | TS参照13、workspaces 9。`build:all` は型・lib生成、`build` は続けて公開Viteビルド |
+| BUILD-02 | HTML・モジュール・公開資産の配信を変える | [vite.config.ts](../vite.config.ts)、[build_all.py](../build_all.py)、[scripts/check-dist.mjs](../scripts/check-dist.mjs) | `verify` は公開ビルドと成果物確認。Pythonも同じnpmビルドを呼ぶ。ブラウザ確認は [tests/test.py](../tests/test.py) を別途実行 |
 | BUILD-03 | Flask・Firebase Hostingで配信する | [web.py](../web.py)、[firebase.json](../firebase.json) | Flaskはdistの静的配信。Vite開発用APIが自動的に配信先へ移るわけではない |
 
 ## robotの移行対象（現時点では別リポジトリ）

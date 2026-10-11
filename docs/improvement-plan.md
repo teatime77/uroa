@@ -1,6 +1,6 @@
 # uroa全体の改善計画案
 
-作成・更新日: 2026-10-10（日本時間）。これまでの議論に基づく改善案。P0の機能索引と初回の現状確認を実施した。公開用入口・algebraの開発用保存・型診断を修正した。P1の継続的なテスト基盤は未着手。確認条件・成功・失敗・未実行は [current-state.md](current-state.md) を参照する。
+作成日: 2026-10-10、更新日: 2026-10-11（日本時間）。P0の機能索引と初回確認、公開用入口・algebra保存・型診断の修正、単一リポジトリ化を実施した。ユーザー作成の回帰テストは `tests/test.py` へ移動し、共通ビルド・成果物確認コマンドを追加した。初回の実行条件は [current-state.md](current-state.md)、現在のコマンドと確認範囲は [build-and-test.md](build-and-test.md) を参照する。
 
 現行構成は [architecture.md](architecture.md)、robotの既存機能は [robotの設計文書](../../robot/docs/architecture.md) を参照する。
 
@@ -96,7 +96,7 @@ WebGPUでは [GraphManager.step()](../webgpu/ts/control.ts) とrequestReadback()
 - 現行ソース、必要な資産、未コミット変更、未追跡ファイルを移行後と照合する。robot/chatには未追跡の実装があるため、コミット済みファイルだけを取り込む方法では不足する。
 - [package.json](../package.json)のgit submodule foreach依存を置き換え、workspaces、TypeScript参照、公開資産コピーの対象を整理する。plotなどの扱いは明示する。
 - JavaScript側はnpmを基準に依存管理を揃える案を検討する。robot/chatのpnpmからの変更は依存と既存テストを確認して別途行う。ESP32のPlatformIOは継続する。
-- 共通の確認コマンドを作り、型確認・対象テスト・公開用ビルド・ビルド後のブラウザ確認をつなぐ。例えばnpm run verifyという名称を使う案であり、現在このコマンドが存在するとは扱わない。
+- 共通の確認コマンドを作る。現在の `npm run verify` は型確認・公開用ビルド・成果物の静的確認を行う。大規模ブラウザテストは `npm run test:e2e` で別途実行する。サーバーの自動起動とブラウザ確認の一括実行は後続の検討事項。
 
 完了条件は、通常のcloneから必要な手順で全体を準備でき、P1の確認が再現し、サブモジュール操作に依存しないこと。公開・pushや旧リポジトリの廃止は、この移行検証とは別の作業として扱う。
 
@@ -117,6 +117,12 @@ Git管理の移行とサブモジュール依存コマンドの置換は完了�
 ユーザーが `uroa-install-check` を通常のcloneで作成し、`npm.cmd ci`、TypeScript・Viteビルド、既存Playwrightテストの成功を確認した。続いて `npm.cmd audit fix` 後にもビルドと、そのコピーのViteサーバーに対するPlaywrightテストを確認した。
 
 検証済みの依存更新をuroaへ反映した。Git管理から漏れていた既存の `webgpu/package.json` を管理対象に含め、9 workspacesの構成を揃えた。反映後の依存再インストールとTypeScript・Viteビルドにも成功した。実行結果と残る脆弱性は [dependency-update.md](dependency-update.md) を参照する。次のビルド整理では、共通確認コマンドとPython・Viteのビルド経路を扱う。diagram・Firebaseの機能修正やFirebase SDKの大きなバージョン変更は保留する。
+
+### 2026-10-11: 共通ビルド・確認コマンド
+
+公開用ビルドをルートのTypeScript・Viteへ統一し、`dev`、`build`、`preview`、`check:dist`、`verify`、`test:e2e` を追加した。Pythonの旧資産同期を廃止し、Python・batの入口はnpmコマンドを呼ぶ。`verify` と既存batの実行、成果物チェックの異常検出を確認した。
+
+ユーザーが `tmp/test1.py` を `tests/test.py` へ移動した。既存シナリオを維持し、接続先URL指定と依存の準備手順を追加した。今回の回帰テスト実行は未確認。詳細・未検証範囲は [build-and-test.md](build-and-test.md) を参照する。diagram・Firebaseの機能修正、依存の追加更新は行っていない。
 
 ## P3: 共通入口と起動・終了の整理
 
