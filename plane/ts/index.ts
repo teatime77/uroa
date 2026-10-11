@@ -22,7 +22,8 @@ import { makeClickTerm } from "./operation.js";
 import { isAngle, isAngleEqualityConstraint, isAssumption, isEnumSelection, isExprTransform, isExprTransformBuilder, isLengthSymbol, isMotion, isPoint, isPolygon, isShape, isShapeEquation, isShapeProposition, isStatement, isT1, isT2, isT3, isT4, isTextBlock, isToolSelection, isTriangle, isTriangleCongruence, isWidget } from "./type_guards.js";
 import { addSupplementaryAngles } from "./tool.js";
 
-export { playBack, initPlane, loadOperationsText } from "./factories.js"
+export { playBack, initPlane } from "./factories.js"
+export { loadOperationsJSON } from "./operation_loader.js"
 export { AbstractCanvas } from "./view.js";
 
 setAppServices({

@@ -71,6 +71,18 @@ Pythonから直接 `python tests/test.py --base-url http://localhost:4173/` で�
 
 教材・座標操作・実行順（webgpu、game、diagram、algebra、movie）、画面を表示する設定、待機方法は既存テストのまま。`timeout=0` のコンソール待機も維持しているため、期待する通知が来ない場合は手動中断が必要となる。サーバーの自動起動・終了、CI用設定は追加していない。P3専用の確認は別のテストへ追加した。
 
+## 操作JSONの保存・読込の確認
+
+保存形式や操作クラスを変更するときは、既存の5アプリ回帰テストに加えて、次の専用テストを使う。Python・Playwrightの準備は上記と同じ。サーバーは別ターミナルで起動しておく。
+
+```powershell
+npm.cmd run dev -- --port 5173 --strictPort
+# 別ターミナルで実行
+python tests/test_operation_json.py --base-url http://localhost:5173/
+```
+
+`test_operation_json.py` はソースモジュールを読み込むため、Vite開発サーバーに対して実行する。previewには既存 `tests/test.py` を使う。公開教材22件、全7種類の操作、空データの読込→toJson→JSON文字列化→再読込を比較し、旧形式の拒否が画面を消去しないこと、編集画面のSaveと再生で操作・図形・関係ログが一致することを確認する。比較時は採番されるoperationIdを除く。ClickShape.toJsonは座標を小数2桁に丸めるため、任意精度の座標は完全一致せず、その例も結果に表示する。Firebaseへの実際の読み書きは含まない。
+
 ## P2での確認（2026-10-11）
 
 - `npm.cmd run verify`: 成功。型診断なし、Vite 7.3.7、169モジュール変換、92項目コピー。gameの静的・動的importが混在する既存警告2件は残る。

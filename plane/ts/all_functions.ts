@@ -82,7 +82,7 @@ export function calcLineLineIntersection(l1 : AbstractLine, l2 : AbstractLine) :
 
 
 // Compatibility exports; internal callers import storage directly.
-export { saveJson, convertOperations, getOperationsText } from "./operation_storage";
+export { saveJson, getOperationsText } from "./operation_storage";
 
 export async function typeIntoInput(element: HTMLInputElement, text: string, delay = 100) {
     for (let i = 0; i < text.length; i++) {

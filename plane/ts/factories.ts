@@ -10,7 +10,6 @@ import { MathEntity, Widget, TextBlock, textBlockEvent } from "./json";
 import { initPlay, makeCssClass, makeCanvas, makeSelectionDlg, Builder__builderResetTool, movePointerAndHighlight, waitForClick, reasonMsg, movePointerToElement, typeIntoInput, speakReason, showAuxiliaryShapes, pairKey, makeToolByType, appendTitle, makeConstantProperty, makeTexProperty, appendRow, usedPropertyNames, setUsed_property_names } from "./all_functions";
 import { getCommonPointOfLines, isParallel, areEqualCircleArcs, getParallelogramClassifier, getParallelogramsByDiagonalLengthSymbols, isEqualAngle, findEqualLengthsByPointsPair, getParallelLinesByPointsPair, findEqualAnglesBy3pointsPair, getCommonLineOfPoints, isEqualLength, findAngle, findTrianglePairByAngles, getAngleUnitVectors, setEqualShapes, findTrianglePairByLengthSymbols, getCommonPoint, findParallelLinesOfLengthSymbols } from "./relations";
 import { toClockwisePoints } from "./geometry_order";
-import { convertOperations } from "./operation_storage";
 
 import { AngleEquality } from "./deduction/angle_equality";
 import { ExprTransform } from "./deduction/expr_transform";
@@ -24,7 +23,7 @@ import { TriangleDetector } from "./deduction/triangle_detector";
 import { TriangleSimilarity } from "./deduction/triangle_similarity";
 import { Angle, LengthSymbol } from "./dimension_symbol";
 import { AngleBisector } from "./geometry";
-import { Operation, ClickShape, ToolSelection, ToolFinish, EnumSelection, TextPrompt, PropertySetting, PlayBack } from "./operation";
+import { ToolSelection, ToolFinish, EnumSelection, TextPrompt, PropertySetting, PlayBack } from "./operation";
 import { Plane } from "./plane_ui";
 import { InputProperty, TextAreaProperty, SelectProperty, ImgSelectionProperty, ShapesProperty, ColorProperty, StringProperty, NumberProperty, BooleanProperty, Property } from "./property";
 import { menuDialogType, Statement } from "./statement";
@@ -32,186 +31,7 @@ import { SelectionTool, TriangleCongruenceBuilder, LengthEqualityBuilder, Statem
 import { isTextPrompt, isShapeEquationBuilder, isExprTransformBuilder, isEnumSelection, isWidget, isTextBlock, isAngle, isMathEntity, isPropertySetting, isTriangleCongruence, isLengthEquality } from "./type_guards";
 import { View } from "./view";
 
-export async function loadOperationsText(data : any) : Promise<Operation[]> {
-    let lines : string[];
-
-    if(2 <= data["version"]){
-        lines = data["operations"];
-        assert(Array.isArray(lines) && (lines.length == 0 || typeof lines[1] == "string"));
-    }
-    else{
-        msg(`data is empty.`);
-        lines = [];
-    }
-
-    const view = GlobalState.View__current!;
-    view.clearCanvas();
-
-    let operations : Operation[] = [];
-
-    let prev_line : string = "";
-    for(let line of lines){
-        line = line.trim().replaceAll(/\s+/g, " ");        
-        if(line == ""){
-            continue;
-        }
-        if(prev_line == line && line.startsWith("property")){
-            msg(`dup line:[${line}]`);
-            continue;
-        }
-        prev_line = line;
-
-        let operation : Operation;
-
-        // msg(`load:${line}`);
-        const items = line.split(" ");
-        switch(items[0]){
-        case "click":{
-                const x = parseFloat(items[1]);
-                const y = parseFloat(items[2]);
-                let shapeId = undefined;
-                if(4 <= items.length){
-                    const n = parseInt(items[3]);
-                    assert(! isNaN(n));
-                    shapeId = `${n}`;
-                }
-
-                operation = new ClickShape(new Vec2(x, y), shapeId);
-            }
-            break;
-
-        case "term":{
-                const textBlock_id = `${parseInt(items[1])}`;
-                let indexes : number[];
-                if(items.length == 2){
-                    indexes = [];
-                }
-                else{
-                    indexes = items[2].split(":").map(x => parseInt(x));
-                }
-                operation = AppServices.makeClickTerm(textBlock_id, indexes);
-            }
-            break;
-
-        case "tool":
-            operation = new ToolSelection(items[1]);
-            break;
-
-        case "finish":
-            operation = new ToolFinish(items[1]);
-            break;
-            
-        case "enum":{
-                const enum_id = parseInt(items[1]);
-                operation = new EnumSelection(enum_id);
-            }
-            break;
-
-        case "text":{
-                const regex = /text\s+'?([^']+)'?/;
-                const matches = line.match(regex);
-                assert(matches != null);
-
-                const items2 = Array.from(matches!);
-                // msg(`text len:${items2.length} [${items2[1]}]`);
-
-                const text = items2[1];
-                operation = new TextPrompt(text);
-            }
-            break;
-
-        case "property":{
-                const regex = /property\s+(\d+)\s+([0-9a-zA-Z_]+)\s+'?([^']+)'?/;
-                const matches = line.match(regex);
-                assert(matches != null);
-
-                const items2 = Array.from(matches!);
-                assert(items2.length == 4);
-
-                const [id, name, value_str] = items2.slice(1);
-                let value : string | number;
-
-                if(line.endsWith("'")){
-                    value = value_str;
-                }
-                else{
-                    value = parseFloat(value_str);
-                }
-                operation = new PropertySetting(`${parseInt(id)}`, name, value);
-            }
-            break;
-
-        default:
-            throw new MyError();
-        }
-
-        operations.push(operation);
-    }
-
-    operations = convertOperations(data["version"], operations);
-
-    return operations;
-}
-
-export async function loadOperationsJSON(data: any): Promise<Operation[]> {
-    const view = GlobalState.View__current!;
-    view.clearCanvas();
-
-    let operations: Operation[] = [];
-
-    for (const opData of data.operations) {
-        let operation: Operation;
-
-        switch (opData.op) {
-            case "click": {
-                const position = new Vec2(opData.x, opData.y);
-                operation = new ClickShape(position, opData.shapeId);
-                break;
-            }
-
-            case "term": {
-                operation = AppServices.makeClickTerm(opData.textBlock_id, opData.indexes);
-                break;
-            }
-
-            case "tool": {
-                operation = new ToolSelection(opData.name);
-                break;
-            }
-
-            case "finish": {
-                operation = new ToolFinish(opData.name);
-                break;
-            }
-
-            case "enum": {
-                operation = new EnumSelection(opData.value);
-                break;
-            }
-
-            case "text": {
-                operation = new TextPrompt(opData.text);
-                break;
-            }
-
-            case "property": {
-                operation = new PropertySetting(opData.id, opData.name, opData.value);
-                break;
-            }
-
-            default:
-                throw new MyError(`Unknown operation op: ${opData.op}`);
-        }
-
-        operations.push(operation);
-    }
-
-    // 既存の変換・後処理があれば通す（必要に応じて）
-    // operations = convertOperations(data.version, operations);
-
-    return operations;
-}
-
+export { loadOperationsJSON } from "./operation_loader";
 
 export function inputTextPrompt(message : string) : string | null {
     let text : string | null;

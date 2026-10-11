@@ -1,13 +1,11 @@
-import { $, $div, $dlg, assert, cancelSpeech, downloadJson, fetchJson, fetchText, getEngTexts, loadTranslationMap, msg, MyError, PlayMode, setPlayMode, setTextLanguageCode, setVoiceLanguageCode, sleep, Speech, TT } from "@i18n";
+import { $, $div, $dlg, assert, cancelSpeech, fetchJson, fetchText, getEngTexts, loadTranslationMap, msg, MyError, PlayMode, setPlayMode, setTextLanguageCode, setVoiceLanguageCode, sleep, Speech, TT } from "@i18n";
 import { getOperationsText, MathEntity, playBack, reasonToDoc, ShapeMode, Statement, usedReasons } from "@plane"
-import { BackUp, Edge, getBackUp, getGraph, graph, hideGraph, showGraph } from "@uroa-firebase"
-import { readDoc, theDoc, updateGraphDoc, loadOperationsAndPlay, readDocJson, urlBase } from "./index";
+import { BackUp, DbDoc, Edge, getBackUp, getGraph, graph, hideGraph, showGraph } from "@uroa-firebase"
+import { readDoc, theDoc, setDoc, updateGraphDoc, loadOperationsAndPlay, urlBase } from "./index";
 import { setCookie } from "./movie_ui";
 import { stopAudio } from "./timeline";
 
 export let allData : { type:string, version:number, docs:any[]};
-export const newDocs : any[] = [];
-export let isJson = true;
 let playbackGeneration = 0;
 
 export async function fetchAllData(){
@@ -153,16 +151,6 @@ export async function playAllGraph(shouldStop: () => boolean = () => false){
         msg(`==================== eng-texts:[${eng_texts}] ====================`);
     }
 
-    if(!isJson){
-        const data = {
-            type    : "uroa-stem",
-            version : 3.0,
-            docs    : newDocs
-        };
-
-        downloadJson("all-kyozai", data);
-    }
-
     msg("play all done.");
 }
 
@@ -208,7 +196,7 @@ export async function backup(){
         msg(`back-up ${doc.id}:${doc.title}`);
     }
 
-    backup.commitBackUp();
+    await backup.commitBackUp();
 
     showGraph();
 }
@@ -219,7 +207,8 @@ export async function playBackUp(){
     for await(const doc_obj of getBackUp()){
         msg(`play backup:${doc_obj.name}`)
         const data = JSON.parse(doc_obj.text);
-        await loadOperationsAndPlay(NaN, "", NaN, data);
+        await loadOperationsAndPlay(doc_obj.id, doc_obj.name, NaN, data);
+        setDoc(new DbDoc(null, doc_obj.id, doc_obj.name, doc_obj.text));
     }
 
     showGraph();

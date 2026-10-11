@@ -224,3 +224,21 @@ saveJson・getOperationsText・convertOperationsを `plane/ts/operation_storage.
 - Python環境は既存の `tmp/p3-venv` とChromiumを使用した。`tests/test.py` は変更せず、SHA256は `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。追加の確認スクリプトとダウンロードはGit管理外のtmpに置いた。
 
 確認用サーバーは終了した。Firestoreへの実際の認証・保存、音声の聴取、Android・実機は未検証。今回は保存・変換3関数の分離であり、読込関数はfactories.tsに残す。操作記録の読込、再生、画面イベント、AppServicesの分離は後続作業とする。
+
+## 2026-10-11: 操作オブジェクト形式への統一
+
+前項の保存・変換分離後、保存形式をversion 3の操作オブジェクト配列へ変更した。操作文字列のloadOperationsText・convertOperationsと、movieのisJson・newDocs・旧形式の一括変換用分岐を削除した。loadOperationsJSONは新しい `plane/ts/operation_loader.ts` に分離し、planeの公開APIから利用する。factories.tsには同関数の互換用再exportを残す。
+
+Save・Firebase更新・バックアップはgetOperationsTextの同じJSONを使う。readDocの既定はローカル教材、明示指定時はFirebase取得で、どちらも同じJSONローダーを使う。ローカル読込とバックアップ再生でもID・名前・本文をtheDocに保持し、更新・バックアップが現在の教材を対象にできるようにした。バックアップのcommitBackUpをawaitする。Firebase上の既存データの移行・削除は行っていない。
+
+検証結果:
+
+- `npm.cmd run verify`: 成功。TypeScript診断0、Vite 7.3.7、177モジュール変換、92項目コピー、成果物チェック成功。gameの静的・動的import混在の既存警告2件は残る。
+- 既存 `tests/test.py`: 開発5183・preview4183の両方でwebgpu・game・diagram・algebra・movieの5アプリすべて成功。Python 3.12、Playwright 1.63.0、既存Chromiumを順次実行した。ファイルのSHA256は従来と同じ `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。
+- 新規 `tests/test_operation_json.py`: 開発5183で成功。公開教材22件、全7種類を含む追加ケース、空配列の計24ケース・1,252操作について、読込→toJson→JSON文字列化→再読込後のクラス・フィールドと保存内容を比較した。実行ごとに採番されるoperationIdは比較から除く。公開教材の操作データも元データと一致。
+- 旧図形JSON、version 2.x、文字列配列、欠落・不正なトップレベル入力の8ケースを拒否し、拒否時に既存の図形・操作配列を消去しないことを確認。
+- 編集画面のSaveからmovie.jsonを実際にダウンロードし、version 3・35操作のオブジェクト配列を確認。再読み込み・再生後の操作列、22図形のID・種類・相対順序・座標・visible・mute、関係ログ27件が一致。pageerrorは0件。
+- ClickShape.toJsonの既存の丸めにより、座標 `(1.234567, -2.345678)` は再読込後 `(1.23, -2.35)` になることも確認。任意精度の座標まで完全一致するテストではない。
+- 実ソースの関数を抽出して実行し、Firebase I/Oを模擬してローカル／Firebase取得先の選択、読込後のID・名前、更新データと確認キャンセル、旧形式・未存在教材の拒否、バックアップ保存とcommit完了待ち、バックアップ再生、対応形式のconvertによる再保存を確認。実際のFirebase SDK通信・認証・Storage保存の確認ではない。
+
+確認用の開発・previewサーバーは終了した。既存の操作クラスの生成・再生処理とAppServicesの接続、図形生成時のID管理は維持する。操作文字列形式・version 2.xは今後読み込めない。Firestoreの実サービス、音声の聴取、Android・実機は未検証。残るP4作業は再生・画面イベント・生成補助・AppServicesの責任分割。

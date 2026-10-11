@@ -1,12 +1,10 @@
 import { msg, getPlayMode, PlayMode, MyError, range, sleep, assert, parseURL, langCodeList, setTextLanguageCode, voiceLanguageCode, initI18n, appMode, AppMode, initSpeech, $dlg, setVoiceLanguageCode, downloadJson, fetchJson } from "@i18n";
 import { DbDoc, getMyDoc, getRootFolder, initFirebase, initForMovie, makeDocsGraph, uploadCanvasImg, writeGraphDocDB, addGraphSection, addGraphItem, changeDisplay, updateGraph, renameDoc, deleteDoc, renameSection } from "@uroa-firebase";
 import { $button, $flex, bgColor, Button, fgColor, getPhysicalSize, Grid, Layout } from "@layout";
-import { getOperationsText, GlobalState, initPlane, initRelations, loadOperationsText, Plane, playBack, removeDiv } from "@plane";
-import { stopPlay, playAllGraph, convert, backup, playBackUp, newDocs, isJson, allData, fetchAllData } from "./flow";
+import { getOperationsText, GlobalState, initPlane, initRelations, loadOperationsJSON, Plane, playBack } from "@plane";
+import { stopPlay, playAllGraph, convert, backup, playBackUp, allData, fetchAllData } from "./flow";
 import { getCookie, showLangDlg, makePlayEditGrid, langButtonClicked } from "./movie_ui";
 import { includeDialog } from "./movie_util";
-import { loadOperationsJSON } from "../../plane/ts/factories";
-import { Operation } from "../../plane/ts/operation";
 
 export let theDoc : DbDoc | undefined;
 export let root : Grid;
@@ -249,13 +247,7 @@ async function undo_redo_test(){
 export async function loadOperationsAndPlay(id:number, name: string, parent:number, data : any, shouldStop: () => boolean = () => false) {
     const view = GlobalState.View__current!;
 
-    let operations : Operation[];
-    if(isJson){
-        operations = await loadOperationsJSON(data);
-    }
-    else{
-        operations = await loadOperationsText(data);
-    }
+    const operations = await loadOperationsJSON(data);
     if (shouldStop()) return;
 
     const num_operations = operations.length;
@@ -266,22 +258,9 @@ export async function loadOperationsAndPlay(id:number, name: string, parent:numb
     assert(num_operations == view.operations.length);
 
     // await undo_redo_test();
-    const doc = {
-        id,
-        name,
-        parent,
-        operations : operations.map(x => x.toJson())
-    };
-
-    newDocs.push(doc);
 }
 
 export async function readDocJson(docs:any[], doc_id : number, shouldStop: () => boolean = () => false) {
-
-    removeDiv();
-
-    const view = GlobalState.View__current!;
-    view.clearCanvas();
 
     const doc = docs.find(x => x.id == doc_id);
     assert(doc != undefined);
@@ -289,32 +268,28 @@ export async function readDocJson(docs:any[], doc_id : number, shouldStop: () =>
     msg(`read doc json:${doc.id} ${doc.name}`);
 
     await loadOperationsAndPlay(doc.id, doc.name, doc.parent != null ? doc.parent.id : NaN, doc, shouldStop);
+    if (shouldStop()) return;
+    theDoc = new DbDoc(null, doc.id, doc.name, JSON.stringify({version: 3, operations: doc.operations}));
 }
 
-export async function readDoc(doc_id : number, shouldStop: () => boolean = () => false) {
-    if(isJson){
+export async function readDoc(doc_id : number, shouldStop: () => boolean = () => false,
+    source: "local" | "firebase" = urlParams?.get("source") === "firebase" ? "firebase" : "local") {
+    if(source === "local"){
         await readDocJson(allData.docs, doc_id, shouldStop);
         return;
     }
 
-    removeDiv();
-
-    const view = GlobalState.View__current!;
-    view.clearCanvas();
-    // msg(`id:${id}`);
-    theDoc = await getMyDoc(doc_id);
+    const doc = await getMyDoc(doc_id);
     if (shouldStop()) return;
-    if(theDoc != undefined){
-
-        msg(`read doc:${theDoc.id} ${theDoc.name}`);
-        const data = JSON.parse(theDoc.text);
-
-        if(!(2 <= data.version)){
-            throw new MyError("Legacy shape JSON is no longer supported. Use operation records (version 2 or later).");
-        }
-
-        await loadOperationsAndPlay(theDoc.id, theDoc.name, theDoc.parent != null ? theDoc.parent.id : NaN, data, shouldStop);
+    if(doc == undefined){
+        throw new MyError(`Document ${doc_id} not found.`);
     }
+    msg(`read doc:${doc.id} ${doc.name}`);
+    const data = JSON.parse(doc.text);
+
+    await loadOperationsAndPlay(doc.id, doc.name, doc.parent != null ? doc.parent.id : NaN, data, shouldStop);
+    if (shouldStop()) return;
+    theDoc = doc;
 }
 
 export async function updateGraphDoc(){
@@ -333,6 +308,7 @@ export async function updateGraphDoc(){
     }
 
     await writeGraphDocDB(theDoc.id, theDoc.name, text);
+    theDoc.text = text;
 
     await uploadCanvasImg(theDoc.id, GlobalState.View__current!.canvas);
 }

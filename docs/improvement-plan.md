@@ -195,6 +195,20 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 
 既存 `tests/test.py` は変更しない。保存・再読み込み、version変換、5アプリの確認結果は [current-state.md](current-state.md) に記録する。
 
+### 2026-10-11: 操作オブジェクト形式への統一と読込の分離
+
+前項まで維持していた操作文字列形式を廃止し、保存・読込とも操作オブジェクト形式へ統一した。
+
+- saveJson・getOperationsTextはversion 3と各OperationのtoJson()を保存する。Save、Firebase更新、バックアップはこの共通処理を使う。
+- loadOperationsJSONを `plane/ts/operation_loader.ts` へ分離し、公開APIとして再exportする。factories.tsにも互換用再exportを残す。共有状態・AppServicesによるterm生成と、7種類の操作クラスの生成処理は維持する。
+- loadOperationsText、convertOperations、isJson・newDocsと旧形式の一括変換用分岐は削除する。旧文字列形式・version 2.xは非対応。Firebase上のデータは移行・削除していない。
+- データ形式と取得先を分け、readDocの既定はローカル、明示指定時はFirebaseから取得する。ローカル・バックアップの読込後も教材IDと名前を保持し、バックアップのcommit完了を待つ。
+- 新規 `tests/test_operation_json.py` に操作の往復確認・旧形式の拒否・Saveと再生の確認を追加する。既存 `tests/test.py` は変更しない。ClickShape.toJsonの小数2桁への丸めは維持する。
+
+型・公開ビルド・成果物確認、開発とpreviewの5アプリ回帰テストに成功した。Firebase関連はI/Oを模擬して確認し、実サービスの読み書きは未検証。詳細は [current-state.md](current-state.md)、専用テストの手順は [build-and-test.md](build-and-test.md) に記録する。
+
+操作記録の保存・読込の分離は完了。次のP4作業は、再生、画面イベント、プロパティ表示、図形・命題の生成補助、AppServicesの役割整理を小さく分けて進める。
+
 ## P5: robotの全機能の取り込み
 
 最初に既存機能の対応表を作り、移行先と検証結果を記録する。現在の機能を一つずつ取り込み、その後に新しい連携を追加する。
