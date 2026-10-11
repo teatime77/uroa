@@ -5,7 +5,8 @@ import { Reading, TT, MyError, msg, getPlayMode, PlayMode, sleep, AbstractSpeech
 import { ShapeMode } from "./enums";
 import { AppServices, GlobalState } from "./inference";
 import { Widget, MathEntity, registerEntity } from "./json";
-import { addPerpendicularPairs, addPointOnCircleArcs, addPointOnLines, anyToObj, calcCirclePointTangent, calcFootOfPerpendicular, calcLineLineIntersection, getCommonLineOfPoints, getCommonPointOfLines, Point__zero, setProperty } from "./all_functions";
+import { addPerpendicularPairs, addPointOnCircleArcs, addPointOnLines, anyToObj, calcFootOfPerpendicular, calcLineLineIntersection, getCommonLineOfPoints, getCommonPointOfLines, Point__zero, setProperty } from "./all_functions";
+import { calcCirclePointTangent } from "./geometry_math";
 
 import { AbstractLine, Point, Shape, CircleArc, Circle, Arc, LineByPoints } from "./shape";
 

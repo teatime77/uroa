@@ -18,7 +18,8 @@ import { initHashTerm, setHashTerm, simplify } from "@algebra";
 import { AngleEqualityReason, ExprTransformReason, IsoscelesTriangleReason, LengthEqualityReason, LineKind, ParallelogramReason, ParallelReason, PropositionReason, RhombusReason, ShapeEquationReason, ShapeMode, ShapeType } from "./enums";
 import { defaultLineWidth, dependColor, GlobalState, enumToImgName, AppServices, IShapesSelector, setLinesSelector_2, supplementaryAngles, MySet, setToolList } from "./inference";
 import { MathEntity, TextBlock, TermRect } from "./json";
-import { addShapeSetRelations, Arc__getAngles, Builder__cancelTool, calcFootFrom2Pos, calcLineLineIntersection, getCommonLineOfPoints, getCommonPointOfLines, isPerpendicular, makeShapeButton, makeShapeEquation, MinMaxXY, showPrompt, sortShape, toClockwisePoints } from "./all_functions";
+import { addShapeSetRelations, Arc__getAngles, Builder__cancelTool, calcLineLineIntersection, getCommonLineOfPoints, getCommonPointOfLines, isPerpendicular, makeShapeButton, makeShapeEquation, MinMaxXY, showPrompt, sortShape, toClockwisePoints } from "./all_functions";
+import { calcFootFrom2Pos } from "./geometry_math";
 
 import { Shape, AbstractLine, CircleArc, Point, Polygon, Triangle, Quadrilateral, Circle, CircleByPoint, CircleByRadius, Ellipse, ArcByPoint, Arc, ArcByLengthSymbol, ArcByCircle, LineByPoints, ParallelLine } from "./shape";
 import { Constraint, LengthEqualityConstraint, AngleEqualityConstraint, ParallelPerpendicularConstraint, ParallelConstraint, PerpendicularConstraint } from "./constraint";

@@ -35,7 +35,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | PLANE-02 | 作図ツールを追加する | [tool.ts](../plane/ts/tool.ts): Builder群、[factories.ts](../plane/ts/factories.ts): 生成関数 | [type_guards.ts](../plane/ts/type_guards.ts)、[index.ts](../plane/ts/index.ts): AppServicesの接続 |
 | PLANE-03 | 等長・等角・平行・垂直の関係を変える | [constraint.ts](../plane/ts/constraint.ts)、[all_functions.ts](../plane/ts/all_functions.ts): initRelations、recalcRelations | [inference.ts](../plane/ts/inference.ts): 関係・状態。再計算と初期化も確認する |
 | PLANE-04 | 合同・相似・命題の理由を追加する | [deduction/](../plane/ts/deduction/)、[statement.ts](../plane/ts/statement.ts) | [enums.ts](../plane/ts/enums.ts)、[factories.ts](../plane/ts/factories.ts)。理由、補助図形、表示 |
-| PLANE-05 | 座標・幾何計算を変える | [geometry.ts](../plane/ts/geometry.ts)、[matrix.ts](../plane/ts/matrix.ts)、[all_functions.ts](../plane/ts/all_functions.ts): distanceFromLineなど | 描画・作図・制約の利用側を確認する |
+| PLANE-05 | 座標・幾何計算を変える | [geometry_math.ts](../plane/ts/geometry_math.ts): calcFootFrom2Pos、distanceFromLine、calcCirclePointTangent | [geometry.ts](../plane/ts/geometry.ts): 図形クラス、[matrix.ts](../plane/ts/matrix.ts): 行列。[all_functions.ts](../plane/ts/all_functions.ts)に図形依存の垂線・交点計算と互換用再exportを残す。描画・作図・制約の利用側を確認する |
 | PLANE-06 | 操作の保存・復元・再生を変える | [operation.ts](../plane/ts/operation.ts)、[factories.ts](../plane/ts/factories.ts): loadOperationsJSON、loadOperationsText、playBack | [json.ts](../plane/ts/json.ts): 基底クラスと生成関数登録、[all_functions.ts](../plane/ts/all_functions.ts): parseObject、loadData、[play.ts](../plane/ts/play.ts) |
 | PLANE-07 | 作図画面やプロパティ表示を変える | [plane_ui.ts](../plane/ts/plane_ui.ts): Plane、[factories.ts](../plane/ts/factories.ts): showProperty | [all_functions.ts](../plane/ts/all_functions.ts): 画面イベント、[view.ts](../plane/ts/view.ts)。movie側の配置も確認する |
 

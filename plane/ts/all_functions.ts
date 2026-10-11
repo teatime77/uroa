@@ -6,6 +6,9 @@ import { $button, $dialog, $grid, $img, $label, $latex, $radio, Anchor, bgColor,
 import { AngleEqualityReason, ExprTransformReason, IsoscelesTriangleReason, LengthEqualityReason, ParallelogramReason, ParallelReason, PropositionReason, RhombusReason, ShapeEquationReason, ShapeMode, ShapeType, TriangleCongruenceReason, TriangleSimilarityReason } from "./enums";
 import { RelationLog, MyArray, MyMap, MySet, angleMap, centerOfCircleArcs, congruentTriangles, defaultLineWidth, enumSelectionClassName, equalLengths, GlobalState, idMap, isoscelesTriangle, menuDialogs, modeColorMap, OverLineWidth, parallelogramClassifiers, pointOnCircleArcs, pointOnLines, pointsToLengthSymbol, propositions, rightAngles, similarTriangles, supplementaryAngles, urlOrigin, urlBase, enumToImgName, AppServices, toolList, editToolList, classCounters } from "./inference";
 import { Mat2 } from "./matrix";
+import { calcFootFrom2Pos } from "./geometry_math";
+// Compatibility exports; new callers import coordinate calculations directly.
+export { calcFootFrom2Pos, distanceFromLine, calcCirclePointTangent } from "./geometry_math";
 import { Widget, MathEntity, TextBlock, entityRegistry } from "./json";
 
 import type { AbstractLine, CircleArc, Point, Quadrilateral, Shape, Triangle } from "./shape";
@@ -435,23 +438,11 @@ export function getTrianglesByLengthSymbol(length_symbol : LengthSymbol, triangl
 
 // ts\geometry.ts
 
-export function calcFootFrom2Pos(position : Vec2, pos1 : Vec2, e : Vec2) : Vec2 {
-    const v = position.sub(pos1);
-    const h = e.dot(v);
-
-    const foot = pos1.add(e.mul(h));
-
-    return foot;
-}
-
 export function calcFootOfPerpendicular(position:Vec2, line: AbstractLine) : Vec2 {
     return calcFootFrom2Pos(position, line.pointA.position, line.e);
 }
     
 
-export function distanceFromLine(normal : Vec2, pointA : Vec2, position : Vec2) : number {
-    return Math.abs( normal.dot(position.sub(pointA)) );
-}
 export function calcLineLineIntersection(l1 : AbstractLine, l2 : AbstractLine) : Vec2 {
     l1.calc();
     l2.calc();
@@ -480,26 +471,6 @@ export function calcLineLineIntersection(l1 : AbstractLine, l2 : AbstractLine) :
     return position;
 }
 
-
-export function calcCirclePointTangent(center : Vec2, radius : number, position : Vec2) : [Vec2, Vec2] {
-    const center_point_distance = center.distance(position);
-    const tangent_point_distance = Math.sqrt(center_point_distance * center_point_distance - radius * radius);
-
-    const [a, b, c] = [ radius, tangent_point_distance, center_point_distance ];
-    const cos_theta = (b*b + c*c - a*a) / (2 * b * c );
-    const theta  = Math.acos(cos_theta);
-
-    const pc = center.sub(position);
-    const tangent_positions : Vec2[] = [];
-    for(const th of [theta, -theta]){
-        const v = pc.rot(th).unit().mul(tangent_point_distance);
-
-        const tangent_position = position.add(v);
-        tangent_positions.push(tangent_position);
-    }
-
-    return tangent_positions as [Vec2, Vec2];
-}
 
 // ts\json.ts
 

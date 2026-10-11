@@ -169,3 +169,15 @@ diagram/movieの既存Firebase CDN要求は引き続きERR_BLOCKED_BY_ORBとな�
 - `tests/test_lifecycle.py` は開発・previewの両方で成功。直接・重複起動と破棄、60秒待機の停止・再実行、diagramからmovie・game・webgpuの実行と停止・画面復帰、停止後のGPU追加送信なし、初期化失敗の後片付けを確認。
 
 連携確認で見つけたdiagram経由のWGSL取得先と、movieの停止後に全操作完走を前提とするassertは修正した。旧diagram教材の互換性、Firebaseの機能、全GPUデモの数値・停止、実際の音声、Android・ESP32はこの確認で解決・検証済みとは扱わない。作業用のVite・previewサーバーは検証後に終了する。
+
+## 2026-10-11: P4の幾何計算の先行分離
+
+`plane/ts/all_functions.ts` から `calcFootFrom2Pos`、`distanceFromLine`、`calcCirclePointTangent` を `plane/ts/geometry_math.ts` へ移した。既存の参照用の再exportを維持し、`geometry.ts`、`shape.ts`、`tool.ts` は新しいモジュールを直接参照する。[機能索引](features.md) のPLANE-05と [構成文書](architecture.md) を更新した。
+
+- `npm.cmd run verify`: 成功。TypeScript診断0、Vite 7.3.7で174モジュール変換、92項目コピー、公開HTML6ページと資産チェック成功。既存の静的・動的import混在警告2件は残る。
+- TypeScriptの構文木で変更前のHEADと比較し、移した3関数の宣言・処理、および `all_functions.ts` と利用側3ファイルのその他の処理が一致することを確認。生成した `plane/lib/geometry_math.js` に実行時importがないことも確認。
+- 既存 `tests/test.py` を開発サーバー `http://127.0.0.1:5183/` に対して実行し、webgpu・game・diagram・algebra・movieすべて成功。
+- 同じテストをpreview `http://127.0.0.1:4183/` に対して実行し、5アプリすべて成功。
+- Python環境は前回準備した `tmp/p3-venv` とChromiumを使用した。テストファイルのSHA256は変更前後とも `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。
+
+確認用の開発・previewサーバーは終了した。今回は計算式や退化入力の扱いを変更していない。図形を再計算する交点処理、関係管理、保存復元、再生、画面イベント、AppServicesの整理は後続の作業とする。
