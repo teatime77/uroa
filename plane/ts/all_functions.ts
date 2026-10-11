@@ -2,7 +2,7 @@
 
 import { AbstractSpeech, AppMode, appMode, areSetsEqual, check, getPlayMode, intersection, isEdge, MyError, permutation, PlayMode, Reading, remove, sleep, sum, TT, upperLatinLetters, Vec2, msg } from "@i18n";
 import { App, makeNodeTextByApp, parseMath, showFlow } from "@parser";
-import { $button, $dialog, $grid, $img, $label, $latex, $radio, Anchor, bgColor, Button, fgColor, Grid, Layout, RadioButton, saveBlob, UI } from "@layout";
+import { $button, $dialog, $grid, $img, $label, $latex, $radio, bgColor, Button, fgColor, Grid, Layout, RadioButton, UI } from "@layout";
 import { AngleEqualityReason, ExprTransformReason, IsoscelesTriangleReason, LengthEqualityReason, ParallelogramReason, ParallelReason, PropositionReason, RhombusReason, ShapeEquationReason, ShapeMode, ShapeType, TriangleCongruenceReason, TriangleSimilarityReason } from "./enums";
 import { defaultLineWidth, enumSelectionClassName, GlobalState, menuDialogs, modeColorMap, OverLineWidth, urlBase, enumToImgName, AppServices, toolList, editToolList } from "./inference";
 import { Mat2 } from "./matrix";
@@ -15,7 +15,7 @@ import type { AbstractLine, Point, Shape } from "./shape";
 import type { View } from "./view";
 import type { Angle, LengthSymbol } from "./dimension_symbol";
 import type { Plane } from "./plane_ui";
-import type { Operation, ToolSelection } from "./operation";
+import type { ToolSelection } from "./operation";
 import type { Builder } from "./tool";
 import type { EquationTextBlockClass, ShapeEquation } from "./deduction/shape_equation";
 import { getCommonPointOfLines, findAnglesInPolygon } from "./relations";
@@ -81,75 +81,8 @@ export function calcLineLineIntersection(l1 : AbstractLine, l2 : AbstractLine) :
 }
 
 
-// ts\json.ts
-
-
-
-export function saveJson(anchor : Anchor){
-    const text = getOperationsText();
-
-    const blob = new Blob([text], { type: 'application/json' });
-
-    saveBlob(anchor, "movie", blob);
-}
-
-
-
-
-// ts\operation.ts
-
-export function convertOperations(version : number, operations : Operation[]) : Operation[] {
-    if(version == 2.0){
-
-        const new_operations : Operation[] = [];
-        let idx = 0;
-        while(idx < operations.length){
-            const operation = operations[idx];
-            new_operations.push(operation);
-        
-            if(AppServices.isToolSelection(operation) && [ "LengthEqualityBuilder", "AngleEqualityBuilder", "ParallelDetectorBuilder"].includes(operation.toolName)){
-                assert(AppServices.isEnumSelection(operations[idx + 3]));
-
-                new_operations.push(operations[idx + 3]);
-                new_operations.push(operations[idx + 1]);
-                new_operations.push(operations[idx + 2]);
-
-                idx += 4;
-            }
-            else if( AppServices.isToolSelection(operation) && operation.toolName ==  "QuadrilateralClassifierBuilder"){
-                assert( AppServices.isEnumSelection(operations[idx + 5]) && AppServices.isEnumSelection(operations[idx + 6]));
-
-                new_operations.push(operations[idx + 5]);
-                new_operations.push(operations[idx + 6]);
-
-                new_operations.push(operations[idx + 1]);
-                new_operations.push(operations[idx + 2]);
-                new_operations.push(operations[idx + 3]);
-                new_operations.push(operations[idx + 4]);
-
-                idx += 7;
-            }
-            else{
-                idx++;
-            }
-        }
-        return new_operations;
-    }
-
-    return operations;
-}
-
-export function getOperationsText(){
-    const data = {
-        version : 2.1,
-        operations : GlobalState.View__current!.operations.map(x => x.toString())
-    };
-
-    const doc_text = JSON.stringify(data, null, 4);
-    msg(`operations-text : \n${doc_text}\n`);
-    
-    return doc_text;
-}
+// Compatibility exports; internal callers import storage directly.
+export { saveJson, convertOperations, getOperationsText } from "./operation_storage";
 
 export async function typeIntoInput(element: HTMLInputElement, text: string, delay = 100) {
     for (let i = 0; i < text.length; i++) {

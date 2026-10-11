@@ -186,6 +186,15 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 
 検証条件と結果は [current-state.md](current-state.md) に記録する。既存 `tests/test.py` は変更しない。
 
+### 2026-10-11: 操作記録の保存・変換の分離
+
+- all_functions.tsのsaveJson・getOperationsText・convertOperationsを `plane/ts/operation_storage.ts` へ移した。保存形式、version 2.0の変換処理、関数の引数・戻り値を維持する。
+- plane_ui.tsとfactories.tsを直接importへ変更し、公開入口のgetOperationsTextも新モジュールから再exportする。all_functions.tsには3関数の互換用再exportを残す。
+- OperationとAnchorは型として参照する。GlobalState・AppServicesの接続は維持し、保存モジュールからall_functions.tsやindex.tsへの実行時依存を追加しない。
+- 操作記録の読込関数はfactories.tsに残す。次はその依存関係を確認して分離し、再生・画面イベント・プロパティ表示・図形や命題の生成・AppServicesを順番に整理する。
+
+既存 `tests/test.py` は変更しない。保存・再読み込み、version変換、5アプリの確認結果は [current-state.md](current-state.md) に記録する。
+
 ## P5: robotの全機能の取り込み
 
 最初に既存機能の対応表を作り、移行先と検証結果を記録する。現在の機能を一つずつ取り込み、その後に新しい連携を追加する。

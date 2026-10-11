@@ -2,7 +2,8 @@ import { setOnSpeak } from "@i18n";
 import { $anchor, $block, $button, $checkbox, $flex, $grid, $textbox, Block, CheckBox, Grid, TextBox, fgColor } from "@layout";
 
 import { GlobalState, setUrlOriginParams, urlBase, urlParams } from "./inference";
-import { makeToolButtons, saveJson } from "./all_functions";
+import { makeToolButtons } from "./all_functions";
+import { saveJson } from "./operation_storage";
 
 export class Plane {
     menu_block : Block;

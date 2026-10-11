@@ -210,3 +210,17 @@ planeのmakeObj 34メソッド・toObj 1メソッド、registerEntity 41箇所�
 - Python環境は既存の `tmp/p3-venv` とChromiumを使用した。`tests/test.py` は変更せず、SHA256は `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。追加の確認スクリプトとダウンロードはGit管理外のtmpに置いた。
 
 確認用の開発・previewサーバーは終了した。Firebase上の旧データの調査・変換・削除、実際の認証・保存、音声の聴取、Android・実機の確認は行っていない。旧図形JSONは読み込めなくなる。操作記録の保存・読込・変換、再生、画面イベント、AppServicesの分離は引き続き後続作業とする。
+
+## 2026-10-11: 操作記録の保存・変換の分離
+
+saveJson・getOperationsText・convertOperationsを `plane/ts/operation_storage.ts` へ移した。plane_ui.tsとfactories.tsは直接importし、公開入口のgetOperationsTextも新モジュールから再exportする。all_functions.tsには3関数の互換用再exportを残した。保存形式、version 2.0の変換処理、GlobalState・AppServicesの接続を維持する。OperationとAnchorは型のみのimportとした。
+
+- `npm.cmd run verify`: 成功。TypeScript診断0、Vite 7.3.7で176モジュール変換、92項目コピー、公開HTML6ページと資産チェック成功。既存の静的・動的import混在警告2件は残る。
+- 構文木で移した3関数の宣言・処理本体が変更前と一致すること、およびall_functions.ts・factories.ts・plane_ui.ts・index.tsの残る143個のトップレベル宣言・処理がimport・再exportを除いて一致することを確認。all_functions.tsのexport名も維持した。移した処理で使用するi18nのassertと従来のローカルassertの実装も一致する。
+- 生成したoperation_storage.jsのplane内の実行時import・再exportをたどり、到達先がinference.js・enums.jsのみで、all_functions.js・index.js・operation.jsへ戻る経路がないことを確認。
+- 既存 `tests/test.py` を開発 `http://127.0.0.1:5183/` とpreview `http://127.0.0.1:4183/` に対して順番に実行し、両方でwebgpu・game・diagram・algebra・movieすべて成功。
+- 開発環境で実際のOperationクラスとAppServicesを使用し、version 2.0の等長・等角・平行・四角形の操作順変換、各操作の参照維持、入力配列の非変更、通常操作の維持、空配列、version 2.1・3の同一配列の返却を確認。3関数の互換exportと公開getOperationsTextが新モジュールの関数と同じ参照であることも確認した。
+- movie編集画面のSaveをクリックし、movie.jsonのダウンロードを確認。公開教材id 1の35操作をversion 2.1の文字列配列として保存し、loadOperationsTextで再読み込みして再生した。操作列、22図形のID・種類・相対順序・座標・visible・muteと関係ログ27件が一致し、pageerrorは0件。
+- Python環境は既存の `tmp/p3-venv` とChromiumを使用した。`tests/test.py` は変更せず、SHA256は `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。追加の確認スクリプトとダウンロードはGit管理外のtmpに置いた。
+
+確認用サーバーは終了した。Firestoreへの実際の認証・保存、音声の聴取、Android・実機は未検証。今回は保存・変換3関数の分離であり、読込関数はfactories.tsに残す。操作記録の読込、再生、画面イベント、AppServicesの分離は後続作業とする。
