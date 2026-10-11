@@ -5,16 +5,10 @@ import type { Highlightable } from "@parser";
 import { transpose } from "@algebra";
 
 import { ShapeMode } from "./enums";
-import { AppServices, capturedShape, classCounters, GlobalState, idMap, setCapturedShape, Widget__processed } from "./inference";
+import { AppServices, capturedShape, classCounters, GlobalState, idMap, setCapturedShape } from "./inference";
 
-// Actionを生成する関数の型定義
-type entityCreator = (obj: any) => any;
 
-export const entityRegistry: Record<string, entityCreator> = {};
 
-export function registerEntity(name: string, creator: entityCreator) : void {
-    entityRegistry[name] = creator;
-}
 
 export function fromXPixScale(pix : number) : number {
     return GlobalState.View__current!.fromXPixScale(pix);
@@ -72,7 +66,6 @@ export abstract class Widget {
             this.id = `${obj.id}`;
             GlobalState.Widget__maxId = Math.max(GlobalState.Widget__maxId, obj.id);
 
-            GlobalState.Widget__refMap.set(obj.id, this);
         }
         else{
             this.id = `${++GlobalState.Widget__maxId}`;
@@ -95,22 +88,7 @@ export abstract class Widget {
         return [ "id", "order" ];
     }
 
-    makeObj() : any{
-        return {
-            id: this.id,
-            typeName: this.constructor.name
-        };
-    }
 
-    toObj(){
-        if(Widget__processed.has(this.id)){
-            return { ref: this.id };
-        }
-
-        Widget__processed.add(this.id);
-
-        return this.makeObj();
-    }
 }
 
 export abstract class MathEntity extends Widget implements Readable, Highlightable {
@@ -142,23 +120,6 @@ export abstract class MathEntity extends Widget implements Readable, Highlightab
         }
     }
 
-    makeObj() : any {
-        let obj = super.makeObj();
-
-        if(this.mute){
-            obj.mute = true;
-        }
-
-        if(this.interval != 1){
-            obj.interval = this.interval;
-        }
-
-        if(!this.visible){
-            obj.visible = false;
-        }
-
-        return obj;
-    }
 
     getProperties(){
         return super.getProperties().concat([
@@ -433,15 +394,6 @@ export class TextBlock extends MathEntity {
         return AppServices.getEquationOfTextBlock(this);
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            text   : this.text,
-            isTex  : this.isTex,
-            offset : this.offset
-        });
-
-        return obj;
-    }
 
     getProperties(){
         return super.getProperties().concat([
@@ -588,7 +540,6 @@ export class TextBlock extends MathEntity {
     }
 }
 
-registerEntity(TextBlock.name, (obj: any) => new TextBlock(obj));
 
 
 console.log(`Loaded: json`);

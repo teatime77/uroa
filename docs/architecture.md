@@ -58,7 +58,7 @@ flowchart TD
 | `plane` | 点・直線・円・楕円・円弧・多角形の作図、等長・等角・平行・垂直の制約、合同・相似などの関係管理、操作記録・再生 | [shape.ts](../plane/ts/shape.ts)、[tool.ts](../plane/ts/tool.ts)、[constraint.ts](../plane/ts/constraint.ts)、[deduction/](../plane/ts/deduction/) |
 | `diagram` | ブロック接続による入力・計算・比較、条件分岐、繰り返し、待機、読み上げ、他アプリ実行、実機向けHTTP指令 | [index.ts](../diagram/ts/index.ts)、[block.ts](../diagram/ts/block.ts)、[procedure.ts](../diagram/ts/procedure.ts)、[port.ts](../diagram/ts/port.ts) |
 | `game` | JSONによるCanvas教材構築、順次／並列動作、算数問題の生成・採点、筆算、効果音・正解演出、等角投影マップ | [index.ts](../game/ts/index.ts)、[registry.ts](../game/ts/registry.ts)、[lesson/exercise.ts](../game/ts/lesson/exercise.ts)、[action/sequencer.ts](../game/ts/action/sequencer.ts) |
-| `movie` | 作図操作・数式・読み上げを組み合わせる教材アニメーション、連続再生、スライド・クイズ編集と再生、バックアップ | [index.ts](../movie/ts/index.ts)、[flow.ts](../movie/ts/flow.ts)、[lesson.ts](../movie/ts/lesson.ts)、[timeline.ts](../movie/ts/timeline.ts) |
+| `movie` | 作図操作・数式・読み上げを組み合わせる教材アニメーション、連続再生、バックアップ | [index.ts](../movie/ts/index.ts)、[flow.ts](../movie/ts/flow.ts)、[timeline.ts](../movie/ts/timeline.ts) |
 | `webgpu` | GPU計算と3D描画、データで定義する実行グラフ、物理シミュレーション、カメラ・パラメーター操作、画像保存 | [control.ts](../webgpu/ts/control.ts)、[main.ts](../webgpu/ts/main.ts)、[primitive.ts](../webgpu/ts/primitive.ts) |
 | `firebase` | メール／パスワード認証、Firestoreの教材・フォルダー管理、教材間の関連図、画像・サムネイルのStorage保存 | [firebase.ts](../firebase/ts/firebase.ts)、[contents.ts](../firebase/ts/contents.ts)、[storage.ts](../firebase/ts/storage.ts)、[graph/](../firebase/ts/graph/) |
 | `i18n` | 12言語の翻訳辞書、表示言語・音声言語、ブラウザー音声合成、読み上げ進行に応じた強調、ベクトル・UI共通処理 | [reading.ts](../i18n/ts/reading.ts)、[speech.ts](../i18n/ts/speech.ts)、[vector.ts](../i18n/ts/vector.ts)、[ui.ts](../i18n/ts/ui.ts) |
@@ -73,13 +73,17 @@ parserの `parseMath()` は `Term`、`App`、`RefVar`、`ConstNum`、`Rational`�
 
 algebraでは [formula.ts](../algebra/ts/formula.ts)、[proof.ts](../algebra/ts/proof.ts)が定理・証明モデル、[math_file_parser.ts](../algebra/ts/math_file_parser.ts)が独自 `.math` ファイル、[manipulation.ts](../algebra/ts/manipulation.ts)が書き換え・簡約の操作を担当する。[tex.ts](../algebra/ts/tex.ts)は数式の部分選択と木構造・表示の対応を管理する。[galois.ts](../algebra/ts/galois.ts)には互除法や置換・群に関する実験コードがある。
 
-planeでは [geometry_math.ts](../plane/ts/geometry_math.ts)が座標だけを使う垂線の足・直線からの距離・円への接点の計算、[geometry_order.ts](../plane/ts/geometry_order.ts)が点の並び順、[geometry.ts](../plane/ts/geometry.ts)が図形クラス、[matrix.ts](../plane/ts/matrix.ts)が行列計算を担当する。[factories.ts](../plane/ts/factories.ts)がツール・命題などの生成、[inference.ts](../plane/ts/inference.ts)が共有状態とサービス定義、[relations.ts](../plane/ts/relations.ts)が関係の登録・検索・初期化・再計算と関係ログの取り消し・再適用を担う。[all_functions.ts](../plane/ts/all_functions.ts)には互換用再exportと、今後分離する保存復元・再生・画面イベントなどが残る。[operation.ts](../plane/ts/operation.ts)、[play.ts](../plane/ts/play.ts)、[json.ts](../plane/ts/json.ts)は操作記録・再生・保存復元、[plane_ui.ts](../plane/ts/plane_ui.ts)と [view.ts](../plane/ts/view.ts)は画面を担当する。
+planeでは [geometry_math.ts](../plane/ts/geometry_math.ts)が座標だけを使う垂線の足・直線からの距離・円への接点の計算、[geometry_order.ts](../plane/ts/geometry_order.ts)が点の並び順、[geometry.ts](../plane/ts/geometry.ts)が図形クラス、[matrix.ts](../plane/ts/matrix.ts)が行列計算を担当する。[factories.ts](../plane/ts/factories.ts)がツール・命題などの生成と操作記録の読込、[inference.ts](../plane/ts/inference.ts)が共有状態とサービス定義、[relations.ts](../plane/ts/relations.ts)が関係の登録・検索・初期化・再計算と関係ログの取り消し・再適用を担う。[all_functions.ts](../plane/ts/all_functions.ts)には互換用再exportと、今後分離する操作記録の保存・変換、再生、画面イベントなどが残る。[operation.ts](../plane/ts/operation.ts)は操作記録、[play.ts](../plane/ts/play.ts)は再生、[json.ts](../plane/ts/json.ts)はWidget・MathEntity・TextBlockの基底機能と座標変換などを担当する。[plane_ui.ts](../plane/ts/plane_ui.ts)と [view.ts](../plane/ts/view.ts)は画面を担当する。
+
+旧図形JSON（図形のtypeName・参照・shapesから復元する形式）は廃止した。図形クラスのmakeObj・toObj、生成関数登録、parseObject・loadData、旧形式のファイルdropと専用状態は削除済み。操作記録から図形を生成する際のID管理・コンストラクター・関係登録は維持する。新しい図形に旧形式の変換処理を追加する必要はない。
+
+現在の保存形式には、version 2以降の操作文字列配列と、公開教材version 3の操作オブジェクト配列がある。saveJson・getOperationsTextは前者を出力し、loadOperationsText・loadOperationsJSONがそれぞれを読み込む。操作記録のversion 2.0からの変換も維持する。movieのFirebase読込経路はversion 2未満・versionなしのデータを非対応としてエラーにする。Firebase上の旧データの変換・削除は行っていない。diagramやFirebaseの独自JSON保存は別形式として維持する。
 
 2026-10-11に座標計算3関数を `all_functions.ts` から `geometry_math.ts` へ分離した。新しいモジュールは `Vec2` の型だけをimportし、実行時のimport、図形状態、登録処理、UIへの依存を持たない。`geometry.ts`、`shape.ts`、`tool.ts` の利用側は直接importする。既存の参照を維持するため `all_functions.ts` からも同じ関数を再exportする。`calcFootOfPerpendicular` は図形の位置・方向を取り出す処理、`calcLineLineIntersection` は `line.calc()` による図形の再計算を伴う処理のため、今回は同ファイルに残した。計算式・引数・戻り値と、従来の退化入力の扱いは変更していない。
 
 続いて同日に関係管理の51関数を `relations.ts` へ分離した。平行・垂直と等しい円の内部コレクションも同じモジュールへ移し、`inference.ts` の共有コレクション・GlobalState・関係ログ・AppServicesの接続方法は維持した。図形・View・命題・数式の型は `import type` で参照し、実行時に `all_functions.ts`、`index.ts`、図形クラスをimportしない。利用側は機能別モジュールから直接importし、公開入口と `all_functions.ts` の既存exportも維持する。
 
-点の並び順判定2関数は `geometry_order.ts`、planeの `msg` は [logging.ts](../plane/ts/logging.ts) に移した。`msg` は従来どおり `Log.log()` を使い、画面のログとコンソールの出力を維持する。登録・検索・取り消し・再適用の処理本体は変更していない。確認条件と結果は [current-state.md](current-state.md) に記録する。
+点の並び順判定2関数は `geometry_order.ts` に移した。後続のユーザー変更でplaneの `msg` はi18nのコンソール出力へ統一し、`logging.ts` は削除済み。登録・検索・取り消し・再適用の処理本体は変更していない。確認条件と結果は [current-state.md](current-state.md) に記録する。
 
 これらに証明や幾何の関係管理コードはあるが、任意の定理・問題を自動的に解く完全な証明器という保証は今回確認していない。
 
@@ -99,7 +103,7 @@ gameのデータは `public/game/data/` にある。`initGame()`が開発／本�
 
 [widget/](../game/ts/widget/)にCanvas、文字、画像、入力、Grid、スクロール、メニュー、ツリーなどがあり、[math/](../game/ts/math/)に桁・画像による数の表示、筆算、方程式・証明UIがある。[lesson/sound.ts](../game/ts/lesson/sound.ts)と [lesson/confetti.ts](../game/ts/lesson/confetti.ts)は効果音・演出、[isometric/isometric.ts](../game/ts/isometric/isometric.ts)はマップ・ステージ選択を担当する。
 
-movieはplaneの作図操作を音声・数式表示と組み合わせる。`flow.ts`は教材取得・連続再生・変換・バックアップ、`lesson.ts`はスライド・クイズ、`movie_ui.ts`は再生／編集画面と言語選択を担当する。保存にはfirebase、翻訳・読み上げにはi18n、HTML部品にはlayoutを使う。独立モジュールのlessonと、movie内のスライド・クイズ機能は別物。
+movieはplaneの作図操作を音声・数式表示と組み合わせる。`flow.ts`は教材取得・連続再生・変換・バックアップ、`movie_ui.ts`は再生／編集画面と言語選択を担当する。保存にはfirebase、翻訳・読み上げにはi18n、HTML部品にはlayoutを使う。movie内のスライド・クイズ機能は未使用のためユーザーが削除した。独立モジュールの `lesson/ts/` は別機能として残る。
 
 Firebase接続設定はソースにあるが、本番のデータ・権限・アクセスルールは今回確認していない。ローカルのルール見本を本番で有効なルールとは扱わない。
 

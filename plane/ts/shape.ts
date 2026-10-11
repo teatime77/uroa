@@ -5,7 +5,7 @@ import { fgColor } from "@layout"
 
 import { LineKind, ShapeMode } from "./enums";
 import { pointOnLines, pointOnCircleArcs, congruentTriangles, similarTriangles, defaultLineWidth, OverLineWidth, GlobalState, AppServices } from "./inference";
-import { MathEntity, fromXPixScale, fromYPixScale, registerEntity, TextBlock } from "./json";
+import { MathEntity, fromXPixScale, fromYPixScale, TextBlock } from "./json";
 import { Arc__getAngles, calcFootOfPerpendicular, getModeColor, isBetweenAngles, modePointRadius, Point__zero } from "./all_functions";
 import { addCenterOfCircleArcs, addEqualCircleArcs, addParallelLines, addPointOnCircleArcs, addPointOnLines, getCircleArcsByPoint, getCommonLineOfPoints, getCommonPointOfLines, getLinesByPoint, isParallelogramPoints } from "./relations";
 import { distanceFromLine } from "./geometry_math";
@@ -53,29 +53,6 @@ export abstract class Shape extends MathEntity {
         throw new MyError();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            name : this.name
-        });
-
-        if(this.color != fgColor){
-            obj.color = this.color;
-        }
-
-        if(this.lineWidth != defaultLineWidth){
-            obj.lineWidth = this.lineWidth;
-        }
-
-        if(this.caption != undefined){
-            obj.caption = this.caption.makeObj();
-        }
-
-        if(this.depends.length != 0){
-            obj.depends = this.depends.map(x => x.id);
-        }
-
-        return obj;
-    }
 
     makeCaption(parent : MathEntity) : TextBlock {
         const x = fromXPixScale(10);
@@ -210,17 +187,6 @@ export class Point extends Shape {
         return AppServices.Point__fromArgs(this.position.copy());
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            position : this.position
-        });
-
-        if(this.bound != undefined){
-            obj.bound = this.bound.toObj();
-        }
-
-        return obj;
-    }
 
     setPosition(position : Vec2){
         this.position = position;
@@ -376,7 +342,6 @@ export class Point extends Shape {
     }
 }
 
-registerEntity(Point.name, (obj: any) => new Point(obj));
 
 
 export abstract class AbstractLine extends Shape {
@@ -394,14 +359,6 @@ export abstract class AbstractLine extends Shape {
     }
 
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            lineKind : this.lineKind,
-            pointA   : this.pointA.toObj()
-        });
-
-        return obj;
-    }    
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat([ this.pointA ]);
@@ -481,13 +438,6 @@ export class LineByPoints extends AbstractLine {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            pointB : this.pointB.toObj()
-        });
-
-        return obj;
-    }
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat([ this.pointB ]);
@@ -568,7 +518,6 @@ export class LineByPoints extends AbstractLine {
     }
 }
 
-registerEntity(LineByPoints.name, (obj: any) => new LineByPoints(obj));
 
 
 
@@ -583,13 +532,6 @@ export class ParallelLine extends AbstractLine {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            line : this.line.toObj()
-        });
-
-        return obj;
-    }
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat([ this.line ]);
@@ -614,7 +556,6 @@ export class ParallelLine extends AbstractLine {
     }
 }
 
-registerEntity(ParallelLine.name, (obj: any) => new ParallelLine(obj));
 
 export abstract class CircleArcEllipse extends Shape {
     center : Point;
@@ -624,13 +565,6 @@ export abstract class CircleArcEllipse extends Shape {
         this.center = obj.center;
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            center : this.center.toObj(),
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -697,13 +631,6 @@ export class CircleByPoint extends Circle {
         this.point = obj.point;
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            point : this.point.toObj(),
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -732,7 +659,6 @@ export class CircleByPoint extends Circle {
     }
 }
 
-registerEntity(CircleByPoint.name, (obj: any) => new CircleByPoint(obj));
 
 export class CircleByRadius extends Circle {
     lengthSymbol : LengthSymbol;
@@ -742,11 +668,6 @@ export class CircleByRadius extends Circle {
         this.lengthSymbol = obj.lengthSymbol;
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            lengthSymbol : this.lengthSymbol.toObj(),
-        });
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -770,7 +691,6 @@ export class CircleByRadius extends Circle {
     }
 }
 
-registerEntity(CircleByRadius.name, (obj: any) => new CircleByRadius(obj));
 
 export class Ellipse extends CircleArcEllipse {
     xPoint  : Point;
@@ -782,14 +702,6 @@ export class Ellipse extends CircleArcEllipse {
         this.radiusY = obj.radiusY;
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            xPoint : this.xPoint.toObj(),
-            radiusY : this.radiusY
-        });
-
-        return obj;
-    }
 
     setRadiusY(radiusY : number){
         this.radiusY = radiusY;
@@ -818,7 +730,6 @@ export class Ellipse extends CircleArcEllipse {
     }
 }
 
-registerEntity(Ellipse.name, (obj: any) => new Ellipse(obj));
 
 export abstract class Arc extends CircleArc {
 }
@@ -833,14 +744,6 @@ export class ArcByPoint extends Arc {
         this.pointB = obj.pointB;
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            pointA : this.pointA.toObj(),
-            pointB : this.pointB.toObj()
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -891,7 +794,6 @@ export class ArcByPoint extends Arc {
     }
 }
 
-registerEntity(ArcByPoint.name, (obj: any) => new ArcByPoint(obj));
 
 
 export abstract class ArcByRadius extends Arc {
@@ -912,12 +814,6 @@ export abstract class ArcByRadius extends Arc {
         this.pointB.visible = false;
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            startAngle   : this.startAngle,
-            endAngle     : this.endAngle
-        });
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -1006,7 +902,6 @@ export abstract class ArcByRadius extends Arc {
     }
 }
 
-registerEntity(ArcByRadius.name, (obj: any) => new ArcByLengthSymbol(obj));
 
 export class ArcByLengthSymbol extends ArcByRadius {
     lengthSymbol : LengthSymbol;
@@ -1018,11 +913,6 @@ export class ArcByLengthSymbol extends ArcByRadius {
         this.calc();
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            lengthSymbol : this.lengthSymbol.toObj(),
-        });
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -1046,7 +936,6 @@ export class ArcByLengthSymbol extends ArcByRadius {
     }
 }
 
-registerEntity(ArcByLengthSymbol.name, (obj: any) => new ArcByLengthSymbol(obj));
 
 
 export class ArcByCircle extends ArcByRadius {
@@ -1059,11 +948,6 @@ export class ArcByCircle extends ArcByRadius {
         this.calc();
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            circle : this.circle.toObj(),
-        });
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -1084,7 +968,6 @@ export class ArcByCircle extends ArcByRadius {
     }
 }
 
-registerEntity(ArcByCircle.name, (obj: any) => new ArcByCircle(obj));
 
 
 export class Polygon extends Shape {
@@ -1097,14 +980,6 @@ export class Polygon extends Shape {
         this.lines  = obj.lines;
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            points : this.points.map(x => x.toObj()),
-            lines  : this.lines.map(x => x.toObj())
-        });
-
-        return obj;
-    }
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat(this.lines).concat(this.points);
@@ -1199,7 +1074,6 @@ export class Polygon extends Shape {
     }
 }
 
-registerEntity(Polygon.name, (obj: any) => new Polygon(obj));
 
 
 export class Triangle extends Polygon {  
@@ -1262,7 +1136,6 @@ export class Triangle extends Polygon {
 
 }
 
-registerEntity(Triangle.name, (obj: any) => new Triangle(obj));
 
 export class Quadrilateral extends Polygon {
     isParallelogram() : boolean {
@@ -1280,7 +1153,6 @@ export class Quadrilateral extends Polygon {
     }
 }
 
-registerEntity(Quadrilateral.name, (obj: any) => new Quadrilateral(obj));
 
 
 console.log(`Loaded: shape`);

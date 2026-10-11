@@ -2,7 +2,7 @@ import { MyError, msg, Reading, TT } from "@i18n";
 
 import { AngleEqualityReason } from "../enums";
 import { AppServices } from "../inference";
-import { MathEntity, registerEntity } from "../json";
+import { MathEntity } from "../json";
 import { Angle__setEqualAngleMarks, reasonMsg } from "../all_functions";
 import { addEqualAngles } from "../relations";
 
@@ -83,6 +83,5 @@ export class AngleEquality extends Statement {
     }
 }
 
-registerEntity(AngleEquality.name, (obj: any) => new AngleEquality(obj));
 
 console.log(`Loaded: angle-equality`);

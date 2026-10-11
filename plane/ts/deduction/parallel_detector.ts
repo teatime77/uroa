@@ -1,6 +1,5 @@
 import { Reading, TT, assert } from "@i18n";
 
-import { registerEntity } from "../json";
 import { addParallelLines } from "../relations";
 
 import { AbstractLine } from "../shape";
@@ -19,6 +18,5 @@ export class ParallelDetector extends Statement {
     }
 }
 
-registerEntity(ParallelDetector.name, (obj: any) => new ParallelDetector(obj));
 
 console.log(`Loaded: parallel-detector`);

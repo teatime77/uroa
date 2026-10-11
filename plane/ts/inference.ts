@@ -223,8 +223,6 @@ export const GlobalState = {
     Operation__maxId : 0,
     PlayBack__startIndex : NaN,
     View__isPlayBack : false,
-    Widget__refMap : new Map<number, any>(),
-    Widget__isLoading : false,
     Plane__one : undefined as undefined | Plane,
     ShapesProperty__one : undefined as undefined | ShapesProperty,
     Statement__idTimeout : undefined as number | undefined,
@@ -331,7 +329,6 @@ export let Angle__radius1Pix = 20;
 export let Angle__numMarks = 5;
 export let Angle__outerAngleScale = 2;
 
-export let Widget__processed : Set<string>;
 
 export let Point__radiusPix = 4;
 

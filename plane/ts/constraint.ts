@@ -5,7 +5,7 @@ import { MyError, Reading, TT, assert, Vec2 } from "@i18n";
 import { App, parseMath } from "@parser";
 
 import { AppServices } from "./inference";
-import { MathEntity, TextBlock, registerEntity } from "./json"
+import { MathEntity, TextBlock } from "./json"
 import { Angle__setEqualAngleMarks, lastShape, LengthSymbol__setEqualLengthKinds, sortShape } from "./all_functions";
 import { addEqualAngles, addEqualLengths, addParallelLines, addPerpendicularPairs } from "./relations";
 
@@ -56,12 +56,6 @@ export class LengthEqualityConstraint extends Constraint {
         LengthSymbol__setEqualLengthKinds(this.selectedShapes as LengthSymbol[]);
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            lengthSymbolA : this.lengthSymbolA.toObj(),
-            lengthSymbolB : this.lengthSymbolB.toObj(),
-        });
-    }
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat([ this.lengthSymbolA ]);
@@ -111,7 +105,6 @@ export class LengthEqualityConstraint extends Constraint {
     }
 }
 
-registerEntity(LengthEqualityConstraint.name, (obj: any) => new LengthEqualityConstraint(obj));
 
 export class AngleEqualityConstraint extends Constraint {
     equation : App | undefined;
@@ -147,7 +140,6 @@ export class AngleEqualityConstraint extends Constraint {
     }
 }
 
-registerEntity(AngleEqualityConstraint.name, (obj: any) => new AngleEqualityConstraint(obj));
 
 abstract class LineConstraint extends Constraint {
     lineA : AbstractLine;
@@ -171,12 +163,6 @@ export abstract class ParallelPerpendicularConstraint extends LineConstraint {
         this.calc();
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            lineA : this.lineA.toObj(),
-            lineB : this.lineB.toObj(),
-        });
-    }
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat([ this.lineA, this.lineB.pointA ]);
@@ -209,7 +195,6 @@ export class ParallelConstraint extends ParallelPerpendicularConstraint {
     }
 }
 
-registerEntity(ParallelConstraint.name, (obj: any) => new ParallelConstraint(obj));
 
 export class PerpendicularConstraint extends ParallelPerpendicularConstraint {
     setRelations(){
@@ -218,6 +203,5 @@ export class PerpendicularConstraint extends ParallelPerpendicularConstraint {
     }
 }
 
-registerEntity(PerpendicularConstraint.name, (obj: any) => new PerpendicularConstraint(obj));
 
 console.log(`Loaded: constraint`);

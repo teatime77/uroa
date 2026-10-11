@@ -2,7 +2,7 @@ import { msg, Reading, TT, MyError } from "@i18n";
 
 import { LengthEqualityReason } from "../enums";
 import { AppServices, ilinesSelector_2 } from "../inference";
-import { MathEntity, registerEntity } from "../json";
+import { MathEntity } from "../json";
 import { LengthSymbol__setEqualLengthKinds, reasonMsg } from "../all_functions";
 import { addEqualLengths } from "../relations";
 
@@ -100,7 +100,5 @@ export class LengthEquality extends Statement {
     }
 }
 
-registerEntity(LengthEquality.name, (obj: any) => new LengthEquality(obj));
-registerEntity("EqualLength", (obj: any) => new LengthEquality(obj));
 
 console.log(`Loaded: length-equality`);

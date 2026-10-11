@@ -4,7 +4,7 @@ import { App, Term, parseMath, SyntaxError } from "@parser";
 
 import { AngleEqualityReason, ExprTransformReason, IsoscelesTriangleReason, LengthEqualityReason, ParallelogramReason, ParallelReason, PropositionReason, RhombusReason, ShapeEquationReason, ShapeMode, ShapeType } from "./enums";
 import { AppServices, GlobalState, usedReasons } from "./inference";
-import { TextBlock, MathEntity, registerEntity } from "./json";
+import { TextBlock, MathEntity } from "./json";
 import { getModeColor, showAuxiliaryShapes, speakReason } from "./all_functions";
 
 import { Shape, Triangle } from "./shape";
@@ -78,25 +78,6 @@ export class Statement extends Shape {
         return new Reading(this, "", []);
     }    
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            shapes : this.selectedShapes.map(x => x.toObj())
-        });
-
-        if(this.reason != 0){
-            obj.reason = this.reason;
-        }
-
-        if(this.auxiliaryShapes.length != 0){
-            obj.auxiliaryShapes = this.auxiliaryShapes.map(x => x.toObj());
-        }
-
-        if(this.mathText != ""){
-            obj.mathText = this.mathText;
-        }
-
-        return obj;
-    }
 
     makeTexUI() : LaTeXBox {
         return new LaTeXBox({
@@ -219,6 +200,5 @@ export class Statement extends Shape {
     }
 }
 
-registerEntity(Statement.name, (obj: any) => new Statement(obj));
 
 console.log(`Loaded: statement`);

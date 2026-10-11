@@ -4,8 +4,8 @@ import { Reading, TT, MyError, msg, getPlayMode, PlayMode, sleep, AbstractSpeech
 
 import { ShapeMode } from "./enums";
 import { AppServices, GlobalState } from "./inference";
-import { Widget, MathEntity, registerEntity } from "./json";
-import { anyToObj, calcFootOfPerpendicular, calcLineLineIntersection, Point__zero, setProperty } from "./all_functions";
+import { Widget, MathEntity } from "./json";
+import { calcFootOfPerpendicular, calcLineLineIntersection, Point__zero, setProperty } from "./all_functions";
 import { addPerpendicularPairs, addPointOnCircleArcs, addPointOnLines, getCommonLineOfPoints, getCommonPointOfLines } from "./relations";
 import { calcCirclePointTangent } from "./geometry_math";
 
@@ -23,14 +23,6 @@ export class Midpoint extends Point {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            pointA : this.pointA.toObj(),
-            pointB : this.pointB.toObj()
-        });
-
-        return obj;
-    }
 
     dependencies() : MathEntity[] {
         return super.dependencies().concat([ this.pointA, this.pointB ]);
@@ -60,7 +52,6 @@ export class Midpoint extends Point {
     }
 }
 
-registerEntity(Midpoint.name, (obj: any) => new Midpoint(obj));
 
 abstract class AbstractPerpendicularLine extends AbstractLine {
     line: AbstractLine;
@@ -71,11 +62,6 @@ abstract class AbstractPerpendicularLine extends AbstractLine {
         this.line = obj.line;
     }
     
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            line  : this.line.toObj(),
-        });
-    }
 
     setRelations(): void {
         super.setRelations();
@@ -93,11 +79,6 @@ export class FootOfPerpendicular extends AbstractPerpendicularLine {
         this.calc();
     }
     
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            foot  : this.foot.toObj(),
-        });
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -135,7 +116,6 @@ export class FootOfPerpendicular extends AbstractPerpendicularLine {
     }
 }
 
-registerEntity(FootOfPerpendicular.name, (obj: any) => new FootOfPerpendicular(obj));
 
 
 export class PerpendicularLine extends AbstractPerpendicularLine {
@@ -156,7 +136,6 @@ export class PerpendicularLine extends AbstractPerpendicularLine {
     }
 }
 
-registerEntity(PerpendicularLine.name, (obj: any) => new PerpendicularLine(obj));
 
 
 
@@ -173,14 +152,6 @@ export class LineLineIntersection extends Point {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            lineA : this.lineA.toObj(),
-            lineB : this.lineB.toObj(),
-        });
-
-        return obj;
-    }
 
     dependencies() : MathEntity[] {
         return [ this.lineA, this.lineB ];
@@ -203,7 +174,6 @@ export class LineLineIntersection extends Point {
     }
 }
 
-registerEntity(LineLineIntersection.name, (obj: any) => new LineLineIntersection(obj));
 
 export class LineArcIntersection extends Shape {
     line : AbstractLine;
@@ -222,16 +192,6 @@ export class LineArcIntersection extends Shape {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            line   : this.line.toObj(),
-            arc    : this.arc.toObj(),
-            pointA : this.pointA.toObj(),
-            pointB : this.pointB.toObj()
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -310,7 +270,6 @@ export class LineArcIntersection extends Shape {
     }
 }
 
-registerEntity(LineArcIntersection.name, (obj: any) => new LineArcIntersection(obj));
 
 export class ArcArcIntersection extends Shape {
     arc1 : CircleArc;
@@ -329,16 +288,6 @@ export class ArcArcIntersection extends Shape {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            arc1   : this.arc1.toObj(),
-            arc2   : this.arc2.toObj(),
-            pointA : this.pointA.toObj(),
-            pointB : this.pointB.toObj()
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -422,7 +371,6 @@ export class ArcArcIntersection extends Shape {
     }
 }
 
-registerEntity(ArcArcIntersection.name, (obj: any) => new ArcArcIntersection(obj));
 
 export abstract class Tangent extends Shape {
 
@@ -470,16 +418,6 @@ export class CircleCircleTangent extends Tangent {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            circle1 : this.circle1.toObj(),
-            circle2 : this.circle2.toObj(),
-            point   : this.point.toObj(),
-            lines   : this.lines.map(x => x.toObj())
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -533,7 +471,6 @@ export class CircleCircleTangent extends Tangent {
     }
 }
 
-registerEntity(CircleCircleTangent.name, (obj: any) => new CircleCircleTangent(obj));
 
 
 export class CirclePointTangent extends Tangent {
@@ -568,16 +505,6 @@ export class CirclePointTangent extends Tangent {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            circle   : this.circle.toObj(),
-            point   : this.point.toObj(),
-            tangentPoints : this.tangentPoints.map(x => x.toObj()),
-            lines : this.lines.map(x => x.toObj())
-        });
-
-        return obj;
-    }
 
     getAllShapes(shapes : MathEntity[]){
         super.getAllShapes(shapes);
@@ -613,7 +540,6 @@ export class CirclePointTangent extends Tangent {
     }
 }
 
-registerEntity(CirclePointTangent.name, (obj: any) => new CirclePointTangent(obj));
 
 export class AngleBisector extends AbstractLine {
     lineA       : AbstractLine;
@@ -634,16 +560,6 @@ export class AngleBisector extends AbstractLine {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            lineA      : this.lineA.toObj(),
-            directionA : this.directionA,
-            lineB      : this.lineB.toObj(),
-            directionB : this.directionB
-        });
-
-        return obj;
-    }
 
     dependencies() : MathEntity[] {
         return [ this.lineA, this.lineB ];
@@ -659,7 +575,6 @@ export class AngleBisector extends AbstractLine {
 
 }
 
-registerEntity(AngleBisector.name, (obj: any) => new AngleBisector(obj));
 
 
 
@@ -676,22 +591,12 @@ export class PropertyChange {
         this.newValue = obj.newValue;
     }
 
-    makeObj() : any {
-        return {
-            typeName: this.constructor.name,
-            widget : this.widget.toObj(),
-            propertyName : this.propertyName,
-            oldValue : anyToObj(this.oldValue),
-            newValue : anyToObj(this.newValue)
-        }
-    }
 
     restore(){
         setProperty(this.widget, this.propertyName, this.oldValue);
     }
 }
 
-registerEntity(PropertyChange.name, (obj: any) => new PropertyChange(obj));
 
 export class Motion extends MathEntity {
     propertyChanges : PropertyChange[] = [];
@@ -701,11 +606,6 @@ export class Motion extends MathEntity {
         this.propertyChanges = obj.propertyChanges;
     }
 
-    makeObj() : any {
-        return Object.assign(super.makeObj(), {
-            propertyChanges : this.propertyChanges.map(x => x.makeObj()),
-        });
-    }    
 
     addPropertyChange(widget : Widget, propertyName : string, oldValue : any, newValue : any){
         msg(`add Property Change ${propertyName} ${oldValue}=>${newValue}`);
@@ -749,6 +649,5 @@ export class Motion extends MathEntity {
     }
 }
 
-registerEntity(Motion.name, (obj: any) => new Motion(obj));
 
 console.log(`Loaded: geometry`);

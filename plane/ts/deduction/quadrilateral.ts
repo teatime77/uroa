@@ -1,7 +1,6 @@
 import { assert, msg, Reading, TT } from "@i18n";
 import { ShapeMode, TriangleQuadrilateralClass } from "../enums";
 import { GlobalState, parallelogramClassifiers } from "../inference";
-import { registerEntity } from "../json";
 import { Point, AbstractLine, Quadrilateral, Shape } from "../shape";
 import { LengthSymbol } from "../dimension_symbol";
 import { Statement } from "../statement";
@@ -68,7 +67,6 @@ export class ParallelogramClassifier extends QuadrilateralClassifier {
     }
 }
 
-registerEntity(ParallelogramClassifier.name, (obj: any) => new ParallelogramClassifier(obj));
 
 export class RhombusClassifier extends ParallelogramClassifier {    
     reading(): Reading {
@@ -76,6 +74,5 @@ export class RhombusClassifier extends ParallelogramClassifier {
     }
 }
 
-registerEntity(RhombusClassifier.name, (obj: any) => new RhombusClassifier(obj));
 
 console.log(`Loaded: quadrilateral`);

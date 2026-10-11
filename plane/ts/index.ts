@@ -9,7 +9,7 @@ import { getEquationOfTextBlock, getTextOfTextBlock, isEquationTextBlock, setCap
 
 export { ShapeMode } from "./enums.js"
 export { usedReasons, reasonToDoc, GlobalState, } from "./inference.js"
-export { removeDiv, parseObject, loadData, getOperationsText } from "./all_functions.js"
+export { removeDiv, getOperationsText } from "./all_functions.js"
 export { initRelations } from "./relations.js"
 export { Widget, MathEntity } from "./json.js"
 

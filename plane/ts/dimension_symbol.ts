@@ -3,7 +3,7 @@
 import { assert, MyError, range, Reading, TT, permutation, areSetsEqual, Vec2 } from "@i18n";
 
 import { rightAngles, angleMap, equalLengths, pointsToLengthSymbol, centerOfCircleArcs, Angle__outerAngleScale, Angle__numMarks, GlobalState } from "./inference";
-import { MathEntity, fromXPixScale, fromYPixScale, registerEntity, TextBlock } from "./json";
+import { MathEntity, fromXPixScale, fromYPixScale, TextBlock } from "./json";
 import { drawLine, inRange, pairKey, toDegree } from "./all_functions";
 import { addEqualLengths, angleKey, getCommonLineOfPoints, getCommonPointOfLines, Mylist } from "./relations";
 
@@ -45,17 +45,6 @@ export class Angle extends Shape {
         }
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            angleMark  : this.angleMark,
-            lineA      : this.lineA.toObj(),
-            directionA : this.directionA,
-            lineB      : this.lineB.toObj(),
-            directionB : this.directionB
-        });
-
-        return obj;
-    }
 
     getProperties(){
         return super.getProperties().concat([
@@ -223,7 +212,6 @@ export class Angle extends Shape {
     }
 }
 
-registerEntity(Angle.name, (obj: any) => new Angle(obj));
 
 
 export class DimensionLine extends Shape {
@@ -245,15 +233,6 @@ export class DimensionLine extends Shape {
         this.calc();
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            pointA : this.pointA.toObj(),
-            pointB : this.pointB.toObj(),
-            shift  : this.shift
-        });
-
-        return obj;
-    }
 
     setShift(shift : number){
         this.shift = shift;
@@ -323,7 +302,6 @@ export class DimensionLine extends Shape {
     }
 }
 
-registerEntity(DimensionLine.name, (obj: any) => new DimensionLine(obj));
 
 export class LengthSymbol extends Shape {
 
@@ -345,15 +323,6 @@ export class LengthSymbol extends Shape {
         this.lengthKind = obj.lengthKind;
     }
 
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            pointA : this.pointA.toObj(),
-            pointB : this.pointB.toObj(),
-            lengthKind : this.lengthKind
-        });
-
-        return obj;
-    }
 
     getProperties(){
         return super.getProperties().concat([
@@ -512,6 +481,5 @@ export class LengthSymbol extends Shape {
 
 }
 
-registerEntity(LengthSymbol.name, (obj: any) => new LengthSymbol(obj));
 
 console.log(`Loaded: dimension-symbol`);

@@ -1,7 +1,7 @@
 import { msg, getPlayMode, PlayMode, MyError, range, sleep, assert, parseURL, langCodeList, setTextLanguageCode, voiceLanguageCode, initI18n, appMode, AppMode, initSpeech, $dlg, setVoiceLanguageCode, downloadJson, fetchJson } from "@i18n";
 import { DbDoc, getMyDoc, getRootFolder, initFirebase, initForMovie, makeDocsGraph, uploadCanvasImg, writeGraphDocDB, addGraphSection, addGraphItem, changeDisplay, updateGraph, renameDoc, deleteDoc, renameSection } from "@uroa-firebase";
 import { $button, $flex, bgColor, Button, fgColor, getPhysicalSize, Grid, Layout } from "@layout";
-import { getOperationsText, GlobalState, initPlane, initRelations, loadData, loadOperationsText, Plane, playBack, removeDiv } from "@plane";
+import { getOperationsText, GlobalState, initPlane, initRelations, loadOperationsText, Plane, playBack, removeDiv } from "@plane";
 import { stopPlay, playAllGraph, convert, backup, playBackUp, newDocs, isJson, allData, fetchAllData } from "./flow";
 import { getCookie, showLangDlg, makePlayEditGrid, langButtonClicked } from "./movie_ui";
 import { includeDialog } from "./movie_util";
@@ -309,14 +309,11 @@ export async function readDoc(doc_id : number, shouldStop: () => boolean = () =>
         msg(`read doc:${theDoc.id} ${theDoc.name}`);
         const data = JSON.parse(theDoc.text);
 
-        if(2 <= data.version){
-
-            await loadOperationsAndPlay(theDoc.id, theDoc.name, theDoc.parent != null ? theDoc.parent.id : NaN, data, shouldStop);
+        if(!(2 <= data.version)){
+            throw new MyError("Legacy shape JSON is no longer supported. Use operation records (version 2 or later).");
         }
-        else{
 
-            loadData(data);
-        }
+        await loadOperationsAndPlay(theDoc.id, theDoc.name, theDoc.parent != null ? theDoc.parent.id : NaN, data, shouldStop);
     }
 }
 

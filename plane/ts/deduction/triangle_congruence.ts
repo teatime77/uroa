@@ -1,6 +1,6 @@
 import { assert, Reading, sleep, TT } from "@i18n";
 
-import { MathEntity, registerEntity } from "../json";
+import { MathEntity } from "../json";
 import { addCongruentTriangles } from "../relations";
 
 import { Triangle } from "../shape";
@@ -32,6 +32,5 @@ export class TriangleCongruence extends Statement {
     }
 }
 
-registerEntity(TriangleCongruence.name, (obj: any) => new TriangleCongruence(obj));
 
 console.log(`Loaded: triangle-congruence`);

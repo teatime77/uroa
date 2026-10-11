@@ -22,6 +22,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - diagramの実機用ブロックはHTTP `POST /send_data`を前提とする。robotのBLE通信との接続は未実装。
 - `diagram/ts/index.ts`の `diy_sbc = false` により実機センサーの定期取得は無効。サーボ送信コード自体は残っている。
 - plotには実装ソースがない。lessonの `@let` は未実装。mediaのCanvas動画録画・音声合成部分はコメントアウトされている。
+- planeの旧図形JSON保存・復元とmovie内のスライド・クイズ機能は廃止済み。図形の追加時は操作記録による生成・再生を確認する。diagram・FirebaseのJSON保存、独立した `lesson/ts/` は別機能として残る。
 - ソースにある機能を、ブラウザーや実機で動作確認済みと表現しない。
 
 ## 変更と検証

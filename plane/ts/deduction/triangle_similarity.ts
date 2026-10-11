@@ -1,6 +1,6 @@
 import { Reading, TT } from "@i18n";
 
-import { MathEntity, registerEntity } from "../json";
+import { MathEntity } from "../json";
 import { addSimilarTriangles } from "../relations";
 
 import { Triangle } from "../shape";
@@ -22,6 +22,5 @@ export class TriangleSimilarity extends Statement {
     }
 }
 
-registerEntity(TriangleSimilarity.name, (obj: any) => new TriangleSimilarity(obj));
 
 console.log(`Loaded: triangle-similarity`);

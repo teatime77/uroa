@@ -36,7 +36,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | PLANE-03 | 等長・等角・平行・垂直の関係を変える | [relations.ts](../plane/ts/relations.ts): 関係の登録・検索、initRelations、recalcRelations、undoRelations、redoRelations | [constraint.ts](../plane/ts/constraint.ts): 制約、[inference.ts](../plane/ts/inference.ts): 共有状態・関係ログ。初期化、再計算、取り消し・再適用も確認する |
 | PLANE-04 | 合同・相似・命題の理由を追加する | [deduction/](../plane/ts/deduction/)、[statement.ts](../plane/ts/statement.ts) | [enums.ts](../plane/ts/enums.ts)、[factories.ts](../plane/ts/factories.ts): 理由、補助図形、表示。[relations.ts](../plane/ts/relations.ts): 合同・相似の登録と対応する角・辺の検索 |
 | PLANE-05 | 座標・幾何計算を変える | [geometry_math.ts](../plane/ts/geometry_math.ts): 垂線の足・距離・接点、[geometry_order.ts](../plane/ts/geometry_order.ts): isClockwise、toClockwisePoints | [geometry.ts](../plane/ts/geometry.ts): 図形クラス、[matrix.ts](../plane/ts/matrix.ts): 行列。[all_functions.ts](../plane/ts/all_functions.ts)に図形依存の垂線・交点計算と互換用再exportを残す。描画・作図・制約の利用側を確認する |
-| PLANE-06 | 操作の保存・復元・再生を変える | [operation.ts](../plane/ts/operation.ts)、[factories.ts](../plane/ts/factories.ts): loadOperationsJSON、loadOperationsText、playBack | [json.ts](../plane/ts/json.ts): 基底クラスと生成関数登録、[all_functions.ts](../plane/ts/all_functions.ts): parseObject、loadData、[play.ts](../plane/ts/play.ts) |
+| PLANE-06 | 操作の保存・復元・再生を変える | [operation.ts](../plane/ts/operation.ts)、[factories.ts](../plane/ts/factories.ts): loadOperationsJSON、loadOperationsText、playBack | [all_functions.ts](../plane/ts/all_functions.ts): saveJson、getOperationsText、convertOperations、[play.ts](../plane/ts/play.ts)。旧図形JSONの保存・復元とファイルdropは廃止。新しい図形には旧形式用の変換・生成登録は不要 |
 | PLANE-07 | 作図画面やプロパティ表示を変える | [plane_ui.ts](../plane/ts/plane_ui.ts): Plane、[factories.ts](../plane/ts/factories.ts): showProperty | [all_functions.ts](../plane/ts/all_functions.ts): 画面イベント、[view.ts](../plane/ts/view.ts)。movie側の配置も確認する |
 
 ## ブロック編集・実行・実機向け指令
@@ -60,13 +60,13 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | GAME-05 | 筆算・方程式・入力・Canvas部品を変える | [math/](../game/ts/math/)、[widget/](../game/ts/widget/) | [core.ts](../game/ts/widget/core.ts): UI登録、[canvas.ts](../game/ts/widget/canvas.ts)。数式解析・入力フォーカス |
 | GAME-06 | 正解の効果音・演出を変える | [sound.ts](../game/ts/lesson/sound.ts)、[confetti.ts](../game/ts/lesson/confetti.ts) | 音声と描画の検証を分ける |
 
-## 教材アニメーション・スライド・クイズ
+## 教材アニメーション
 
 | ID | やりたいこと | 最初に見るソース・入口 | 関連資産・確認の観点 |
 |---|---|---|---|
 | MOVIE-01 | 教材読込・作図操作の再生を変える | [index.ts](../movie/ts/index.ts): initMovie、readDocJson、loadOperationsAndPlay | [all-kyozai.json](../public/movie/all-kyozai.json): version 3、22教材。planeの再生も利用する |
 | MOVIE-02 | 教材の連続再生・停止を変える | [flow.ts](../movie/ts/flow.ts): playAllGraph、stopPlay | 全体グラフ、音声、PlayMode、作図の強調と停止 |
-| MOVIE-03 | スライド・クイズを編集・再生する | [lesson.ts](../movie/ts/lesson.ts): playLesson、initLessonなど | 独立したlessonモジュールとは別機能。保存データとアプリモードを確認する |
+| MOVIE-03 | スライド・クイズを編集・再生する（廃止） | movie内のlesson機能は未使用のため削除済み | 独立した `lesson/ts/` モジュールは別機能として残る |
 | MOVIE-04 | 音声・言語選択・再生画面を変える | [timeline.ts](../movie/ts/timeline.ts): playAudio、stopAudio、[movie_ui.ts](../movie/ts/movie_ui.ts) | i18nのSpeech、[画面](../public/movie/index.html)、ダイアログ、音声終了イベント |
 | MOVIE-05 | 教材の変換・バックアップ・画像保存を変える | [flow.ts](../movie/ts/flow.ts): convert、backup、playBackUp、[index.ts](../movie/ts/index.ts): updateGraphDoc | Firebaseへの保存を伴うため検証用データ・環境を用いる |
 | MOVIE-06 | 教材音声や字幕の生成を変える | [make_audio.py](../movie/python/make_audio.py)、[timeline.py](../movie/python/timeline.py) | Azure音声生成などの補助処理。ブラウザの再生コードと区別する |

@@ -4,12 +4,12 @@ import { AbstractSpeech, AppMode, appMode, areSetsEqual, check, getPlayMode, int
 import { App, makeNodeTextByApp, parseMath, showFlow } from "@parser";
 import { $button, $dialog, $grid, $img, $label, $latex, $radio, Anchor, bgColor, Button, fgColor, Grid, Layout, RadioButton, saveBlob, UI } from "@layout";
 import { AngleEqualityReason, ExprTransformReason, IsoscelesTriangleReason, LengthEqualityReason, ParallelogramReason, ParallelReason, PropositionReason, RhombusReason, ShapeEquationReason, ShapeMode, ShapeType, TriangleCongruenceReason, TriangleSimilarityReason } from "./enums";
-import { defaultLineWidth, enumSelectionClassName, GlobalState, idMap, menuDialogs, modeColorMap, OverLineWidth, urlBase, enumToImgName, AppServices, toolList, editToolList, classCounters } from "./inference";
+import { defaultLineWidth, enumSelectionClassName, GlobalState, menuDialogs, modeColorMap, OverLineWidth, urlBase, enumToImgName, AppServices, toolList, editToolList } from "./inference";
 import { Mat2 } from "./matrix";
 import { calcFootFrom2Pos } from "./geometry_math";
 // Compatibility exports; new callers import coordinate calculations directly.
 export { calcFootFrom2Pos, distanceFromLine, calcCirclePointTangent } from "./geometry_math";
-import { Widget, MathEntity, TextBlock, entityRegistry } from "./json";
+import { Widget, MathEntity, TextBlock } from "./json";
 
 import type { AbstractLine, Point, Shape } from "./shape";
 import type { View } from "./view";
@@ -18,7 +18,7 @@ import type { Plane } from "./plane_ui";
 import type { Operation, ToolSelection } from "./operation";
 import type { Builder } from "./tool";
 import type { EquationTextBlockClass, ShapeEquation } from "./deduction/shape_equation";
-import { initRelations, getCommonPointOfLines, findAnglesInPolygon } from "./relations";
+import { getCommonPointOfLines, findAnglesInPolygon } from "./relations";
 // Compatibility exports; callers can import each feature module directly.
 export {
     initRelations, recalcRelations, addShapeSetRelations, undoRelations, redoRelations,
@@ -84,51 +84,6 @@ export function calcLineLineIntersection(l1 : AbstractLine, l2 : AbstractLine) :
 // ts\json.ts
 
 
-export function parseObject(obj: any, parse_other_object? : (o : any)=>any) : any {
-    if(obj == undefined || obj == null || typeof obj != "object"){
-        return obj;
-    }
-
-    // if(obj instanceof Widget || obj instanceof Vec2){
-    //     return obj;
-    // }
-
-    if(Array.isArray(obj)){
-        let v = obj.map(x => parseObject(x, parse_other_object));
-        return v;
-    }
-
-    if(obj.ref != undefined){
-        let o = GlobalState.Widget__refMap.get(obj.ref);       
-        if(o == undefined){
-            throw new MyError("no-ref");
-        }
-        return o;
-    }
-
-    if(obj.typeName == Vec2.name){
-        return new Vec2(obj.x, obj.y);
-    }
-
-    for(let [name, val] of Object.entries(obj)){
-        if(name == "bound" && (val as any).ref != undefined && GlobalState.Widget__refMap.get((val as any).ref) == undefined){
-            msg(`no bound:${obj.id}`);
-            obj.bound = undefined;
-            continue;
-        }
-        obj[name] = parseObject(val, parse_other_object);
-    }
-
-    const creator = entityRegistry[obj.typeName];
-    if (creator != undefined){
-        return creator(obj);
-    }
-
-    if(parse_other_object != undefined){
-        return parse_other_object(obj);
-    }
-    throw new MyError(`parse Object: unknown type:[${obj.typeName}]`);
-}
 
 export function saveJson(anchor : Anchor){
     const text = getOperationsText();
@@ -138,81 +93,8 @@ export function saveJson(anchor : Anchor){
     saveBlob(anchor, "movie", blob);
 }
 
-export function handleFileSelect(ev: DragEvent) {
-    ev.stopPropagation();
-    ev.preventDefault();
 
-    const files = ev.dataTransfer!.files; // FileList object.
 
-    for (let file of files) {
-        msg(`drop name:${escape(file.name)} type:${file.type} size:${file.size} mtime:${file.lastModified.toLocaleString()} `);
-
-        const reader = new FileReader();
-
-        reader.onload = () => {
-            const json = reader.result as string;
-            const obj  = JSON.parse(json);
-
-            assert(false);
-            loadData(obj);
-
-            // viewEvent(obj);
-        };
-        reader.readAsText(file);        
-        // uploadFile(f);
-    }
-}
-
-export function loadData(obj : any){
-
-    GlobalState.Plane__one!.clearPlane();
-
-    GlobalState.Widget__maxId  = -1;
-    classCounters.clear();
-    idMap.clear();
-    GlobalState.Widget__refMap = new Map<number, any>();
-    GlobalState.MathEntity__orderSet.clear();
-
-    const view = GlobalState.View__current!;
-    for(let [name, val] of Object.entries(obj)){
-        if(name != "shapes"){
-            (view as any)[name] = parseObject(val);
-        }
-    }
-
-    view.shapes = [];
-    const all_shapes : MathEntity[] = [];
-    initRelations();
-    for(const shape_obj of obj.shapes){
-        GlobalState.Widget__isLoading = true;
-        const shape = parseObject(shape_obj) as MathEntity;
-        GlobalState.Widget__isLoading = false;
-
-        view.shapes.push( shape );
-
-        shape.setOrder();
-        shape.setRelations();
-
-        shape.getAllShapes(all_shapes);
-    }
-
-    const all_real_shapes = view.allRealShapes();
-
-    all_real_shapes.filter(x => x.caption != undefined).forEach(x => x.caption!.parent = x);
-
-    all_real_shapes.forEach(x => x.updateCaption());
-
-    (view.shapes.filter(x => AppServices.isTextBlock(x)) as TextBlock[]).forEach(x => x.updateTextPosition());
-
-    GlobalState.Plane__one!.shapes_block.clear();
-    view.shapes.forEach(x => addToShapeHistory(x));
-}
-
-export function handleDragOver(evt: DragEvent) {
-    evt.stopPropagation();
-    evt.preventDefault();
-    evt.dataTransfer!.dropEffect = 'copy'; // Explicitly show this is a copy.
-}
 
 // ts\operation.ts
 
@@ -312,11 +194,6 @@ export async function speakAndHighlight(shape : MathEntity, speech : AbstractSpe
 
 // ts\plane_event.ts
 
-export function dropEvent(view : View){
-    view.canvas.addEventListener('dragover', handleDragOver, { signal: view.eventSignal });
-    view.canvas.addEventListener('drop', handleFileSelect, { signal: view.eventSignal });
-
-}
 
 export function setCaptionEvent(caption : TextBlock) : void {
     caption.div.addEventListener("pointerdown", caption.captionPointerdown.bind(caption));
@@ -660,17 +537,6 @@ export function setProperty(obj : any, property_name : string, newValue : any){
     }
 }
 
-export function anyToObj(obj : any) : any {
-    if(Array.isArray(obj)){
-        return obj.map(x => anyToObj(x));
-    }
-    else if( AppServices.isWidget(obj)){
-        return obj.toObj();
-    }
-    else{
-        return obj;
-    }
-}
 
 
 function makeReasonMsgMap(){

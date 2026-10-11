@@ -195,3 +195,18 @@ diagram/movieの既存Firebase CDN要求は引き続きERR_BLOCKED_BY_ORBとな�
 - Python環境は既存の `tmp/p3-venv` とChromiumを使用した。`tests/test.py` のSHA256は変更前後とも `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。
 
 確認用の開発・previewサーバーは終了した。今回は関係処理の本体と公開APIを維持する責任分割であり、関係推論の仕様変更は行っていない。保存復元、再生、画面イベント、AppServicesの役割整理は後続作業として残る。
+
+## 2026-10-11: 旧図形JSONの保存・復元の廃止
+
+ユーザーがplaneのmsgをi18nへ統一してlogging.tsを削除し、未使用のmovie内lesson機能も削除した後、旧図形JSONの処理を廃止した。前節のlogging.tsの作成は当時の作業記録であり、現在の構成ではない。
+
+planeのmakeObj 34メソッド・toObj 1メソッド、registerEntity 41箇所、レジストリ、parseObject・loadData・anyToObj、旧形式のファイルdropとイベント登録、Widget__refMap・Widget__isLoading・Widget__processedを削除した。movieのFirebase読込経路はversion 2未満・versionなしのデータを非対応としてエラーにする。図形生成とID管理、操作記録の保存・読込・変換・再生、diagramとFirebaseの独自JSON保存は維持した。
+
+- `npm.cmd run verify`: 成功。TypeScript診断0、Vite 7.3.7で175モジュール変換、92項目コピー、公開HTML6ページと資産チェック成功。既存の静的・動的import混在警告2件は残る。
+- 旧形式の識別子・変換メソッドの参照がplane・movieの管理対象TypeScriptソースからなくなったことを確認。構文木で残る514関数・メソッド等を変更前と比較し、旧参照マップへの書き込みとdropイベントの登録を除き、処理本体が一致することを確認した。操作保存・読込・再生の処理本体も維持する。
+- movieの実際のreadDoc関数を取り出し、Firebase取得と画面・再生処理を模擬して5ケースを確認。versionなし・0・1は非対応エラーとなり、再生関数を呼ばない。version 2・2.1は従来どおり操作再生へ渡す。Firestoreへの実際のアクセスは行っていない。
+- 既存 `tests/test.py` を開発 `http://127.0.0.1:5183/` とpreview `http://127.0.0.1:4183/` に対して順番に実行し、両方でwebgpu・game・diagram・algebra・movieすべて成功。
+- 開発環境のmovie編集画面で公開教材id 1を操作オブジェクトから再生した後、教材選択グラフを閉じてSaveをクリックし、movie.jsonのダウンロードを確認。version 2.1・操作文字列配列35件・shapesなしを確認し、ダウンロードした内容をloadOperationsTextで再読み込みして再生した。操作列、22図形のID・種類・相対順序・位置・visible・muteと、関係ログ27件が一致し、JavaScriptのpageerrorは0件。内部orderは再生成時に採番されるため、相対的な順序を比較した。
+- Python環境は既存の `tmp/p3-venv` とChromiumを使用した。`tests/test.py` は変更せず、SHA256は `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。追加の確認スクリプトとダウンロードはGit管理外のtmpに置いた。
+
+確認用の開発・previewサーバーは終了した。Firebase上の旧データの調査・変換・削除、実際の認証・保存、音声の聴取、Android・実機の確認は行っていない。旧図形JSONは読み込めなくなる。操作記録の保存・読込・変換、再生、画面イベント、AppServicesの分離は引き続き後続作業とする。
