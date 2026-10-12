@@ -115,7 +115,15 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 [imu.ts](../diagram/ts/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
 
-BLEの20バイトTelemetryをlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として1回出力し、console.log("IMU", value)へ表示する。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。グラフ・温度・姿勢推定は未実装。
+BLEの20バイトTelemetryをlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として1回出力し、console.log("IMU", value)へ表示する。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度・姿勢推定は未実装。
+
+Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単一の接続元をたどる。型が不明、接続元が複数、循環参照ならundefinedを返す。参照結果をdataTypeへ保存しないので、解除後に古い型を残さず、JSONには明示型だけを保存する。値の検証・描画・接続検査も有効な型を使う。subscribeConnections(listener)は配線更新後、両端へ{port, peer, connected}を同期通知し、返された関数で購読を解除する。重複接続・未接続の解除は通知しない。disconnectはどちらの端子からでも呼べ、disconnectAllとBlock.clearBlockで全配線を解除する。通知は当該ポートの接続変更に対するもので、ブロックをまたぐ式の型推論・型変更通知は未実装。
+
+[plot.ts](../diagram/ts/plot.ts)のPlotBlockは1つの型未指定入力Portを持ち、接続元のStruct.membersを読み取って数値Fieldをグラフ化する。IMUValue・imuStructへの依存はなく、number、直接の数値Fieldを持つStruct、入れ子のStructを扱う。各構造体の直接の数値Fieldを1つのパネルにし、入れ子はパス名をタイトルとして横に並べる。IMUならgyro・accの2パネル、x/y/zはred/green/blueとなる。文字列Fieldは描画しない。Fieldへの単位情報はまだ追加しない。
+
+[plot_data.ts](../diagram/ts/plot_data.ts)はFieldの列挙と履歴・統計を担当する。ブラウザー受信時刻を別途保持し、直近30秒、最大6000サンプルを保存する。データ受信時に線を更新し、初回取得と以後1秒ごとに系列ごとの平均・母標準偏差を計算する。各パネルは全系列のμ±3σの下限・上限をまとめ、1/2/5系の目盛りへ外側に丸める。σ=0では最小幅を設ける。3σ外の値は画面外になる場合がある。入力未取得・解除・配線変更で履歴を消し、受信待ちへ戻す。
+
+グラフはcanvasの枠内へ位置を合わせたdivにPlotly.jsで描き、移動・画面リサイズへ追従する。見出し・ポート・枠は従来のcanvasで扱う。Plotly.reactは要求をまとめて直列実行し、削除時はタイマー・ResizeObserver・購読・描画予約を解除してpurgeとDOM削除を行う。ライブラリはdiagramのnpm依存plotly.js-gl3d-dist-min 4.1.2を初回配置時に遅延読込する。scatterと将来の3Dに必要な種類を含む配布版だが、今回のPlotBlockは2D時系列表示のみ。Viteの開発・公開ビルド双方でローカル資産として配信する。[公式配布構成](https://github.com/plotly/plotly.js/blob/main/dist/README.md)、[Plotly API](https://plotly.com/javascript/plotlyjs-function-reference/)
 
 [ui.ts](../diagram/ts/ui.ts)のButtonをcanvasの再利用部品として拡張し、通常・押下・無効状態を描画する。[canvas.ts](../diagram/ts/canvas.ts)は前面のブロック内のポート・子ボタン・本体を判定する。ボタンを押した場合はブロックを動かさず、8 CSS pxを超える移動・pointercancelでは押下を取り消す。ブロック生成はblock.tsのregisterFunctionBlockへ登録し、新しいブロックモジュールをblock.tsから逆importしない。既存ServoMotorBlockのHTTP送信と旧センサー定期取得は今回BLEへ接続していない。
 
@@ -247,7 +255,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの実機ブロック | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock・IMUBlock | Web BluetoothでrobotのESP32へ接続・切断し、IMUを構造体ポートとconsoleへ出力。サーボ操作・グラフは未実装 |
+| uroa/diagramのBLEConnectionBlock・IMUBlock・PlotBlock | Web BluetoothでrobotのESP32へ接続・切断し、IMUを構造体ポートとconsoleへ出力。汎用PlotBlockへ配線してgyro・accを表示。サーボのBLE操作は未実装 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 

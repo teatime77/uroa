@@ -2,5 +2,8 @@
   "name": "@stem/diagram",
   "scripts": {
     "build": "tsc -b"
+  },
+  "dependencies": {
+    "plotly.js-gl3d-dist-min": "4.1.2"
   }
 }

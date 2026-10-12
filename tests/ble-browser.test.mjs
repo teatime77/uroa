@@ -79,7 +79,7 @@ async function pageFor(context) {
         } });
     });
     await page.goto(`${baseURL}/diagram/index.html`);
-    await page.waitForFunction(() => ['ready', 'failed'].includes(window.uroaApp?.state), { timeout: 120_000 });
+    await page.waitForFunction(() => ['ready', 'failed'].includes(window.uroaApp?.state), undefined, { timeout: 60_000 });
     assert.equal(await page.evaluate(() => window.uroaApp.state), 'ready',
         await page.evaluate(() => String(window.uroaApp.error?.stack || window.uroaApp.error || '')) + errors.join('\n'));
     await page.evaluate(async () => {
@@ -87,10 +87,11 @@ async function pageFor(context) {
         const { diagramBLE, BLEConnectionBlock } = await import('/diagram/ts/ble.ts');
         const { theCanvas } = await import('/diagram/ts/diagram_util.ts');
         const { IMUBlock } = await import('/diagram/ts/imu.ts');
-        const { StructPort, NumberPort } = await import('/diagram/ts/port.ts');
-        const { imuStruct } = await import('/diagram/ts/data_type.ts');
+        const { StructPort, NumberPort, Port } = await import('/diagram/ts/port.ts');
+        const { imuStruct, DataType, Struct, Field, numberType } = await import('/diagram/ts/data_type.ts');
+        const { PlotBlock } = await import('/diagram/ts/plot.ts');
         const { PortType } = await import('/diagram/ts/diagram_util.ts');
-        window.bleFixture = { editor: theEditor, connection: diagramBLE, Block: BLEConnectionBlock, canvas: theCanvas, IMUBlock, StructPort, NumberPort, imuStruct, PortType };
+        window.bleFixture = { editor: theEditor, connection: diagramBLE, Block: BLEConnectionBlock, canvas: theCanvas, IMUBlock, StructPort, NumberPort, Port, imuStruct, PortType, DataType, Struct, Field, numberType, PlotBlock };
     });
     context.after(() => assert.deepEqual(errors, []));
     return page;
@@ -366,4 +367,130 @@ test('IMU type restores without saving or replaying measured values', async cont
     await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 1 && window.bleFixture.editor.blocks[0].outputPort.dataType.typeName === 'IMU');
     assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[0].outputPort.value === undefined), true);
     assert.equal(await page.evaluate(() => window.bleMock.requests), 0);
+});
+
+test('Port resolves source metadata and notifies both ends after connect/disconnect', async context => {
+    const page = await pageFor(context);
+    const result = await page.evaluate(() => {
+        const f = window.bleFixture;
+        const parent = f.editor.tools.find(block => block.constructor.name === 'IMUBlock');
+        const source = new f.StructPort(parent, f.PortType.outputPort, f.imuStruct);
+        const input = new f.Port(parent, f.PortType.inputPort);
+        const changes = [];
+        const release = source.subscribeConnections(event => changes.push(['source', event.connected, source.destinations.includes(input)]));
+        input.subscribeConnections(event => changes.push(['input', event.connected, input.getDataType()?.typeName]));
+        input.connect(source); source.connect(input);
+        const schema = input.getDataType().struct;
+        const fields = schema.members.map(field => [field.name, field.type.struct.members.map(child => [child.name, child.type.typeName])]);
+        const notCached = input.dataType === undefined && !('dataType' in input.makeObj());
+        input.disconnect(source); input.disconnect(source);
+        const cleared = input.getDataType() === undefined;
+        release(); source.connect(input); source.disconnectAll();
+        const cycleA = new f.Port(parent, f.PortType.inputPort), cycleB = new f.Port(parent, f.PortType.outputPort);
+        cycleA.sources = [cycleB]; cycleB.sources = [cycleA];
+        return { fields, notCached, cleared, changes, cycle: cycleA.getDataType() === undefined };
+    });
+    assert.deepEqual(result.fields, [['gyro', [['x', 'number'], ['y', 'number'], ['z', 'number']]], ['acc', [['x', 'number'], ['y', 'number'], ['z', 'number']]]]);
+    assert.equal(result.notCached, true); assert.equal(result.cleared, true); assert.equal(result.cycle, true);
+    assert.deepEqual(result.changes, [['source', true, true], ['input', true, 'IMU'], ['source', false, false], ['input', false, undefined], ['input', true, 'IMU'], ['input', false, undefined]]);
+});
+
+async function placePlot(page) {
+    const origin = await page.evaluate(() => {
+        const tool = window.bleFixture.editor.tools.find(block => block.constructor.name === 'PlotBlock');
+        return { x: tool.position.x + 25, y: tool.position.y + 30 };
+    });
+    await page.mouse.move(origin.x, origin.y); await page.mouse.down();
+    await page.mouse.move(400, 430, { steps: 8 }); await page.mouse.up();
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).constructor.name), 'PlotBlock');
+}
+
+test('PlotBlock discovers gyro/acc before data, displays RGB telemetry and updates sigma each second', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    await placeIMU(page, 780, 170); await placePlot(page);
+    await page.waitForFunction(() => window.bleMock.rate === 10);
+    const ports = await page.evaluate(() => {
+        const blocks = window.bleFixture.editor.blocks;
+        return { from: { ...blocks[1].outputPort.getPosition() }, to: { ...blocks[2].inputPort.getPosition() } };
+    });
+    await page.mouse.move(ports.from.x, ports.from.y); await page.mouse.down();
+    await page.mouse.move(ports.to.x, ports.to.y, { steps: 8 }); await page.mouse.up();
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.data?.length === 6);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).plotElement.layout.annotations.map(a => a.text)), ['gyro', 'acc']);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).plotElement.data.map(trace => trace.line.color)), ['red', 'green', 'blue', 'red', 'green', 'blue']);
+    await page.evaluate(() => window.bleMock.emitTelemetry());
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.data[0].y.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).plotElement.data.map(trace => trace.y[0])), [1, -2, 0, 9.80665, -4.903325, 0]);
+    const range = await page.evaluate(() => [...window.bleFixture.editor.blocks.at(-1).plotElement.layout.yaxis.range]);
+    await page.evaluate(() => window.bleFixture.editor.blocks[1].setIMU({gyro: {x: 100, y: 0, z: 0}, acc: {x: 0, y: 0, z: 10}}));
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.data[0].y.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).plotElement.layout.yaxis.range), range);
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.layout.yaxis.range[1] >= 199);
+    // Seed a full window for visual inspection after verifying the actual BLE path above.
+    await page.evaluate(() => {
+        const plot = window.bleFixture.editor.blocks.at(-1);
+        plot.history.clear();
+        for (let i = 0; i < 300; i++) plot.history.append({gyro: {x: Math.sin(i / 15) * 30, y: Math.cos(i / 20) * 20, z: Math.sin(i / 25) * 10}, acc: {x: Math.sin(i / 18), y: Math.cos(i / 22), z: 9.80665 + Math.sin(i / 30) * 0.3}}, i * 100);
+    });
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.data[0].y.length === 300);
+    await page.screenshot({ path: 'tmp/plot-block.png' });
+    const before = await page.evaluate(() => {
+        const plot = window.bleFixture.editor.blocks.at(-1);
+        return { x: plot.position.x + 20, y: plot.position.y + 30, left: parseFloat(plot.plotElement.style.left) };
+    });
+    await page.mouse.move(before.x, before.y); await page.mouse.down();
+    await page.mouse.move(before.x - 30, before.y + 20, { steps: 8 }); await page.mouse.up();
+    assert.equal(await page.evaluate(() => parseFloat(window.bleFixture.editor.blocks.at(-1).plotElement.style.left)), before.left - 30);
+    await page.evaluate(() => window.bleFixture.connection.disconnect());
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.data[0].y.length === 0);
+});
+
+test('PlotBlock accepts other structs, rewires, saves/restores and releases DOM on Clear', async context => {
+    const page = await pageFor(context);
+    await placeIMU(page, 780, 170); await placePlot(page);
+    await page.evaluate(() => {
+        const f = window.bleFixture, [imu, plot] = f.editor.blocks;
+        imu.outputPort.connect(plot.inputPort);
+        plot.inputPort.disconnect(imu.outputPort);
+        const weather = new f.Struct('browser-weather', [new f.Field('temperature', f.numberType), new f.Field('humidity', f.numberType)]);
+        window.weatherSource = new f.Port(imu, f.PortType.outputPort, '', new f.DataType(weather.name));
+        window.weatherSource.connect(plot.inputPort);
+        window.weatherSource.setPortValue({temperature: 25, humidity: 50});
+    });
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.at(-1).plotElement.data?.length === 2 && window.bleFixture.editor.blocks.at(-1).plotElement.data[0].y.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).plotElement.data.map(t => t.name)), ['temperature', 'humidity']);
+    await page.evaluate(() => {
+        const [imu, plot] = window.bleFixture.editor.blocks;
+        window.weatherSource.disconnect(plot.inputPort);
+        imu.outputPort.connect(plot.inputPort);
+    });
+    const saved = await page.evaluate(() => window.bleFixture.editor.blocks.map(block => block.makeObj()));
+    assert.equal('dataType' in saved[1].ports[0], false);
+    await page.evaluate(blocks => {
+        const transfer = new DataTransfer(); transfer.items.add(new File([JSON.stringify(blocks)], 'plot.json', {type: 'application/json'}));
+        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
+    }, saved);
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 2 && window.bleFixture.editor.blocks[1].plotElement.data?.length === 6);
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[1].inputPort.getDataType().typeName), 'IMU');
+    assert.equal(await page.locator('.diagram-plot').count(), 1);
+    await page.getByRole('button', {name: 'Clear', exact: true}).click();
+    assert.equal(await page.locator('.diagram-plot').count(), 0);
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator('.diagram-plot').count(), 0);
+});
+
+test('Clear during lazy Plotly loading and application disposal do not recreate plots', async context => {
+    const page = await pageFor(context);
+    await page.evaluate(() => {
+        const f = window.bleFixture;
+        f.editor.addBlock(new f.PlotBlock({}));
+        f.editor.clearBlock();
+    });
+    await page.waitForTimeout(1500);
+    assert.equal(await page.locator('.diagram-plot').count(), 0);
+    await placePlot(page);
+    await page.waitForFunction(() => !!window.bleFixture.editor.blocks.at(-1).plotElement.layout);
+    await page.evaluate(() => window.uroaApp.dispose());
+    assert.equal(await page.locator('.diagram-plot').count(), 0);
 });

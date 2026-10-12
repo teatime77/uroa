@@ -5,6 +5,12 @@ import { notchRadius, PortType, theCanvas } from "./diagram_util";
 import { Canvas } from "./canvas";
 import { DataType, numberType, stringType, type Struct, type StructValue } from "./data_type";
 
+export interface PortConnectionChange {
+    readonly port: Port;
+    readonly peer: Port;
+    readonly connected: boolean;
+}
+
 export class Port {
     static radius = 10;        
     static Count = 0;
@@ -16,6 +22,7 @@ export class Port {
     sources : Port[]  = [];
     type : PortType;
     dataType?: DataType;
+    private connectionListeners = new Set<(change: PortConnectionChange) => void>();
     offset : Vec2 = Vec2.zero();
     private position : Vec2 = Vec2.zero();
 
@@ -53,10 +60,32 @@ export class Port {
         this.dataType = type;
     }
 
+    /** Explicit type wins; an untyped port resolves a single source without caching it. */
+    getDataType(visited = new Set<Port>()): DataType | undefined {
+        if (this.dataType) return this.dataType;
+        if (visited.has(this) || this.sources.length !== 1) return undefined;
+        visited.add(this);
+        return this.sources[0].getDataType(visited);
+    }
+
+    subscribeConnections(listener: (change: PortConnectionChange) => void): () => void {
+        this.connectionListeners.add(listener);
+        return () => { this.connectionListeners.delete(listener); };
+    }
+
+    private notifyConnection(peer: Port, connected: boolean): void {
+        const change = { port: this, peer, connected };
+        for (const listener of this.connectionListeners) {
+            try { listener(change); }
+            catch (error) { console.error("Port connection handler failed", error); }
+        }
+    }
+
     setPortValue(value : any | undefined){
-        if (value !== undefined && this.dataType) {
-            this.dataType.validateValue(value);
-            if (this.dataType.struct) value = this.dataType.copyValue(value);
+        const dataType = this.getDataType();
+        if (value !== undefined && dataType) {
+            dataType.validateValue(value);
+            if (dataType.struct) value = dataType.copyValue(value);
         }
         this.prevValue = this.value;
         this.value = value;
@@ -140,11 +169,12 @@ export class Port {
             theCanvas.drawLine(this.position, dst.position, "brown", 4);
         }
 
-        if (this.dataType?.struct) {
+        const dataType = this.getDataType();
+        if (dataType?.struct) {
             ctx.save();
             ctx.font = "14px sans-serif";
             ctx.fillStyle = "black";
-            ctx.fillText(`${this.name ? this.name + ": " : ""}${this.dataType.typeName}`, this.position.x + Port.radius + 6, this.position.y + 5);
+            ctx.fillText(`${this.name ? this.name + ": " : ""}${dataType.typeName}`, this.position.x + Port.radius + 6, this.position.y + 5);
             ctx.restore();
             return;
         }
@@ -186,7 +216,8 @@ export class Port {
         ];
 
         if (!pairs.some(pair => pair[0] == this.type && pair[1] == dst.type)) return false;
-        return !this.dataType || !dst.dataType || this.dataType.equals(dst.dataType);
+        const sourceType = this.getDataType(), destinationType = dst.getDataType();
+        return !sourceType || !destinationType || sourceType.equals(destinationType);
     }
 
     canConnect(dst : Port) : boolean {
@@ -206,15 +237,26 @@ export class Port {
             [src, dst] = [port, this];
         }
 
+        if (src.destinations.includes(dst)) return;
         append(src.destinations, dst);
         append(dst.sources, src);
+        src.notifyConnection(dst, true);
+        dst.notifyConnection(src, true);
 
         msg(`connect port:${this.idx}=>${port.idx}`);
     }
 
     disconnect(port : Port) : void {   
-        remove(this.destinations, port, true);
-        remove(port.sources, this, true);
+        const [src, dst] = this.destinations.includes(port) ? [this, port] : [port, this];
+        if (!src.destinations.includes(dst)) return;
+        remove(src.destinations, dst, true);
+        remove(dst.sources, src, true);
+        src.notifyConnection(dst, false);
+        dst.notifyConnection(src, false);
+    }
+
+    disconnectAll(): void {
+        for (const peer of [...this.sources, ...this.destinations]) this.disconnect(peer);
     }
 }
 
@@ -254,7 +296,7 @@ export class StructPort extends Port {
 
     structValue(): StructValue {
         if (this.value === undefined) throw new Error("構造体データをまだ取得していません。");
-        this.dataType!.validateValue(this.value);
+        this.getDataType()!.validateValue(this.value);
         return this.value;
     }
 }

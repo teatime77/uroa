@@ -47,6 +47,7 @@ export abstract class Block extends UI {
     }
 
     clearBlock() : void {        
+        this.ports.forEach(port => port.disconnectAll());
     }
 
     loadObj(obj : any ){        

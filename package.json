@@ -29,6 +29,7 @@
     "@types/gl-matrix": "^2.4.5",
     "@types/katex": "^0.16.8",
     "@types/node": "^25.2.2",
+    "@types/plotly.js": "3.0.15",
     "@webgpu/types": "^0.1.69",
     "madge": "^8.0.0",
     "typescript": "^5.9.3",

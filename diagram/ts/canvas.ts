@@ -220,7 +220,7 @@ export class Canvas extends AbstractCanvas {
         if(this.moved){
             msg("dragged");
             if(this.draggedUI instanceof Port && target instanceof Port){
-                this.draggedUI.connect(target);
+                if (this.draggedUI.fitPortType(target)) this.draggedUI.connect(target);
             }
             else if(this.draggedUI instanceof Block){
                 this.dragBlock(this.draggedUI);

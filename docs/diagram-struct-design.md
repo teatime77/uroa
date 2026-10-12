@@ -1,12 +1,18 @@
 # diagramの構造体ポートと式評価の設計案
 
-作成日: 2026-10-12（日本時間）。ユーザー指定の要件と現行ソースに基づく設計案。下記の初回実装以外の式評価・型推論等は提案で、実装済みとは扱わない。
+作成日: 2026-10-12（日本時間）。ユーザー指定の要件と現行ソースに基づく設計案。下記の実装状況以外の式評価・型推論等は提案で、実装済みとは扱わない。
 
 ## 初回実装（2026-10-12）
 
 data_type.tsへ既存の型定義クラスを移し、vec3・IMUを登録した。Port.dataTypeとStructPortの入れ子検証・複製・freeze・型の接続検査、固定型参照の保存復元を実装した。既存Port.valueのanyは旧ブロックとの互換のため維持し、StructPort.valueをStructValueで型付けした。型未指定ポートの型推論はまだ行わない。
 
-imu.tsにIMUBlockを追加し、BLEから10Hzで取得するgyro・accを1つの構造体ポートへ出力してconsoleへ表示する。複数ブロックは計測を共有し、削除・切断時に購読と値を解除する。CalcBlock・CompareBlockは既存のスカラー評価を維持し、誤って構造体を数値式へ接続しないよう現在の端子をNumberPortで指定した。TypedValue評価・生成式・構造体のCalcBlock対応・グラフ・ユーザー定義型UIは後続作業。
+imu.tsにIMUBlockを追加し、BLEから10Hzで取得するgyro・accを1つの構造体ポートへ出力してconsoleへ表示する。複数ブロックは計測を共有し、削除・切断時に購読と値を解除する。CalcBlock・CompareBlockは既存のスカラー評価を維持し、誤って構造体を数値式へ接続しないよう現在の端子をNumberPortで指定した。TypedValue評価・生成式・構造体のCalcBlock対応・ユーザー定義型UIは後続作業。
+
+## 有効型参照とPlotBlockの追加（2026-10-12）
+
+Port.getDataType()が明示型または単一接続元の型を取得し、subscribeConnectionsが接続・解除後の両端へ通知する。型参照はキャッシュせず、解除後に旧型を残さない。接続元が複数または循環する場合は未確定とする。これは接続元の参照であり、CalcBlockの式の型推論ではない。
+
+PlotBlockはIMUValue・imuStructを参照せず、DataType.structとStruct.membersをたどって数値Fieldを列挙する。直接の数値Fieldを1パネルにまとめ、入れ子のStructを横に並べる。IMUはgyro・accの2パネルになる。Fieldの単位情報はユーザー指定により後続対応。Plotly.jsでの2D時系列表示、直近30秒の履歴、1秒ごとの平均・母標準偏差と3σの範囲、保存復元・削除時の後片付けを実装した。
 
 ## 要件と優先順位
 

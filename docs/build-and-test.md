@@ -19,9 +19,11 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
-## 構造体ポートとBLE・IMUブロックの確認
+## 構造体ポートとBLE・IMU・Plotブロックの確認
 
 `tests/ble-browser.test.mjs` はVite開発サーバーとテスト用Chromeを使う。実Web Bluetooth APIは模擬し、ツールボックスからの配置、canvasのクリック／タップ・ドラッグ取消、機器選択取消、非対応機器、INFO ACK・PING、接続途中のClear、共有状態、JSON保存・復元、画面終了、ACKタイムアウトを確認する。IMUについては単位変換・構造体入力への伝播・数値ポートへの接続拒否・console出力・10Hz STREAMの共有と停止・IMU未検出・不正パケット・切断時の値の解除・型の保存復元も確認する。実ESP32・無線・Android実端末の確認にはならない。既存diagramのCDN依存も読み込むため、ネットワークが必要。
+
+Plotの追加確認は、Portの有効型・両端への配線通知、測定前のField解析、実PlotlyのRGB描画、1秒ごとの3σ範囲更新、IMU以外のStruct、ブロック移動への追従、JSONによる配線復元、Clear・破棄・ライブラリ読込中のClearを含む。Plotly自体は模擬せず、BLEだけを模擬する。
 
 実行例（別ターミナルでViteを起動）。`playwright-core`はテスト用の補助フォルダーなどに準備し、モジュールの入口とChromeの実際のパスを指定する。アプリの実行時依存ではない。
 
@@ -40,10 +42,26 @@ node --test tests/ble-browser.test.mjs
 
 ```powershell
 npm.cmd run build:all
-node --test tests/data-type.test.mjs tests/lifecycle.test.mjs
+node --test tests/data-type.test.mjs tests/plot-data.test.mjs tests/lifecycle.test.mjs
 ```
 
-2026-10-12に `npm.cmd run verify`、構造体型のNodeテスト5件、ライフサイクルのNodeテスト5件、模擬BLE・IMU画面テスト12件が成功。後者はタブ非表示・ブラウザー非対応時の無効化と、既存手続きブロックのドラッグ・ポート接続も確認した。
+`plot-data.test.mjs` はFieldからのパネル・系列の生成、母標準偏差、系列別の平均を使う3σ範囲、定数・空データの軸、履歴の時間窓・最大件数、入力検証を確認する。
+
+公開ビルドのPlotly読込は、ソースモジュールを直接importしない専用テストで確認する。ビルド完了後にpreviewを起動し、実際のcanvas操作でIMUとPlotを配置・接続する。
+
+```powershell
+npm.cmd run verify
+npm.cmd run preview -- --host 127.0.0.1 --port 4177 --strictPort
+# 別ターミナル。上記のPlaywright・Chromeの環境変数も設定する
+$env:UROA_PREVIEW_BASE_URL = 'http://127.0.0.1:4177/'
+node --test tests/plot-preview.test.mjs
+```
+
+IMUの初回実装時（2026-10-12）に `npm.cmd run verify`、構造体型のNodeテスト5件、ライフサイクルのNodeテスト5件、模擬BLE・IMU画面テスト12件が成功。後者はタブ非表示・ブラウザー非対応時の無効化と、既存手続きブロックのドラッグ・ポート接続も確認した。
+
+同日のPlotBlock追加後は `npm.cmd run verify`、Nodeテスト15件（型5・グラフデータ5・ライフサイクル5）、模擬BLE・IMU・Plot画面テスト16件、公開版のPlot確認1件が成功した。公開版ではローカルのPlotlyチャンク読込とcanvasによるIMU→Plot配線を確認した。実際のグラフ表示でField名、RGB、左右のパネル、凡例・時間軸の配置を画像でも確認した。
+
+既存5アプリの回帰テストも公開版4177で成功した。開発版の確認中にPlaywright driverが終了したため、単独の公開版再実行ではNODE_OPTIONS=--max-old-space-size=4096を設定した。元のテストソースは変更していない。検証中に一度、公開成果物のWebGPU資産が欠けた状態で起動に失敗したため、単独でverifyを完了して静的確認と公開版のブラウザー確認をやり直した。PlotBlockの実機・Androidでの表示とHTTPSデプロイは未確認。ユーザーからのIMU実機確認報告と区別する。
 
 構造体・IMUの追加後も、既存 `tests/test.py` のWebGPU・game・diagram・algebra・movieが成功した。WindowsのPythonランチャーが変わったため、今回だけ `tmp/ble-run-python.py` から既存の `tmp/p3-venv/Lib/site-packages` を読み、インストール済みChromeをheadlessで使った。元のテストソースは変更せず、無期限のconsole待機だけ実行時に60秒へ制限した。IMU追加後の実機接続、実Android、HTTPSへのデプロイは未確認。BLE接続自体はユーザーから動作確認済みとの報告がある。
 

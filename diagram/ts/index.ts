@@ -8,6 +8,7 @@ import { Block } from "./block"
 import { Port } from "./port";
 import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble";
 import { IMUBlock } from "./imu";
+import { PlotBlock } from "./plot";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, stopDiagram, stopFlag } from "./runtime";
@@ -28,6 +29,8 @@ export class Main {
             new BLEConnectionBlock({ inToolbox : true })
             ,
             new IMUBlock({ inToolbox : true })
+            ,
+            new PlotBlock({ inToolbox : true })
             ,
             new IfBlock({ inToolbox : true })
             ,
