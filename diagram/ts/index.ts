@@ -7,32 +7,14 @@ import { IfBlock, InfiniteLoop, TTSBlock, SleepBlock, TriggerGate, ActionBlock, 
 import { Block } from "./block"
 import { Port } from "./port";
 import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble";
+import { IMUBlock } from "./imu";
+export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, stopDiagram, stopFlag } from "./runtime";
 export { stopDiagram } from "./runtime";
 
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
-
-class Variable {
-    name! : string;
-    type! : DataType;
-}
-
-class Field extends Variable {
-    parent! : Struct;
-}
-
-export class Struct {
-    members : Field[] = [];
-}
-
-export class DataType {
-    dimensions : number[] = [];
-    typeName! : string;
-
-}
-
 
 
 export class Main {
@@ -44,6 +26,8 @@ export class Main {
 
         const tools : Block[] = [
             new BLEConnectionBlock({ inToolbox : true })
+            ,
+            new IMUBlock({ inToolbox : true })
             ,
             new IfBlock({ inToolbox : true })
             ,
@@ -248,6 +232,7 @@ function loadJson(objs:any[]){
 
         for(const [port_idx, port_obj] of obj.ports.entries()){
             const port = block.ports[port_idx];
+            port.loadObj(port_obj);
             port.idx = port_obj.idx;
 
             port_map.set(port.idx, port);

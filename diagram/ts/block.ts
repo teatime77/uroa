@@ -620,7 +620,8 @@ export class InputNumberBlock extends InputBlock {
     }
 
     updatePort() : void {        
-        this.numberPort.setPortValue(this.input.valueAsNumber);
+        const value = this.input.valueAsNumber;
+        this.numberPort.setPortValue(Number.isFinite(value) ? value : undefined);
     }
 
     setBoxSize() : void {
@@ -851,8 +852,8 @@ export class CalcBlock extends InputTextBlock {
     constructor(data : Attr){
         super(data);
         this.ports = [ 
-            new Port(this, PortType.inputPort, "a"), 
-            new Port(this, PortType.outputPort, "b") 
+            new NumberPort(this, PortType.inputPort, "a"),
+            new NumberPort(this, PortType.outputPort, "b")
         ];
     }
 
@@ -885,8 +886,8 @@ export class CompareBlock extends InputTextBlock {
     constructor(data : Attr){
         super(data);
         this.ports = [ 
-            new Port(this, PortType.inputPort, "a"), 
-            new Port(this, PortType.outputPort) 
+            new NumberPort(this, PortType.inputPort, "a"),
+            new NumberPort(this, PortType.outputPort)
         ];
 
         this.input.value = "a == a";

@@ -19,9 +19,9 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
-## BLE接続ブロックの模擬ブラウザ確認
+## 構造体ポートとBLE・IMUブロックの確認
 
-`tests/ble-browser.test.mjs` はVite開発サーバーとテスト用Chromeを使う。実Web Bluetooth APIは模擬し、ツールボックスからの配置、canvasのクリック／タップ・ドラッグ取消、機器選択取消、非対応機器、INFO ACK・PING、接続途中のClear、共有状態、JSON保存・復元、画面終了、ACKタイムアウトを確認する。実ESP32・無線・Android実端末の確認にはならない。既存diagramのCDN依存も読み込むため、ネットワークが必要。
+`tests/ble-browser.test.mjs` はVite開発サーバーとテスト用Chromeを使う。実Web Bluetooth APIは模擬し、ツールボックスからの配置、canvasのクリック／タップ・ドラッグ取消、機器選択取消、非対応機器、INFO ACK・PING、接続途中のClear、共有状態、JSON保存・復元、画面終了、ACKタイムアウトを確認する。IMUについては単位変換・構造体入力への伝播・数値ポートへの接続拒否・console出力・10Hz STREAMの共有と停止・IMU未検出・不正パケット・切断時の値の解除・型の保存復元も確認する。実ESP32・無線・Android実端末の確認にはならない。既存diagramのCDN依存も読み込むため、ネットワークが必要。
 
 実行例（別ターミナルでViteを起動）。`playwright-core`はテスト用の補助フォルダーなどに準備し、モジュールの入口とChromeの実際のパスを指定する。アプリの実行時依存ではない。
 
@@ -34,9 +34,18 @@ $env:UROA_BROWSER_EXECUTABLE = 'C:\Program Files\Google\Chrome\Application\chrom
 node --test tests/ble-browser.test.mjs
 ```
 
-2026-10-12に `npm.cmd run verify`、ライフサイクルのNodeテスト5件、模擬BLE画面テスト8件が成功。後者はタブ非表示・ブラウザー非対応時の無効化と、既存手続きブロックのドラッグ・ポート接続も確認した。
+ソース編集によるHMRの更新時刻付きimportと、テストの直接importが別のモジュールインスタンスになることがある。テストが画面と同じ共有接続を参照するよう、専用のViteサーバーをソース変更後に起動してから実行する。
 
-既存 `tests/test.py` のWebGPU・game・diagram・algebra・movieも成功した。WindowsのPythonランチャーが変わったため、今回だけ `tmp/ble-run-python.py` から既存の `tmp/p3-venv/Lib/site-packages` を読み、インストール済みChromeをheadlessで使った。元のテストソースは変更せず、無期限のconsole待機だけ実行時に60秒へ制限した。実機接続、実Android、HTTPSへのデプロイは未確認。
+純粋な型定義のテストはブラウザー不要。先にTypeScriptをビルドし、入れ子の検証・複製・freeze・型参照の復元・登録エラーを確認する。
+
+```powershell
+npm.cmd run build:all
+node --test tests/data-type.test.mjs tests/lifecycle.test.mjs
+```
+
+2026-10-12に `npm.cmd run verify`、構造体型のNodeテスト5件、ライフサイクルのNodeテスト5件、模擬BLE・IMU画面テスト12件が成功。後者はタブ非表示・ブラウザー非対応時の無効化と、既存手続きブロックのドラッグ・ポート接続も確認した。
+
+構造体・IMUの追加後も、既存 `tests/test.py` のWebGPU・game・diagram・algebra・movieが成功した。WindowsのPythonランチャーが変わったため、今回だけ `tmp/ble-run-python.py` から既存の `tmp/p3-venv/Lib/site-packages` を読み、インストール済みChromeをheadlessで使った。元のテストソースは変更せず、無期限のconsole待機だけ実行時に60秒へ制限した。IMU追加後の実機接続、実Android、HTTPSへのデプロイは未確認。BLE接続自体はユーザーから動作確認済みとの報告がある。
 
 `check:dist` はルートと5アプリのHTML、ローカルのscript・stylesheet・modulepreload参照、ルートの5アプリへのリンク、`webgpu/public/` からコピーする資産を確認する。未変換のTypeScript参照や欠落を検出すると終了コード1を返す。GPU計算、画像の正しさ、外部CDNの到達性は判定しない。
 

@@ -48,8 +48,10 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | DIAGRAM-02 | 入力・計算・比較ブロックを追加する | [block.ts](../diagram/ts/block.ts): 入力、CalcBlock、CompareBlock | ポートの値・型、生成関数、保存項目 |
 | DIAGRAM-03 | 条件・繰り返し・待機・読み上げを変える | [procedure.ts](../diagram/ts/procedure.ts): IfBlock、InfiniteLoop、SleepBlock、TTSBlock | [runtime.ts](../diagram/ts/runtime.ts): runBlockChain、runProcedures、stopDiagram、waitProcedure。index.tsはStart/StopのUI |
 | DIAGRAM-04 | ブロック図を保存・読込する | [json-util.ts](../diagram/ts/json-util.ts): saveJson、[index.ts](../diagram/ts/index.ts): loadJsonとdrop処理 | [diagram.json](../public/diagram/data/diagram.json)。ファイルdrop、Download、Clear、ポート参照の復元 |
-| DIAGRAM-05 | サーボ指令・センサー連携を変える | [block.ts](../diagram/ts/block.ts): ServoMotorBlockなど、[diagram_util.ts](../diagram/ts/diagram_util.ts): sendData | 現行はPOST /send_data。対応サーバーは未確認、センサー定期取得はdiy_sbc=false。ServoMotorBlockのBLE送信・IMU表示は未実装 |
+| DIAGRAM-05 | サーボ指令・旧センサー連携を変える | [block.ts](../diagram/ts/block.ts): ServoMotorBlockなど、[diagram_util.ts](../diagram/ts/diagram_util.ts): sendData | 現行はPOST /send_data。対応サーバーは未確認、旧センサー定期取得はdiy_sbc=false。ServoMotorBlockのBLE送信は未実装 |
 | DIAGRAM-06 | BLE機器を選択して接続・切断する | [ble.ts](../diagram/ts/ble.ts): BLEConnectionBlock、BLEConnection、diagramBLE | ツールボックスから配置。canvasのButton、接続状態・端末名・エラー表示、INFOのACK・PING。実機検証とは区別する |
+| DIAGRAM-07 | IMUを受信して構造体を出力する | [imu.ts](../diagram/ts/imu.ts): IMUBlock、[ble.ts](../diagram/ts/ble.ts): parseIMUSample、subscribeSamples | 1ポートにgyro・accのvec3。配置／接続で10Hz STREAM、console表示、最後のIMU削除で計測停止。グラフ・姿勢推定は未実装 |
+| DIAGRAM-08 | ポートに構造体の型と値を指定する | [data_type.ts](../diagram/ts/data_type.ts): Struct、Field、DataType、[port.ts](../diagram/ts/port.ts): StructPort | 入れ子検証、複製・freeze、型一致、型参照の保存・復元。旧型未指定ポートは維持。CalcBlockの構造体評価は未実装 |
 
 ## 学習ゲーム
 

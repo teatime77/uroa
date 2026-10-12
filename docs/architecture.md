@@ -109,7 +109,13 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 2026-10-12に [ble.ts](../diagram/ts/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、robot/esp32-ble-labと同じサービス・3つのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
 
-同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。最後の接続ブロック削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlockまたはIMUBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+
+続いて同日に [data_type.ts](../diagram/ts/data_type.ts) へ既存のVariable・Field・Struct・DataTypeを移し、vec3とIMU（gyro: vec3、acc: vec3）を登録した。PortTypeの接続方向とは別にPort.dataTypeを追加した。StructPortは入出力双方で構造体を検証・複製・深いfreezeを行い、1つの値として伝播する。NumberPort・TextPortは値の型を指定し、既知の型同士の不一致を接続時に拒否する。型未指定の既存Portは互換のため維持する。型参照は既存のポートJSONへ任意のdataTypeとして保存・復元し、ライブの計測値は保存しない。CalcBlock・CompareBlockは現段階では数値型で、構造体のフィールド計算は未実装。
+
+[imu.ts](../diagram/ts/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
+
+BLEの20バイトTelemetryをlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として1回出力し、console.log("IMU", value)へ表示する。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。グラフ・温度・姿勢推定は未実装。
 
 [ui.ts](../diagram/ts/ui.ts)のButtonをcanvasの再利用部品として拡張し、通常・押下・無効状態を描画する。[canvas.ts](../diagram/ts/canvas.ts)は前面のブロック内のポート・子ボタン・本体を判定する。ボタンを押した場合はブロックを動かさず、8 CSS pxを超える移動・pointercancelでは押下を取り消す。ブロック生成はblock.tsのregisterFunctionBlockへ登録し、新しいブロックモジュールをblock.tsから逆importしない。既存ServoMotorBlockのHTTP送信と旧センサー定期取得は今回BLEへ接続していない。
 
@@ -241,7 +247,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの実機ブロック | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock | Web BluetoothでrobotのESP32へ接続・切断。サーボ操作・IMUの表示ブロックとの接続は未実装 |
+| uroa/diagramのBLEConnectionBlock・IMUBlock | Web BluetoothでrobotのESP32へ接続・切断し、IMUを構造体ポートとconsoleへ出力。サーボ操作・グラフは未実装 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 

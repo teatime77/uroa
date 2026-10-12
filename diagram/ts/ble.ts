@@ -2,6 +2,7 @@ import { Vec2 } from "@i18n";
 import { FunctionBlock, registerFunctionBlock } from "./block";
 import { Button, type Attr, type UI } from "./ui";
 import { theCanvas } from "./diagram_util";
+import { imuType, type IMUValue } from "./data_type";
 
 // Same GATT service and packet format as robot/esp32-ble-lab.
 export const BLE_UUID = {
@@ -30,14 +31,28 @@ interface BLEAdapter {
     requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<BLEDevice>;
 }
 export type BLEPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
-export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; }
+export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; imuAvailable: boolean; streaming: boolean; }
+export interface IMUSample { readonly sequence: number; readonly uptime: number; readonly value: IMUValue; }
+
+/** Decode robot's 20-byte telemetry: gyro °/s, acceleration m/s². */
+export function parseIMUSample(data: DataView): IMUSample {
+    if (data.byteLength !== 20 || data.getUint8(0) !== 1) throw new Error("IMUデータの形式が正しくありません。");
+    const acc = [8, 10, 12].map(offset => data.getInt16(offset, true) / 16384 * 9.80665);
+    const gyro = [14, 16, 18].map(offset => data.getInt16(offset, true) / 131);
+    return Object.freeze({
+        sequence: data.getUint16(2, true), uptime: data.getUint32(4, true),
+        value: imuType.copyValue({ gyro: { x: gyro[0], y: gyro[1], z: gyro[2] }, acc: { x: acc[0], y: acc[1], z: acc[2] } }) as IMUValue,
+    });
+}
 
 const errors = ["成功", "指令形式が不正", "範囲外の指令", "応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー"];
 
 /** One connection per diagram document. Blocks subscribe; GATT objects are never saved. */
 export class BLEConnection {
-    state: BLEConnectionState = { phase: "idle", deviceName: "", message: "" };
+    state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", imuAvailable: false, streaming: false };
     private listeners = new Set<(state: BLEConnectionState) => void>();
+    private sampleListeners = new Set<(sample: IMUSample) => void>();
+    private requestedRate = 0;
     private device?: BLEDevice;
     private tx?: BLECharacteristic;
     private rx?: BLECharacteristic;
@@ -64,16 +79,65 @@ export class BLEConnection {
         };
     }
 
+    subscribeSamples(listener: (sample: IMUSample) => void): () => void {
+        this.sampleListeners.add(listener);
+        this.updateStream();
+        return () => {
+            this.sampleListeners.delete(listener);
+            this.updateStream();
+        };
+    }
+
+    private updateStream(): void {
+        if (this.state.phase !== "connected") return;
+        const rate = this.sampleListeners.size && this.state.imuAvailable ? 10 : 0;
+        if (rate === this.requestedRate) return;
+        this.requestedRate = rate;
+        const generation = this.generation;
+        void this.sendControl(4, rate).catch(error => {
+            if (generation === this.generation) this.close("error", error.message);
+        });
+    }
+
     private publish(phase: BLEPhase, deviceName = "", message = ""): void {
-        this.state = { phase, deviceName, message };
+        const active = phase === "connected" || phase === "connecting";
+        this.state = { phase, deviceName, message, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming };
         this.listeners.forEach(listener => listener(this.state));
     }
+
+    private hardwareStatus(data: DataView): void {
+        const flags = data.getUint8(4);
+        const imuAvailable = !!(flags & 2), streaming = !!(flags & 8);
+        if (this.state.imuAvailable !== imuAvailable || this.state.streaming !== streaming) {
+            this.state = { ...this.state, imuAvailable, streaming };
+            this.listeners.forEach(listener => listener(this.state));
+            this.updateStream();
+        }
+    }
+
+    private sampleChanged = (event: Event): void => {
+        if (this.state.phase !== "connected" || !this.state.imuAvailable || !this.requestedRate) return;
+        let sample: IMUSample;
+        try {
+            const value = (event.target as BLECharacteristic).value;
+            if (!value) throw new Error("IMUデータがありません。");
+            sample = parseIMUSample(value);
+        } catch (error) {
+            this.close("error", error instanceof Error ? error.message : "IMUデータを受信できませんでした。");
+            return;
+        }
+        for (const listener of this.sampleListeners) {
+            try { listener(sample); }
+            catch (error) { console.error("IMU sample handler failed", error); }
+        }
+    };
 
     private lost = (): void => this.close("idle", "BLE接続が切れました。");
     private statusChanged = (event: Event): void => {
         try {
             const value = (event.target as BLECharacteristic).value;
             if (!value || value.byteLength !== 12 || value.getUint8(0) !== 1) throw new Error("状態データの形式が正しくありません。");
+            this.hardwareStatus(value);
             const pending = this.pending.get(value.getUint16(2, true));
             if (pending) {
                 clearTimeout(pending.timer);
@@ -92,7 +156,9 @@ export class BLEConnection {
         clearInterval(this.heartbeat);
         clearTimeout(this.connectTimer);
         this.heartbeat = this.connectTimer = undefined;
+        this.requestedRate = 0;
         this.status?.removeEventListener("characteristicvaluechanged", this.statusChanged);
+        this.rx?.removeEventListener("characteristicvaluechanged", this.sampleChanged);
         this.device?.removeEventListener("gattserverdisconnected", this.lost);
         const device = this.device;
         this.device = this.tx = this.rx = this.status = undefined;
@@ -146,6 +212,7 @@ export class BLEConnection {
             check();
             this.tx = tx; this.status = status; this.rx = rx;
             status.addEventListener("characteristicvaluechanged", this.statusChanged);
+            rx.addEventListener("characteristicvaluechanged", this.sampleChanged);
             await status.startNotifications();
             check();
             await rx.startNotifications();
@@ -153,10 +220,12 @@ export class BLEConnection {
             const initialStatus = await status.readValue();
             check();
             if (initialStatus.byteLength !== 12 || initialStatus.getUint8(0) !== 1) throw new Error("状態データの形式が正しくありません。");
+            this.hardwareStatus(initialStatus);
             await this.sendControl(6); // INFO ACK confirms application readiness, not motion completion.
             check();
             clearTimeout(this.connectTimer); this.connectTimer = undefined;
             this.publish("connected", selected.name || "名前のない機器");
+            this.updateStream();
             this.heartbeat = setInterval(() => {
                 void this.sendControl(5).catch(error => {
                     if (this.generation === generation) this.close("error", error.message);
@@ -172,7 +241,7 @@ export class BLEConnection {
         }
     }
 
-    private sendControl(opcode: 5 | 6): Promise<void> {
+    private sendControl(opcode: 4 | 5 | 6, value = 0): Promise<void> {
         const generation = this.generation;
         const task = this.tail.catch(() => {}).then(async () => {
             if (generation !== this.generation || !this.tx || !this.device?.gatt?.connected) throw new Error("BLE接続が切れました。");
@@ -181,6 +250,7 @@ export class BLEConnection {
             const packet = new DataView(bytes.buffer);
             bytes[0] = 1; bytes[1] = opcode; bytes[4] = 255;
             packet.setUint16(2, sequence, true);
+            packet.setUint16(6, value, true);
             const ack = new Promise<void>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     this.pending.delete(sequence);

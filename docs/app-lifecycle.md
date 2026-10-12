@@ -9,7 +9,8 @@
 | [app/ts/main.ts](../app/ts/main.ts) | DOM準備後のURL判定、5アプリの初期化、diagramの子アプリ接続、pagehide・HMR時の終了 |
 | [app/ts/lifecycle.ts](../app/ts/lifecycle.ts) | 初期化Promiseの共有、状態・エラー、逆順での停止・破棄 |
 | [diagram/ts/index.ts](../diagram/ts/index.ts) | diagramのUI、読込、実機用HTTP処理、BLEのイベント登録と破棄。全アプリを起動する処理は置かない |
-| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | BLE接続ブロックと共有接続管理。Clear・最後のブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
+| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | BLE接続ブロックと共有接続・IMU通知管理。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
+| [diagram/ts/imu.ts](../diagram/ts/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
 | [diagram/ts/runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、チェーン実行、キャンセル可能な待機、子アプリ停止の接続口 |
 | [diagram/ts/procedure.ts](../diagram/ts/procedure.ts) | 個々のブロック。runtimeを利用し、indexへの逆向きimportを持たない |
 | 各アプリのindex.ts | 個別の初期化と停止・破棄。algebraは初期化の中で数式処理を開始する |
@@ -32,7 +33,7 @@
 ## 停止・資源の管理
 
 - diagramはSleepとループ内の待機を即時解除する。実行が成功・中断・例外のいずれで終わってもStart表示と実行中状態を戻す。
-- BLE接続ボタンはStartと独立している。通常の手続きStopは接続を保持する。diagram破棄では共有BLE接続を切断し、配置済みブロックの購読とDOM部品をclearBlockで解除する。BLEのvisibilitychange・pagehideはdiagramのAbortSignalで登録し、非表示時に切断する。接続だけでは実機出力を有効化しない。
+- BLE接続ボタンとIMU受信はStartと独立している。通常の手続きStopは接続・IMU受信を保持する。diagram破棄では共有BLE接続を切断し、配置済みブロックの購読とDOM部品をclearBlockで解除する。BLEのvisibilitychange・pagehideはdiagramのAbortSignalで登録し、非表示時に切断する。接続だけではサーボを有効化しない。配置済みIMUBlockがある場合だけIMU正常フラグを確認して10HzのSTREAMを要求し、最後のIMUBlock削除時はSTREAM=0を送る。切断・計測停止では出力ポートをundefinedへ戻す。
 - 子アプリから戻る処理はtry/finallyでdiagramレイヤーを復元する。画面から離れる子アプリを停止し、diagram自体の実行は継続する。diagramのStopは子アプリにも届く。
 - gameはSequencerのgeneratorと音声を停止し、読込待ちの古い実行から再開しない。Canvasの入力イベントと描画要求は破棄時に解除する。
 - movieは音声・Audioと再生モードを停止する。一括再生は停止後に次の教材へ進めない。初期化で登録した固定メニュー、View、LayoutのイベントとView描画ループを破棄する。

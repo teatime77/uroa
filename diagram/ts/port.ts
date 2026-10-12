@@ -3,6 +3,7 @@ import { tab } from "./ui";
 import { Block } from "./block";
 import { notchRadius, PortType, theCanvas } from "./diagram_util";
 import { Canvas } from "./canvas";
+import { DataType, numberType, stringType, type Struct, type StructValue } from "./data_type";
 
 export class Port {
     static radius = 10;        
@@ -14,17 +15,19 @@ export class Port {
     destinations : Port[]  = [];
     sources : Port[]  = [];
     type : PortType;
+    dataType?: DataType;
     offset : Vec2 = Vec2.zero();
     private position : Vec2 = Vec2.zero();
 
     prevValue : any | undefined;
     value : any | undefined;
 
-    constructor(parent : Block, type : PortType, name : string = ""){
+    constructor(parent : Block, type : PortType, name : string = "", dataType?: DataType){
         this.idx    = Port.Count++;
         this.parent = parent;
         this.type   = type;
         this.name   = name;
+        this.dataType = dataType;
     }
 
     str() : string {
@@ -38,11 +41,24 @@ export class Port {
     makeObj() : any{
         return {
             idx : this.idx,
-            destinations : this.destinations.map(dst => dst.idx)
+            destinations : this.destinations.map(dst => dst.idx),
+            ...(this.dataType ? { dataType: this.dataType.makeObj() } : {})
         };
     }
 
+    loadObj(obj: { dataType?: unknown }): void {
+        if (obj.dataType === undefined) return; // Older diagrams have no value type metadata.
+        const type = DataType.fromObj(obj.dataType);
+        if (this.dataType && !this.dataType.equals(type)) throw new Error("ブロックと保存されたポートのデータ型が一致しません。");
+        this.dataType = type;
+    }
+
     setPortValue(value : any | undefined){
+        if (value !== undefined && this.dataType) {
+            this.dataType.validateValue(value);
+            if (this.dataType.struct) value = this.dataType.copyValue(value);
+        }
+        this.prevValue = this.value;
         this.value = value;
 
         for(const dst of this.destinations){
@@ -124,6 +140,15 @@ export class Port {
             theCanvas.drawLine(this.position, dst.position, "brown", 4);
         }
 
+        if (this.dataType?.struct) {
+            ctx.save();
+            ctx.font = "14px sans-serif";
+            ctx.fillStyle = "black";
+            ctx.fillText(`${this.name ? this.name + ": " : ""}${this.dataType.typeName}`, this.position.x + Port.radius + 6, this.position.y + 5);
+            ctx.restore();
+            return;
+        }
+
         if(this.name != ""){
             // ctx.strokeText(this.name, this.position.x, this.position.y);
             ctx.save();
@@ -160,7 +185,8 @@ export class Port {
             [ PortType.outputPort, PortType.inputPort]
         ];
 
-        return pairs.some(pair => pair[0] == this.type && pair[1] == dst.type);
+        if (!pairs.some(pair => pair[0] == this.type && pair[1] == dst.type)) return false;
+        return !this.dataType || !dst.dataType || this.dataType.equals(dst.dataType);
     }
 
     canConnect(dst : Port) : boolean {
@@ -193,6 +219,9 @@ export class Port {
 }
 
 export class NumberPort extends Port {
+    constructor(parent: Block, type: PortType, name = "") {
+        super(parent, type, name, numberType);
+    }
     numberValue() : number {
         if(typeof this.value == "number"){
             return this.value;
@@ -203,11 +232,29 @@ export class NumberPort extends Port {
 }
 
 export class TextPort extends Port {
+    constructor(parent: Block, type: PortType, name = "") {
+        super(parent, type, name, stringType);
+    }
     stringValue() : string {
         if(typeof this.value == "string"){
             return this.value;
         }
 
         throw new MyError();
+    }
+}
+
+/** A struct input or output shares the same Port wiring and notification mechanism. */
+export class StructPort extends Port {
+    declare value: StructValue | undefined;
+
+    constructor(parent: Block, type: PortType, struct: Struct, name = "") {
+        super(parent, type, name, new DataType(struct.name));
+    }
+
+    structValue(): StructValue {
+        if (this.value === undefined) throw new Error("構造体データをまだ取得していません。");
+        this.dataType!.validateValue(this.value);
+        return this.value;
     }
 }

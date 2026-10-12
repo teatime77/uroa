@@ -12,7 +12,11 @@
 
 実機はESP32、PCA9685、SG90、MPU-6050／GY-521で、IMU取得はユーザー確認済み。本人のAndroidタブレットで動作を見せ、携帯電話のアクセスポイント経由でインターネットに接続する。他人への共有・操作やログインはデモ要件に含めない。AndroidのHTTPS公開・AIバックエンド配置が難しい場合はWindows PC＋ローカルViteを使う。公開先・実機サーボ・最終的な完了条件は別途確認する。
 
-最初の実装としてdiagram/ts/ble.tsにBLEConnectionBlockを追加した。canvasボタンから機器選択・接続・切断を行う。接続だけではサーボ／IMU出力を開始しない。ServoMotorBlockのBLE送信・IMUBlock・グラフ・チャットの追加とAndroid実機確認は後続作業。
+最初の実装としてdiagram/ts/ble.tsにBLEConnectionBlockを追加した。canvasボタンから機器選択・接続・切断を行う。接続ブロックだけではサーボ／IMU出力を開始しない。続くIMUBlockの初回実装は下記のとおり。ServoMotorBlockのBLE送信・グラフ・チャットの追加とAndroid実機確認は後続作業。
+
+ユーザーはBLE接続を確認してcommit・pushしたと報告した。続いて、IMUなどの複数値を1本の接続線で渡す構造体入出力を必須と指定した。既存Structを使い、IMUはgyro: vec3とacc: vec3を持つ。CalcBlockの式によるフィールド参照・構造体計算も必要で、if文・whileループは不要。汎用構造体と計算は10月16日に間に合わなくてもよいが、今後のIMU・Port・グラフ修正を6数値ポートに固定せず、この方針に沿わせる。[構造体ポートと式評価の設計案](diagram-struct-design.md)に現行ソースの制約と未実装の提案を記録する。
+
+構造体の初回実装としてdata_type.ts・StructPort・IMUBlockを追加した。IMUBlockの配置／BLE接続で10Hzの通知を受け、gyro・accを1つのポートから出力してconsoleへ表示する。固定型の検証・保存復元までを実装し、グラフ・CalcBlockの構造体評価・型推論は後続作業。検証は模擬と実機を区別して記録する。
 
 長期的な目標は次の3つである。
 

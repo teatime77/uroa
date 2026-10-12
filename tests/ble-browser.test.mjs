@@ -20,16 +20,20 @@ async function pageFor(context) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-        const mock = window.bleMock = { mode: 'ok', requests: 0, writes: [], active: 0, maximum: 0 };
+        const mock = window.bleMock = { mode: 'ok', requests: 0, writes: [], controls: [], rate: 0, active: 0, maximum: 0 };
         class Characteristic extends EventTarget {
-            constructor() { super(); this.value = new DataView(new ArrayBuffer(12)); this.value.setUint8(0, 1); }
+            constructor() { super(); this.value = new DataView(new ArrayBuffer(12)); this.value.setUint8(0, 1); this.value.setUint8(4, 3); }
             async startNotifications() { return this; }
             async readValue() { return this.value; }
             async writeValueWithResponse(bytes) {
                 mock.active++; mock.maximum = Math.max(mock.maximum, mock.active); mock.writes.push(bytes[1]);
+                const packet = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                mock.controls.push({ opcode: bytes[1], value: packet.getUint16(6, true) });
                 await new Promise(resolve => setTimeout(resolve, 2));
                 mock.active--;
                 if (mock.mode !== 'holdAck') {
+                    if (bytes[1] === 4) mock.rate = packet.getUint16(6, true);
+                    status.value.setUint8(4, (mock.mode === 'missingImu' ? 1 : 3) | (mock.rate ? 8 : 0));
                     status.value.setUint16(2, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(2, true), true);
                     status.dispatchEvent(new Event('characteristicvaluechanged'));
                 }
@@ -42,10 +46,10 @@ async function pageFor(context) {
             connected: false,
             async connect() {
                 if (mock.mode === 'holdGatt') await new Promise(resolve => { mock.finishGatt = resolve; });
-                this.connected = true; return this;
+                this.connected = true; mock.rate = 0; status.value.setUint8(4, mock.mode === 'missingImu' ? 1 : 3); return this;
             },
             disconnect() {
-                const connected = this.connected; this.connected = false;
+                const connected = this.connected; this.connected = false; mock.rate = 0;
                 if (connected) device.dispatchEvent(new Event('gattserverdisconnected'));
             },
             async getPrimaryService() {
@@ -56,6 +60,15 @@ async function pageFor(context) {
             },
         };
         mock.device = device;
+        mock.emitTelemetry = (bad = false) => {
+            telemetry.value = new DataView(new ArrayBuffer(bad ? 19 : 20));
+            if (!bad) {
+                telemetry.value.setUint8(0, 1); telemetry.value.setUint8(1, 11);
+                telemetry.value.setUint16(2, 7, true); telemetry.value.setUint32(4, 1234, true);
+                [16384, -8192, 0, 131, -262, 0].forEach((raw, index) => telemetry.value.setInt16(8 + index * 2, raw, true));
+            }
+            telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
+        };
         Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
             requestDevice(options) {
                 mock.requests++; mock.options = options; mock.userGesture = navigator.userActivation.isActive;
@@ -73,7 +86,11 @@ async function pageFor(context) {
         const { theEditor } = await import('/diagram/ts/json-util.ts');
         const { diagramBLE, BLEConnectionBlock } = await import('/diagram/ts/ble.ts');
         const { theCanvas } = await import('/diagram/ts/diagram_util.ts');
-        window.bleFixture = { editor: theEditor, connection: diagramBLE, Block: BLEConnectionBlock, canvas: theCanvas };
+        const { IMUBlock } = await import('/diagram/ts/imu.ts');
+        const { StructPort, NumberPort } = await import('/diagram/ts/port.ts');
+        const { imuStruct } = await import('/diagram/ts/data_type.ts');
+        const { PortType } = await import('/diagram/ts/diagram_util.ts');
+        window.bleFixture = { editor: theEditor, connection: diagramBLE, Block: BLEConnectionBlock, canvas: theCanvas, IMUBlock, StructPort, NumberPort, imuStruct, PortType };
     });
     context.after(() => assert.deepEqual(errors, []));
     return page;
@@ -101,7 +118,11 @@ async function clickButton(page, touch = false) {
     else await page.mouse.click(x, y);
 }
 async function waitPhase(page, phase) {
-    await page.waitForFunction(phase => window.bleFixture.connection.state.phase === phase, phase);
+    try {
+        await page.waitForFunction(phase => window.bleFixture.connection.state.phase === phase, phase, { timeout: 10_000 });
+    } catch (error) {
+        throw new Error(`Expected BLE phase ${phase}: ${JSON.stringify(await page.evaluate(() => ({ state: window.bleFixture.connection.state, requests: window.bleMock.requests, controls: window.bleMock.controls, button: window.bleFixture.editor.blocks.at(-1)?.button?.text })))}`, { cause: error });
+    }
 }
 
 test('toolbox placement, reusable canvas button, readiness, heartbeat and disconnect', async context => {
@@ -255,4 +276,94 @@ test('existing action blocks still drag and their ports still connect', async co
         const blocks = window.bleFixture.editor.blocks;
         return blocks[0].bottomPort.destinations.includes(blocks[1].topPort);
     }), true);
+});
+
+async function placeIMU(page, x = 850, y = 185) {
+    const origin = await page.evaluate(() => {
+        const tool = window.bleFixture.editor.tools.find(block => block.constructor.name === 'IMUBlock');
+        return { x: tool.position.x + 25, y: tool.position.y + 20 };
+    });
+    await page.mouse.move(origin.x, origin.y); await page.mouse.down();
+    await page.mouse.move(x, y, { steps: 8 }); await page.mouse.up();
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).constructor.name), 'IMUBlock');
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).ports.length), 1);
+}
+
+test('IMU streams a converted immutable struct through one port and logs it once', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    assert.equal(await page.evaluate(() => window.bleMock.controls.some(command => command.opcode === 4)), false);
+    await placeIMU(page);
+    await page.waitForFunction(() => window.bleMock.rate === 10);
+    await page.screenshot({ path: 'tmp/imu-block.png' });
+    await page.evaluate(() => {
+        const f = window.bleFixture, block = f.editor.blocks.at(-1);
+        const receiver = new f.IMUBlock({ inToolbox: true });
+        receiver.valueChanged = async () => { window.imuNotifications = (window.imuNotifications || 0) + 1; };
+        window.imuInput = new f.StructPort(receiver, f.PortType.inputPort, f.imuStruct, 'a');
+        block.outputPort.connect(window.imuInput);
+        window.rejectScalar = !block.outputPort.fitPortType(new f.NumberPort(receiver, f.PortType.inputPort));
+    });
+    const logEvent = page.waitForEvent('console', { predicate: message => message.text().startsWith('IMU ') });
+    await page.evaluate(() => window.bleMock.emitTelemetry());
+    const log = await logEvent;
+    const expected = { gyro: { x: 1, y: -2, z: 0 }, acc: { x: 9.80665, y: -4.903325, z: 0 } };
+    assert.deepEqual(await log.args()[1].jsonValue(), expected);
+    assert.deepEqual(await page.evaluate(() => window.imuInput.structValue()), expected);
+    assert.equal(await page.evaluate(() => window.imuNotifications), 1);
+    assert.equal(await page.evaluate(() => window.rejectScalar), true);
+    assert.equal(await page.evaluate(() => Object.isFrozen(window.imuInput.value.acc)), true);
+    assert.equal(await page.evaluate(() => window.bleMock.maximum), 1);
+    await page.evaluate(() => window.bleFixture.connection.disconnect());
+    assert.equal(await page.evaluate(() => window.imuInput.value === undefined), true);
+});
+
+test('multiple IMU blocks share STREAM and only the last removal stops it', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    await placeIMU(page); await placeIMU(page, 850, 400);
+    await page.waitForFunction(() => window.bleMock.rate === 10);
+    assert.equal(await page.evaluate(() => window.bleMock.controls.filter(command => command.opcode === 4 && command.value === 10).length), 1);
+    await page.evaluate(() => window.bleFixture.editor.blocks.pop().clearBlock());
+    assert.equal(await page.evaluate(() => window.bleMock.rate), 10);
+    await page.evaluate(() => window.bleFixture.editor.blocks.pop().clearBlock());
+    await page.waitForFunction(() => window.bleMock.rate === 0);
+    await waitPhase(page, 'connected');
+    assert.equal(await page.evaluate(() => window.bleMock.controls.filter(command => command.opcode === 4 && command.value === 0).length), 1);
+});
+
+test('IMU absence does not start STREAM and malformed telemetry clears the sample', async context => {
+    const page = await pageFor(context);
+    await page.evaluate(() => { window.bleMock.mode = 'missingImu'; });
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    await placeIMU(page);
+    assert.equal(await page.evaluate(() => window.bleMock.controls.some(command => command.opcode === 4)), false);
+    await page.evaluate(() => { window.bleMock.mode = 'ok'; window.bleFixture.connection.disconnect(); });
+    // Reconnect using the BLE block, not the sensor block.
+    const center = await page.evaluate(() => {
+        const [x1, y1, x2, y2] = window.bleFixture.editor.blocks[0].button.marginBox();
+        return { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+    });
+    await page.mouse.click(center.x, center.y); await waitPhase(page, 'connected');
+    await page.waitForFunction(() => window.bleMock.rate === 10);
+    await page.evaluate(() => window.bleMock.emitTelemetry());
+    assert.equal(await page.evaluate(() => !!window.bleFixture.editor.blocks.at(-1).outputPort.value), true);
+    await page.evaluate(() => window.bleMock.emitTelemetry(true)); await waitPhase(page, 'error');
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).outputPort.value === undefined), true);
+});
+
+test('IMU type restores without saving or replaying measured values', async context => {
+    const page = await pageFor(context);
+    await placeIMU(page);
+    const saved = await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).makeObj());
+    assert.equal(saved.ports[0].dataType.typeName, 'IMU');
+    assert.equal('value' in saved.ports[0], false);
+    await page.evaluate(block => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([JSON.stringify([block])], 'imu.json', { type: 'application/json' }));
+        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
+    }, saved);
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 1 && window.bleFixture.editor.blocks[0].outputPort.dataType.typeName === 'IMU');
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[0].outputPort.value === undefined), true);
+    assert.equal(await page.evaluate(() => window.bleMock.requests), 0);
 });
