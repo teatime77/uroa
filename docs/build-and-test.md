@@ -19,6 +19,25 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## BLE接続ブロックの模擬ブラウザ確認
+
+`tests/ble-browser.test.mjs` はVite開発サーバーとテスト用Chromeを使う。実Web Bluetooth APIは模擬し、ツールボックスからの配置、canvasのクリック／タップ・ドラッグ取消、機器選択取消、非対応機器、INFO ACK・PING、接続途中のClear、共有状態、JSON保存・復元、画面終了、ACKタイムアウトを確認する。実ESP32・無線・Android実端末の確認にはならない。既存diagramのCDN依存も読み込むため、ネットワークが必要。
+
+実行例（別ターミナルでViteを起動）。`playwright-core`はテスト用の補助フォルダーなどに準備し、モジュールの入口とChromeの実際のパスを指定する。アプリの実行時依存ではない。
+
+```powershell
+npm.cmd run dev -- --host 127.0.0.1 --port 5175 --strictPort
+# 別ターミナル
+$env:UROA_TEST_BASE_URL = 'http://127.0.0.1:5175/'
+$env:UROA_PLAYWRIGHT_MODULE = '.\tmp\p0\tools\node_modules\playwright-core\index.mjs'
+$env:UROA_BROWSER_EXECUTABLE = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+node --test tests/ble-browser.test.mjs
+```
+
+2026-10-12に `npm.cmd run verify`、ライフサイクルのNodeテスト5件、模擬BLE画面テスト8件が成功。後者はタブ非表示・ブラウザー非対応時の無効化と、既存手続きブロックのドラッグ・ポート接続も確認した。
+
+既存 `tests/test.py` のWebGPU・game・diagram・algebra・movieも成功した。WindowsのPythonランチャーが変わったため、今回だけ `tmp/ble-run-python.py` から既存の `tmp/p3-venv/Lib/site-packages` を読み、インストール済みChromeをheadlessで使った。元のテストソースは変更せず、無期限のconsole待機だけ実行時に60秒へ制限した。実機接続、実Android、HTTPSへのデプロイは未確認。
+
 `check:dist` はルートと5アプリのHTML、ローカルのscript・stylesheet・modulepreload参照、ルートの5アプリへのリンク、`webgpu/public/` からコピーする資産を確認する。未変換のTypeScript参照や欠落を検出すると終了コード1を返す。GPU計算、画像の正しさ、外部CDNの到達性は判定しない。
 
 ## 旧コマンドの扱い

@@ -107,6 +107,12 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
 - 現在は `diy_sbc = false` によりキュー初期化・センサーの定期取得が無効。サーボ送信コードは別に残っている。
 
+2026-10-12に [ble.ts](../diagram/ts/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、robot/esp32-ble-labと同じサービス・3つのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
+
+同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。最後の接続ブロック削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+
+[ui.ts](../diagram/ts/ui.ts)のButtonをcanvasの再利用部品として拡張し、通常・押下・無効状態を描画する。[canvas.ts](../diagram/ts/canvas.ts)は前面のブロック内のポート・子ボタン・本体を判定する。ボタンを押した場合はブロックを動かさず、8 CSS pxを超える移動・pointercancelでは押下を取り消す。ブロック生成はblock.tsのregisterFunctionBlockへ登録し、新しいブロックモジュールをblock.tsから逆importしない。既存ServoMotorBlockのHTTP送信と旧センサー定期取得は今回BLEへ接続していない。
+
 ### game・movieのデータと実行
 
 gameのデータは `public/game/data/` にある。`initGame()`が開発／本番設定を読み、初期画面の等角投影マップを構築する。`loadWorld()`が指定ステージを読んでUIを作り、`playGameWorld()`がシーケンサーを起動する。
@@ -235,12 +241,13 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの実機ブロック | HTTP `POST /send_data` |
+| uroa/diagramのBLEConnectionBlock | Web BluetoothでrobotのESP32へ接続・切断。サーボ操作・IMUの表示ブロックとの接続は未実装 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 
-これらを直接結び付けるコードは今回確認した現行ソースにはない。サーボ用ブロックが存在することと、ESP32への接続が実装済みであることを区別する。
+BLE接続ブロックはrobotのESP32と同じGATT仕様を使う。既存サーボブロックやAIとの連携は未実装で、接続の実装・模擬確認・実機確認はそれぞれ区別する。
 
-ユーザーはESP32とAndroidタブレット／携帯を組み合わせたフィジカルAI教材を検討している。ブラウザーのChatGPTでの相談仕様の詳細は未共有。学習目標、対象、機器、通信方式、AIと制御の役割を決定済みとして推測しない。
+2026-10-12にユーザーがデモ仕様を提示した。diagram内でInputTextBlock・チャットブロック・TTSBlockを使うAIチャットと、ServoMotorBlock・IMUBlock・グラフブロックを使う実機操作／計測の2種類を独立して作る。AIによる定型動作の選択・サーボ操作は要件ではない。ESP32、PCA9685、SG90、MPU-6050／GY-521を使い、IMU取得はユーザー確認済み。本番は携帯電話のアクセスポイント経由でインターネットへ接続した本人のAndroidタブレット、予備はWindowsのローカルVite。HTTPS・公開AIバックエンドの配置とサーボ動作はエージェント未確認。
 
 ## 更新方法
 

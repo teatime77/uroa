@@ -58,7 +58,7 @@ export interface TextAttr extends Attr {
 }
 
 export interface ButtonAttr extends TextAttr {
-    click : ()=>Promise<void>;
+    click : ()=>void | Promise<void>;
 }
 
 
@@ -92,6 +92,11 @@ export abstract class UI {
     children() : UI[] {
         return [];
     }    
+
+    setContext2D(ctx: CanvasRenderingContext2D): void {
+        this.ctx = ctx;
+        this.children().forEach(child => child.setContext2D(ctx));
+    }
 
     getPosition() : Vec2 {
         return this.position;
@@ -285,11 +290,34 @@ export class Label extends TextUI {
 }
 
 export class Button extends TextUI {
-    click : ()=>Promise<void>;
+    click : ()=>void | Promise<void>;
+    disabled = false;
+    pressed = false;
 
     constructor(data : ButtonAttr){
         super(data);
         this.click = data.click;
+        this.disabled = data.disabled ?? false;
+        this.fontSize = data.fontSize ?? "18px";
+        this.margin = [0, 0, 0, 0];
+        this.boxSize = new Vec2(140, 48);
+    }
+
+    draw(): void {
+        const [x1, y1, x2, y2] = this.marginBox();
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.fillStyle = this.disabled ? "#dddddd" : this.pressed ? "#b6d4ea" : "#e8f2fa";
+        ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.strokeStyle = this.disabled ? "#aaaaaa" : "#35658a";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+        ctx.font = `${this.fontSize} sans-serif`;
+        ctx.fillStyle = this.disabled ? "#777777" : "#17384f";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(this.text, (x1 + x2) / 2, (y1 + y2) / 2, x2 - x1 - 12);
+        ctx.restore();
     }
 }
 

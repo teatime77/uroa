@@ -6,6 +6,7 @@ import { saveJson, theEditor } from "./json-util";
 import { IfBlock, InfiniteLoop, TTSBlock, SleepBlock, TriggerGate, ActionBlock, makeBlockByTypeName, PlayMovieBlock, PlayGameBlock, PlayWebGPUBlock } from "./procedure";
 import { Block } from "./block"
 import { Port } from "./port";
+import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble";
 
 import { isRunning, runBlockChain, runProcedures, stopDiagram, stopFlag } from "./runtime";
 export { stopDiagram } from "./runtime";
@@ -42,6 +43,8 @@ export class Main {
         Main.one = this;
 
         const tools : Block[] = [
+            new BLEConnectionBlock({ inToolbox : true })
+            ,
             new IfBlock({ inToolbox : true })
             ,
             new InfiniteLoop({ inToolbox : true })
@@ -190,6 +193,7 @@ async function startProcedures() {
 
 export async function initDiagram(_signal?: AbortSignal){
     initUI();
+    initBLE(listeners.signal);
     
     $("clear-btn").addEventListener("click", (ev : MouseEvent)=>{
         theEditor.clearBlock();
@@ -353,6 +357,8 @@ function setDragDrop(canvas : HTMLCanvasElement){
 
 export function disposeDiagram(): void {
     stopDiagram();
+    diagramBLE.disconnect();
+    theEditor?.clearBlock();
     listeners.abort();
     clearTimeout(periodicTimer);
     Main.one?.canvas.dispose();

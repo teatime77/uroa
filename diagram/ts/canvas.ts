@@ -40,12 +40,18 @@ function dumpActions(){
 export class Canvas extends AbstractCanvas {
     draggedUI? : Block | Port | Button;
     prevPortOfDraggedUI : Port | undefined;
+    private pressedButton?: Button;
+    private buttonCancelled = false;
+    private buttonDownClient = Vec2.zero();
 
     constructor(canvas_html : HTMLCanvasElement){
         super(canvas_html);
         setCanvas(this);
 
         theEditor.setContext2D(this.ctx);
+        this.canvas.style.touchAction = "none";
+        this.canvas.addEventListener("pointercancel", () => this.resetPointer(), { signal: this.eventSignal });
+        this.canvas.addEventListener("lostpointercapture", () => this.resetPointer(), { signal: this.eventSignal });
     }
 
     clearCanvas() : void {
@@ -70,11 +76,23 @@ export class Canvas extends AbstractCanvas {
     }
 
     pointerdown(ev:PointerEvent) : void {
+        if (ev.button !== 0 || this.draggedUI || this.pressedButton) return;
         this.moved = false;
         this.prevPortOfDraggedUI = undefined;
 
         const pos = this.getPositionInCanvas(ev);
         const target = theEditor.getPortBlockFromPosition(pos);
+        if (target instanceof Button) {
+            if (target.disabled) return;
+            this.pressedButton = target;
+            this.buttonCancelled = false;
+            this.buttonDownClient = new Vec2(ev.clientX, ev.clientY);
+            target.pressed = true;
+            this.pointerId = ev.pointerId;
+            this.canvas.setPointerCapture(ev.pointerId);
+            this.requestUpdateCanvas();
+            return;
+        }
         if(target != undefined){
             msg(`down:${target.constructor.name}`);
             this.downPos   = pos;
@@ -127,6 +145,13 @@ export class Canvas extends AbstractCanvas {
     }
 
     pointermove(ev:PointerEvent) : void {
+        if (this.pressedButton) {
+            if (ev.pointerId !== this.pointerId) return;
+            if (this.buttonDownClient.distance(new Vec2(ev.clientX, ev.clientY)) > 8) this.buttonCancelled = true;
+            this.pressedButton.pressed = !this.buttonCancelled && this.pressedButton.inMarginBox(this.getPositionInCanvas(ev));
+            this.requestUpdateCanvas();
+            return;
+        }
         this.moved = true;
 
         if(this.draggedUI == undefined){
@@ -165,12 +190,26 @@ export class Canvas extends AbstractCanvas {
     }
 
     override dispose(): void {
+        this.resetPointer();
         super.dispose();
         if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
     }
 
     async pointerup(ev:PointerEvent) : Promise<void> {
+        if (this.pressedButton) {
+            if (ev.pointerId !== this.pointerId) return;
+            const button = this.pressedButton;
+            const activate = !this.buttonCancelled && !button.disabled && button.inMarginBox(this.getPositionInCanvas(ev))
+                && theEditor.blocks.some(block => block.children().includes(button));
+            // Release the pointer before asynchronous work, while retaining this user gesture.
+            this.resetPointer();
+            if (activate) {
+                try { await button.click(); }
+                catch (error) { console.error("diagram button failed", error); }
+            }
+            return;
+        }
         if(this.draggedUI == undefined){
             return;
         }
@@ -226,6 +265,19 @@ export class Canvas extends AbstractCanvas {
         this.moved = false;
 
         dumpActions();
+    }
+
+    private resetPointer(): void {
+        if (this.pressedButton) this.pressedButton.pressed = false;
+        const pointerId = this.pointerId;
+        this.pressedButton = undefined;
+        this.draggedUI = undefined;
+        this.prevPortOfDraggedUI = undefined;
+        this.pointerId = NaN;
+        this.moved = false;
+        if (Number.isFinite(pointerId) && this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
+        this.canvas.classList.remove("dragging");
+        this.requestUpdateCanvas();
     }
 
     resizeCanvas() : void {
@@ -305,10 +357,11 @@ export class Editor {
 
     addBlock(block : Block){
         this.blocks.push(block);
+        if (theCanvas) block.setContext2D(theCanvas.ctx);
     }
 
     setContext2D(ctx : CanvasRenderingContext2D){
-        this.allBlocks().forEach(x => x.ctx = ctx);
+        this.allBlocks().forEach(x => x.setContext2D(ctx));
     }
 
     setNestBoxSize() : void {
@@ -332,17 +385,17 @@ export class Editor {
         this.blocks.forEach(x => x.draw());
     }
 
-    getPortBlockFromPosition(pos : Vec2) : Port | Block | undefined {
-        const blocks = this.allBlocks().filter(x => x.inMarginBox(pos));
-
+    getPortBlockFromPosition(pos : Vec2) : Port | Button | Block | undefined {
+        const blocks = this.allBlocks().filter(x => x.inMarginBox(pos)).reverse();
         for(const block of blocks){
             const port = block.ports.find(x => x.isNear(pos));
             if(port != undefined){
                 return port;
             }
-        }
-
-        for(const block of blocks){
+            if (!block.inToolbox) {
+                const button = block.children().find(child => child instanceof Button && child.inMarginBox(pos));
+                if (button instanceof Button) return button;
+            }
             if(block.inDrawBoxes(pos)){
                 return block;
             }

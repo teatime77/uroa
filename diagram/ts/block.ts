@@ -945,6 +945,13 @@ export class ConditionGate extends FunctionBlock {
     }
 }
 
+// External block modules register factories without an import cycle through Block.
+const functionBlockFactories = new Map<string, () => FunctionBlock>();
+
+export function registerFunctionBlock(typeName: string, factory: () => FunctionBlock): void {
+    functionBlockFactories.set(typeName, factory);
+}
+
 export function makeFunctionBlockByTypeName(typeName : string) : FunctionBlock | undefined {
     switch(typeName){
     case InputRangeBlock.name:               return new InputRangeBlock({});
@@ -958,6 +965,6 @@ export function makeFunctionBlockByTypeName(typeName : string) : FunctionBlock |
     case CalcBlock.name:                     return new CalcBlock({});
     case CompareBlock.name:                  return new CompareBlock({});
     case ConditionGate.name:                 return new ConditionGate({});
-    
+    default: return functionBlockFactories.get(typeName)?.();
     }
 }
