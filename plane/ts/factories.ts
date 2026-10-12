@@ -1,4 +1,4 @@
-import { AbstractSpeech, appMode, AppMode, areSetsEqual, assert, isSubSet, msg, MyError, permutation, PlayMode, range, setPlayMode, sleep, Speech, unique, Vec2 } from "@i18n";
+import { AbstractSpeech, appMode, AppMode, areSetsEqual, assert, isSubSet, msg, MyError, permutation, range, sleep, Speech, unique, Vec2 } from "@i18n";
 import { AbstractLine, CircleArc, LineByPoints, Point, Quadrilateral, Shape, Triangle } from "./shape";
 import { transpose, addEquations, substitute, divideEquation } from "@algebra";
 import { Grid, UI, RadioButton, closeDlg, Layout, $grid, $dialog } from "@layout";
@@ -24,7 +24,7 @@ import { TriangleDetector } from "./deduction/triangle_detector";
 import { TriangleSimilarity } from "./deduction/triangle_similarity";
 import { Angle, LengthSymbol } from "./dimension_symbol";
 import { AngleBisector } from "./geometry";
-import { ToolSelection, ToolFinish, EnumSelection, TextPrompt, PropertySetting, PlayBack } from "./operation";
+import { ToolSelection, ToolFinish, EnumSelection, TextPrompt, PropertySetting } from "./operation";
 import { Plane } from "./plane_ui";
 import { InputProperty, TextAreaProperty, SelectProperty, ImgSelectionProperty, ShapesProperty, ColorProperty, StringProperty, NumberProperty, BooleanProperty, Property } from "./property";
 import { menuDialogType, Statement } from "./statement";
@@ -33,6 +33,7 @@ import { isTextPrompt, isShapeEquationBuilder, isExprTransformBuilder, isEnumSel
 import { View } from "./view";
 
 export { loadOperationsJSON } from "./operation_loader";
+export { playBack } from "./playback";
 
 export function inputTextPrompt(message : string) : string | null {
     let text : string | null;
@@ -59,31 +60,6 @@ export function inputTextPrompt(message : string) : string | null {
     return text;
 }
 
-
-export async function playBack(play_mode : PlayMode){
-    const view : View = GlobalState.View__current!;
-
-    const operations_copy = view.operations.slice();
-    view.restoreView();
-    view.clearCanvas();
-
-    if(!isNaN(GlobalState.PlayBack__startIndex)){
-        play_mode = PlayMode.fastForward;
-    }
-    
-    setPlayMode(play_mode);
-
-    GlobalState.playBackOperations = new PlayBack(view, operations_copy);
-
-    assert(view.shapes.length == 0);
-
-    await GlobalState.playBackOperations.play();
-
-    view.restoreView();
-
-    view.dirty = true;
-    view.updateShapes();
-}
 
 export async function initPlane(plane : Plane, root : Grid){
     initPlay();

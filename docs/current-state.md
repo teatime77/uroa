@@ -253,3 +253,17 @@ assert・rangeはi18nの同じ実装、linearはlayoutの既存の同じ実装�
 - ユーザーの指定により、今回はビルド・成果物の確認のみ実施した。Playwrightなどの動作テストは実行せず、テストファイルも変更していない。前日の回帰テスト成功を今回の変更後の確認結果とは扱わない。
 
 次の整理対象はplayBack関数・PlayBackクラスと、読み上げ・図形の強調表示。今回のブラウザーでの動作確認はユーザーが実施する。
+
+## 2026-10-12: 再生実行の分離
+
+ポインター表示の分離後、ユーザーは再生に問題がないことを確認し、commit・pushしたと報告した。その状態から、factories.tsのplayBack関数とoperation.tsのPlayBackクラスを `plane/ts/playback.ts` へ移した。操作記録と再生実行を別モジュールに分け、公開APIのplayBackを新モジュールから再exportする。factories.tsにはplayBackの互換用再exportを残す。
+
+inference.tsのPlayBackは型専用importの参照先を変更した。新モジュールではinstanceofで使う操作クラスを実行時importし、Operation・MathEntity・Shape・Viewは型専用importとする。operation.tsからPlayBackを再exportせず、両モジュールの直接の相互参照を作らない。操作記録クラスの生成・toJson・dump、GlobalState・AppServicesの接続は維持する。
+
+playShape・setPropertyは既存のall_functions.tsからの参照を引き継いだ。これらの処理の分離と既存の間接的な循環の整理は後続作業であり、全体の実行時循環を解消した変更ではない。
+
+- `npm.cmd run verify`: 成功。TypeScript診断0、Vite 7.3.7、179モジュール変換、92項目コピー、成果物チェック成功。gameの静的・動的import混在の既存警告2件は残る。
+- Gitの変更前と新しいソースを比較し、移したplayBack関数・PlayBackクラスの宣言と処理本体、およびfactories.ts・operation.tsに残るトップレベル処理がimport・再export以外は一致することを確認した。
+- ユーザーの指定に従い、Playwrightなどの動作テストは実行せず、テストファイルも変更していない。ポインター表示の変更に対するユーザーの成功報告は、今回の再生実行の分離後の動作確認とは区別する。
+
+今回の動作確認はユーザーが実施する。次の分離対象は読み上げ・図形の強調表示とプロパティ更新。

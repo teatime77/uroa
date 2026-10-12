@@ -218,6 +218,14 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 
 次はplayBack関数とPlayBackクラスの分離、読み上げ・図形の強調表示を順番に整理する。ビルド結果は [current-state.md](current-state.md) に記録する。
 
+### 2026-10-12: 再生実行の分離
+
+- factories.tsのplayBack関数とoperation.tsのPlayBackクラスを `plane/ts/playback.ts` に移した。関数・クラスの処理本体、操作順序、待機、早送り・停止・開始位置と再生前後の画面更新を維持する。
+- 公開入口のplayBackを新モジュールから直接再exportし、factories.tsにも互換用再exportを残す。inference.tsはPlayBackを新モジュールから型専用importする。operation.tsからPlayBackを再exportしない。
+- instanceofで使う操作クラスは実行時import、Operation・MathEntity・Shape・Viewは型専用importとする。ポインター表示はplayback_pointer.tsから直接利用する。
+- この段階では、既存のplayShape・setPropertyをall_functions.tsから参照する依存を引き継ぐ。再生処理の移動に範囲を絞り、AppServicesの追加や処理本体の変更を避けるための段階的な整理である。次は読み上げ・強調表示とプロパティ更新の分離により、この依存を減らす。
+- ユーザーの指定に従い、確認は型・公開ビルド・成果物確認まで。テストファイルは変更せず、ブラウザーの動作確認はユーザーが実施する。結果は [current-state.md](current-state.md) に記録する。
+
 ## P5: robotの全機能の取り込み
 
 最初に既存機能の対応表を作り、移行先と検証結果を記録する。現在の機能を一つずつ取り込み、その後に新しい連携を追加する。
