@@ -242,3 +242,14 @@ Save・Firebase更新・バックアップはgetOperationsTextの同じJSONを�
 - 実ソースの関数を抽出して実行し、Firebase I/Oを模擬してローカル／Firebase取得先の選択、読込後のID・名前、更新データと確認キャンセル、旧形式・未存在教材の拒否、バックアップ保存とcommit完了待ち、バックアップ再生、対応形式のconvertによる再保存を確認。実際のFirebase SDK通信・認証・Storage保存の確認ではない。
 
 確認用の開発・previewサーバーは終了した。既存の操作クラスの生成・再生処理とAppServicesの接続、図形生成時のID管理は維持する。操作文字列形式・version 2.xは今後読み込めない。Firestoreの実サービス、音声の聴取、Android・実機は未検証。残るP4作業は再生・画面イベント・生成補助・AppServicesの責任分割。
+
+## 2026-10-12: 再生時のポインター表示の分離
+
+all_functions.tsのポインター表示5関数（initPlay・movePointerPix・movePointer・movePointerToElement・moveToolSelectionPointer）と、pointerMove・pointer・pointerPixの状態を `plane/ts/playback_pointer.ts` へ移した。各関数の処理本体、座標変換、20段階の移動、10ms・500msの待機指定、早送り条件を維持する。factories.ts・operation.ts・all_functions.ts内の利用側は直接importし、all_functions.tsに5関数の互換用再exportを残す。
+
+assert・rangeはi18nの同じ実装、linearはlayoutの既存の同じ実装を使う。layoutの公開入口にlinearのexportを追加した。ToolSelectionは型のみのimportで、生成したplayback_pointer.jsの実行時importはi18n・layout・inferenceのみ。新しいモジュールからall_functions.tsやoperation.ts、planeの公開入口へ戻る直接importはない。
+
+- `npm.cmd run verify`: 成功。TypeScript診断0、Vite 7.3.7、178モジュール変換、92項目コピー、成果物チェック成功。gameの静的・動的import混在の既存警告2件は残る。
+- ユーザーの指定により、今回はビルド・成果物の確認のみ実施した。Playwrightなどの動作テストは実行せず、テストファイルも変更していない。前日の回帰テスト成功を今回の変更後の確認結果とは扱わない。
+
+次の整理対象はplayBack関数・PlayBackクラスと、読み上げ・図形の強調表示。今回のブラウザーでの動作確認はユーザーが実施する。

@@ -87,6 +87,8 @@ movieのreadDocは既定でローカルのall-kyozai.jsonから取得する。�
 
 続いて同日に関係管理の51関数を `relations.ts` へ分離した。平行・垂直と等しい円の内部コレクションも同じモジュールへ移し、`inference.ts` の共有コレクション・GlobalState・関係ログ・AppServicesの接続方法は維持した。図形・View・命題・数式の型は `import type` で参照し、実行時に `all_functions.ts`、`index.ts`、図形クラスをimportしない。利用側は機能別モジュールから直接importし、公開入口と `all_functions.ts` の既存exportも維持する。
 
+2026-10-12に再生時のポインター表示5関数（initPlay、movePointerPix、movePointer、movePointerToElement、moveToolSelectionPointer）と3つの状態変数を [playback_pointer.ts](../plane/ts/playback_pointer.ts) へ移した。factories.ts・operation.ts・all_functions.ts内の利用側は直接importし、all_functions.tsには互換用再exportを残す。ToolSelectionは型のみのimportで、新しいモジュールからall_functions.ts・operation.ts・planeの公開入口への実行時importを追加しない。assert・rangeはi18nの同じ実装、linearはlayoutの既存の同じ実装を使い、layoutの公開入口にlinearのexportを追加した。ポインターの初期化、座標変換、20段階の移動、10ms・500msの待機指定、早送り時の処理を維持する。今回の分離はポインター表示に限り、PlayBackクラスとplayBack、読み上げ・図形の強調表示は後続作業とする。
+
 点の並び順判定2関数は `geometry_order.ts` に移した。後続のユーザー変更でplaneの `msg` はi18nのコンソール出力へ統一し、`logging.ts` は削除済み。登録・検索・取り消し・再適用の処理本体は変更していない。確認条件と結果は [current-state.md](current-state.md) に記録する。
 
 これらに証明や幾何の関係管理コードはあるが、任意の定理・問題を自動的に解く完全な証明器という保証は今回確認していない。

@@ -4,7 +4,8 @@ import { Path, Term } from "@parser";
 import { ShapeMode } from "./enums";
 import { AppServices, GlobalState, idMap } from "./inference";
 import { MathEntity, TextBlock } from "./json";
-import { movePointer, moveToolSelectionPointer, playShape, setProperty } from "./all_functions";
+import { playShape, setProperty } from "./all_functions";
+import { movePointer, moveToolSelectionPointer } from "./playback_pointer";
 
 import type { Point, Shape } from "./shape";
 import type { View } from "./view";

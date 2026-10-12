@@ -209,6 +209,15 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 
 操作記録の保存・読込の分離は完了。次のP4作業は、再生、画面イベント、プロパティ表示、図形・命題の生成補助、AppServicesの役割整理を小さく分けて進める。
 
+### 2026-10-12: 再生時のポインター表示の分離
+
+- all_functions.tsのinitPlay・movePointerPix・movePointer・movePointerToElement・moveToolSelectionPointerと、pointerMove・pointer・pointerPixの状態を `plane/ts/playback_pointer.ts` へ移した。各関数の処理本体・待機指定・早送り条件は維持する。
+- factories.ts・operation.ts・all_functions.ts内の利用側は直接importし、all_functions.tsの5関数の互換用再exportを残す。
+- assert・rangeはi18n、linearはlayoutの既存の同じ実装を利用する。layoutの公開入口へlinearのexportを追加し、新しい補助関数は作らない。ToolSelectionは型のみのimportで、新しいモジュールからall_functions.tsやplaneの公開入口へ戻る実行時importを追加しない。
+- ユーザーの指定に従い、今回の確認は型・公開ビルド・成果物確認までとする。ブラウザーの動作テストはユーザーが実施する。既存テストファイルは変更しない。
+
+次はplayBack関数とPlayBackクラスの分離、読み上げ・図形の強調表示を順番に整理する。ビルド結果は [current-state.md](current-state.md) に記録する。
+
 ## P5: robotの全機能の取り込み
 
 最初に既存機能の対応表を作り、移行先と検証結果を記録する。現在の機能を一つずつ取り込み、その後に新しい連携を追加する。

@@ -7,9 +7,10 @@ import { App, Term, RefVar, renderKatexSub, parseMath } from "@parser";
 import { LineKind, AngleEqualityReason, ExprTransformReason, LengthEqualityReason, ParallelReason, PropositionReason, ParallelogramReason, RhombusReason, ShapeEquationReason, TriangleCongruenceReason, IsoscelesTriangleReason, TriangleSimilarityReason } from "./enums";
 import { GlobalState, menuDialogs, enumSelectionClassName, Angle__numMarks, lineKindImgNames, propertySettingText, congruentTriangles, similarTriangles, isoscelesTriangle, parallelogramClassifiers, pointsToLengthSymbol, equalLengths, AppServices } from "./inference";
 import { MathEntity, Widget, TextBlock, textBlockEvent } from "./json";
-import { initPlay, makeCssClass, makeCanvas, makeSelectionDlg, Builder__builderResetTool, movePointerAndHighlight, waitForClick, reasonMsg, movePointerToElement, typeIntoInput, speakReason, showAuxiliaryShapes, pairKey, makeToolByType, appendTitle, makeConstantProperty, makeTexProperty, appendRow, usedPropertyNames, setUsed_property_names } from "./all_functions";
+import { makeCssClass, makeCanvas, makeSelectionDlg, Builder__builderResetTool, movePointerAndHighlight, waitForClick, reasonMsg, typeIntoInput, speakReason, showAuxiliaryShapes, pairKey, makeToolByType, appendTitle, makeConstantProperty, makeTexProperty, appendRow, usedPropertyNames, setUsed_property_names } from "./all_functions";
 import { getCommonPointOfLines, isParallel, areEqualCircleArcs, getParallelogramClassifier, getParallelogramsByDiagonalLengthSymbols, isEqualAngle, findEqualLengthsByPointsPair, getParallelLinesByPointsPair, findEqualAnglesBy3pointsPair, getCommonLineOfPoints, isEqualLength, findAngle, findTrianglePairByAngles, getAngleUnitVectors, setEqualShapes, findTrianglePairByLengthSymbols, getCommonPoint, findParallelLinesOfLengthSymbols } from "./relations";
 import { toClockwisePoints } from "./geometry_order";
+import { initPlay, movePointerToElement } from "./playback_pointer";
 
 import { AngleEquality } from "./deduction/angle_equality";
 import { ExprTransform } from "./deduction/expr_transform";

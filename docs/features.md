@@ -1,6 +1,6 @@
 # 機能索引
 
-更新日: 2026-10-11（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
+更新日: 2026-10-12（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
 
 全体の依存関係は [architecture.md](architecture.md)、改善の順序は [improvement-plan.md](improvement-plan.md)、実際に確認した条件・結果は [現状確認](current-state.md) を参照する。この索引にソースが載っていることは、その機能を実行検証済みであることを意味しない。
 
@@ -38,6 +38,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | PLANE-05 | 座標・幾何計算を変える | [geometry_math.ts](../plane/ts/geometry_math.ts): 垂線の足・距離・接点、[geometry_order.ts](../plane/ts/geometry_order.ts): isClockwise、toClockwisePoints | [geometry.ts](../plane/ts/geometry.ts): 図形クラス、[matrix.ts](../plane/ts/matrix.ts): 行列。[all_functions.ts](../plane/ts/all_functions.ts)に図形依存の垂線・交点計算と互換用再exportを残す。描画・作図・制約の利用側を確認する |
 | PLANE-06 | 操作の保存・復元・再生を変える | [operation_storage.ts](../plane/ts/operation_storage.ts): saveJson、getOperationsText、[operation_loader.ts](../plane/ts/operation_loader.ts): loadOperationsJSON、[operation.ts](../plane/ts/operation.ts): 操作クラス | version 3の操作オブジェクト形式に統一。[factories.ts](../plane/ts/factories.ts): playBack、読込の互換用再export。all_functions.tsに保存の互換用再exportを残す。旧図形JSON・操作文字列形式は廃止。往復確認は [test_operation_json.py](../tests/test_operation_json.py) |
 | PLANE-07 | 作図画面やプロパティ表示を変える | [plane_ui.ts](../plane/ts/plane_ui.ts): Plane、[factories.ts](../plane/ts/factories.ts): showProperty | [all_functions.ts](../plane/ts/all_functions.ts): 画面イベント、[view.ts](../plane/ts/view.ts)。movie側の配置も確認する |
+| PLANE-08 | 再生時のポインター表示・移動を変える | [playback_pointer.ts](../plane/ts/playback_pointer.ts): initPlay、movePointerPix、movePointer、movePointerToElement、moveToolSelectionPointer | 画像要素・画面上の位置を保持。factories.tsの初期化・プロパティ表示、operation.tsの再生、all_functions.tsの強調表示から直接利用。移動・待機・早送り条件を維持し、all_functions.tsの互換用再exportも残す |
 
 ## ブロック編集・実行・実機向け指令
 
