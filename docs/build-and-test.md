@@ -69,6 +69,18 @@ Remove-Item Env:UROA_AI_LIVE_TEST
 
 既存tests/test.pyは公開ビルド4178番でWebGPU・game・diagram・algebra・movieの全5アプリが成功した。開発版の初回実行はPlaywright driverが途中終了したため、公開版の単独再実行でNODE_OPTIONS=--max-old-space-size=4096を指定した。Python 3.12と既存tmp/ble-run-python.pyを使い、元の回帰テストソースは変更していない。
 
+## 音声認識とAIチャット（2026-10-13）
+
+[speech-ai-chat.json](../public/diagram/data/speech-ai-chat.json)をdiagramのcanvasへドロップし、AIChatBlockの接続ボタンからキー・モデルを設定する。Startを押し、SpeechRecognitionBlockが「聞き取り中… 話してください」と表示してから日本語で質問する。初回のマイク権限を許可する。単発認識の終了後に確定文字列をAIへ送り、回答をTTSへ渡す。「認識終了」はそこまでの音声の結果を待ち、全体Stopは結果を破棄して中断する。失敗時はエラーを表示し、Startで再試行する。認識結果は読み取り専用で、保存・コピーには言語設定のみを含める。入力文字列を修正する用途には既存InputTextBlockを使う。
+
+ブラウザーのSpeechRecognition／webkitSpeechRecognitionを機能検出し、未対応・権限拒否・無音・空結果・通信失敗・30秒タイムアウトではAIやTTSへ進まない。認識はブラウザーのサービスに依存するため、端末内処理・オフライン動作を保証しない。[Web Speech API仕様](https://webaudio.github.io/web-speech-api/)。AndroidでのHTTPS配信・マイク権限・実発話・実際に聞こえるTTSは端末で確認する。配置した全runOnStartブロックを実行するため、最初のデモは音声認識1個で構成する。サンプルの位置は横並びなので、画面幅に応じてブロックを移動する。
+
+TypeScriptビルド後に`node --test tests/speech-client.test.mjs`を実行する。ブラウザー検証は上記のVite・Playwright・Chrome環境変数を設定して`node --test tests/speech-browser.test.mjs`を実行する。認識・Google API・TTSは模擬する。正常な認識→AI→TTS、マイク終了待ち、認識終了ボタン、権限拒否・空結果・API未対応・タイムアウト、Stop・Clear・読込・削除・pagehide・破棄、終了イベントなしの中断、遅延イベント、再実行、ツール登録・配置、保存・コピー・JSON配線復元、720pxでの認識ブロックのDOM追従・ボタン範囲を対象とする。
+
+追加後の検証は`npm.cmd run verify`、Nodeの認識10件・既存AI3件・ライフサイクル5件が成功した。5188番のViteとインストール済みChromeで音声認識ブラウザー10件を実行し、後から追加したツール配置・実サンプルJSON読込1件を単独実行して成功した。既存AIチャットのブラウザー回帰29件も成功した。認識結果欄・認識終了ボタン・配線の画面画像を確認し、更新した設計文書のローカルリンクにも欠落がないことを確認した。
+
+最初のChrome実行は既存CDNへのアクセス制限でdagre等を読めず、音声認識へ進む前の画面初期化に失敗した。CDNにアクセスできる環境で再実行し、模擬AIのモデル情報応答を正した後に成功した。初回Viteビルドは詳細診断なしの終了コード1だったため、`NODE_OPTIONS=--max-old-space-size=4096`を指定してverifyを再実行した。実発話・ブラウザーの実認識サービス・Google実通信・スピーカー出力・Android・HTTPS公開・既存5アプリの大規模回帰は今回未確認。720px検証は認識ブロックの配置・DOM追従・ボタン範囲であり、全ツールの小画面対応を意味しない。
+
 ## 構造体ポートとBLE・サーボ・IMU・Plotブロックの確認
 
 `tests/ble-browser.test.mjs` はVite開発サーバーとテスト用Chromeを使う。実Web Bluetooth APIは模擬し、ツールボックスからの配置、canvasのクリック／タップ・ドラッグ取消、機器選択取消、非対応機器、INFO ACK・PING、接続途中のClear、共有状態、JSON保存・復元、画面終了、ACKタイムアウトを確認する。IMUについては単位変換・構造体入力への伝播・数値ポートへの接続拒否・console出力・10Hz STREAMの共有と停止・IMU未検出・不正パケット・切断時の値の解除・型の保存復元も確認する。実ESP32・無線・Android実端末の確認にはならない。既存diagramのCDN依存も読み込むため、ネットワークが必要。

@@ -1,6 +1,6 @@
 # diagramの機能とブロック実装ガイド
 
-更新日: 2026-10-13（日本時間）。調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。この文書の作成ではソースを静的に確認した。ビルド・ブラウザー・実機の新たな検証は行っていない。既存の検証記録は [build-and-test.md](build-and-test.md) を参照する。
+更新日: 2026-10-13（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識追加を反映した。変更ごとの検証条件・結果は [build-and-test.md](build-and-test.md) を参照する。
 
 ## 1. 着手時に決めること
 
@@ -39,6 +39,7 @@
 | [imu.ts](../diagram/ts/imu.ts) | IMUの受信購読と構造体出力 |
 | [plot.ts](../diagram/ts/plot.ts)、[plot_data.ts](../diagram/ts/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
 | [ai-chat.ts](../diagram/ts/ai-chat.ts)、[ai-client.ts](../diagram/ts/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
+| [speech-recognition.ts](../diagram/ts/speech-recognition.ts)、[speech-client.ts](../diagram/ts/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
 
 入口HTMLは [public/diagram/index.html](../public/diagram/index.html)。保存図・サンプルは [public/diagram/data/](../public/diagram/data/) に置く。
 
@@ -68,7 +69,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 
 ## 4. 現在のブロックと実装範囲
 
-ツールボックスは現在22種類。以下はソースの実装説明で、実機で動いたという保証ではない。
+ツールボックスは現在23種類。以下はソースの実装説明で、実機で動いたという保証ではない。
 
 | ブロック | 入出力・動作 | 主な制約 |
 |---|---|---|
@@ -81,13 +82,14 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | IMUBlock | gyro・accのvec3を1つのStructPortから出力 | 配置したブロックで10Hz STREAMを共有。姿勢推定ではない。現行console.logはコメントアウトされている |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
+| SpeechRecognitionBlock | 入力なし、TextPort出力。Startで単発の発話とセッション終了を待つ | ja-JPが既定。Web Speech API／webkit接頭辞を機能検出。30秒タイムアウト、権限・無音・空結果・通信失敗で後続を止める。実音声・Androidは別途確認 |
 | TTSBlock／SleepBlock | 文字列の読み上げ／数値秒の取消可能な待機 | ActionBlock。runの入力は未取得値を許す読み取りではない |
 | IfBlock／InfiniteLoop | 条件値1で内側を実行／内側を繰り返す | NestBlock。IfのconditionPortは型未指定Portで、isTrueは値1を判定する |
 | PlayMovieBlock／PlayGameBlock／PlayWebGPUBlock | 子アプリを実行してdiagramへ戻る | game・webgpuはTextPortで対象を指定。共通入口の停止接続も確認する |
 | CameraBlock／FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧画像・顔領域・距離の表示と出力 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。実ブラウザーのカメラ認識を実装済みと扱わない |
 | ConditionGate／TriggerGate | 条件・入出力ポートや枠を定義 | ConditionGateの値ルーティング、TriggerGateのrunは未実装。配置できることと実行できることは別 |
 
-`JoyStickBlock`はblock.tsの生成関数にあるが、現在の22種類のツールには入っていない。音声認識ブロックはこの調査時点のソース・ツール一覧にはない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot.ts`は別のものとして扱う。
+`JoyStickBlock`はblock.tsの生成関数にあるが、現在の23種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot.ts`は別のものとして扱う。
 
 ## 5. 値・配線・型の契約
 
@@ -142,7 +144,7 @@ runProcedures（実行中の再起動を抑止、停止フラグとAbortControll
   → finallyでStartボタンを戻す
 ```
 
-現在runOnStart=trueなのはAIChatBlock。対象の全ブロックを実行してから全Actionチェーンを開始する方式で、TTSごとに必要な関数だけを遅延実行する方式ではない。単独のTTSBlockもルートとして実行される。runStartFunctionsは走査中の依存循環を検査するが、その前の出力リセットや通常の値伝播まで安全にするものではない。
+現在runOnStart=trueなのはAIChatBlockとSpeechRecognitionBlock。対象の全ブロックを実行してから全Actionチェーンを開始する方式で、TTSごとに必要な関数だけを遅延実行する方式ではない。未接続の音声認識も対象になり、複数配置すれば順に発話を待つ。最初の音声AIデモは認識ブロック1個で構成する。単独のTTSBlockもルートとして実行される。runStartFunctionsは走査中の依存循環を検査するが、その前の出力リセットや通常の値伝播まで安全にするものではない。
 
 Startで待つ新しいFunctionBlockでは、runOnStart=true、前回出力を消すresetForRun、完了を表すPromiseを返すrunを実装する。runは失敗時に出力をundefinedへ戻して例外を投げる。途中状態は画面へ表示し、完了した値だけを出力する。例外が上へ伝われば以後のActionチェーンへ進まず、Startボタンはfinallyで戻る。
 
@@ -175,7 +177,7 @@ AIChatBlockとai-client.tsのwaitAIRequestは、通信がabortを無視する場
 
 ### 現行ツールボックスの注意点
 
-- Editorは最後のToolItemをpopし、4番目へ移している。現在の最後がAIChatBlockという前提なので、末尾へ新しい型番号を追加したら、移動する対象も見直す必要がある。これは汎用的な型名による並べ替えではない。
+- Editorは型名でAIChatBlockを4番目、SpeechRecognitionBlockを5番目へ移す。新しい型番号の末尾追加でAIの表示順が変わらないようにしている。
 - 各ToolItemは32×32で、長い型名の描画全体がヒット領域になるわけではない。縦配置も画面高に応じたスクロール・折返しを実装していない。項目追加時には小さい画面と文字のクリック位置を実際に確認する。
 - 通常のToolItem生成はpointermoveの有無を使い、微小ドラッグの閾値や安全なドロップ領域を網羅していない。
 - 新しいActionBlockをToolItemから生成する分岐と、既存ActionBlockを移動してtopへ自動接続する分岐は別である。近くへ配置すれば自動接続されると仮定しない。
@@ -302,6 +304,7 @@ AI教材ではユーザーの指示により、学習者が入力したキーを
 | 型・公開成果物 | npm.cmd run verify。ブラウザー操作・外部通信の確認は含まない |
 | Struct・数値グラフ計算 | [data-type.test.mjs](../tests/data-type.test.mjs)、[plot-data.test.mjs](../tests/plot-data.test.mjs) |
 | Google応答・キー・取消 | [ai-client.test.mjs](../tests/ai-client.test.mjs)、[ai-chat-browser.test.mjs](../tests/ai-chat-browser.test.mjs) |
+| 音声認識の終了待ち・取消・AI連携・保存 | [speech-client.test.mjs](../tests/speech-client.test.mjs)、[speech-browser.test.mjs](../tests/speech-browser.test.mjs)。認識・AI・音声出力は模擬 |
 | 明示指定した実Google通信 | [ai-chat-integration.test.mjs](../tests/ai-chat-integration.test.mjs)。キーを出力せず、音声出力は模擬 |
 | ツール・Button・BLE・サーボ・IMU・Plot | [ble-browser.test.mjs](../tests/ble-browser.test.mjs)。BLEは模擬 |
 | 公開版のPlotly・配線 | [plot-preview.test.mjs](../tests/plot-preview.test.mjs) |

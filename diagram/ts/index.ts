@@ -11,6 +11,7 @@ import { IMUBlock } from "./imu";
 import { PlotBlock } from "./plot";
 import { ServoMotorBlock } from "./servo";
 import { AIChatBlock } from "./ai-chat";
+import { SpeechRecognitionBlock } from "./speech-recognition";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
@@ -25,7 +26,7 @@ export function stopDiagram(): void {
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const BlockClassCount = 22;
+export const BlockClassCount = 23;
 
 export function makeBlock(idx : number) : Block {
     switch(idx){
@@ -51,6 +52,7 @@ export function makeBlock(idx : number) : Block {
     case 19: return new PlayGameBlock({});
     case 20: return new PlayWebGPUBlock({});
     case 21: return new AIChatBlock({});
+    case 22: return new SpeechRecognitionBlock({});
     default: throw new MyError();
     }
 }
@@ -79,6 +81,7 @@ export function geBlockName(idx : number) : string {
     case 19: return "PlayGameBlock";
     case 20: return "PlayWebGPUBlock";
     case 21: return "AIChatBlock";
+    case 22: return "SpeechRecognitionBlock";
     default: throw new MyError();
     }
 }

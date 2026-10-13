@@ -24,7 +24,7 @@ export async function runStartFunctions(blocks: readonly Block[]): Promise<void>
     const done = new Set<Block>(), visiting = new Set<Block>();
     const visit = async (block: Block): Promise<void> => {
         if (done.has(block) || stopFlag) return;
-        if (visiting.has(block)) throw new Error("AI入力の接続が循環しています。");
+        if (visiting.has(block)) throw new Error("データ入力の接続が循環しています。");
         visiting.add(block);
         for (const port of block.ports) {
             for (const source of port.sources) {

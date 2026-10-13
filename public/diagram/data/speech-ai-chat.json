@@ -1,0 +1,8 @@
+[
+  { "idx": 0, "typeName": "SpeechRecognitionBlock", "x": 280, "y": 80, "lang": "ja-JP",
+    "ports": [{ "idx": 0, "destinations": [1] }] },
+  { "idx": 1, "typeName": "AIChatBlock", "x": 640, "y": 80,
+    "ports": [{ "idx": 1, "destinations": [] }, { "idx": 2, "destinations": [5] }] },
+  { "idx": 2, "typeName": "TTSBlock", "x": 680, "y": 440,
+    "ports": [{ "idx": 3, "destinations": [] }, { "idx": 4, "destinations": [] }, { "idx": 5, "destinations": [] }] }
+]

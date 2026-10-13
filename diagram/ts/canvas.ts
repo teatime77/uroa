@@ -386,8 +386,11 @@ export class Editor {
         setEditor(this);
 
         this.tools = range(BlockClassCount).map(x => new ToolItem(x));
-        // Keep the demo's AI tool visible alongside BLE, IMU and Plot.
-        this.tools.splice(3, 0, this.tools.pop()!);
+        // Keep both demo tools visible without depending on the last type index.
+        for (const [offset, name] of ["AIChatBlock", "SpeechRecognitionBlock"].entries()) {
+            const idx = this.tools.findIndex(tool => geBlockName(tool.toolIdx) === name);
+            if (idx >= 0) this.tools.splice(3 + offset, 0, this.tools.splice(idx, 1)[0]);
+        }
 
         let x = 10;
         let y = 60;

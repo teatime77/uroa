@@ -19,6 +19,8 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 
 ## 現在の境界
 
+- `diagram/ts/speech-recognition.ts`のSpeechRecognitionBlockはStartで単発の音声認識を待ち、セッション終了後に確定文字列をTextPortへ出力する。認識終了は結果を待つstop、全体Stopはabort。30秒タイムアウト、言語設定のみ保存し、復元で認識を始めない。ブラウザーの認識サービスに依存し、実音声・Androidの確認と模擬確認を区別する。
+
 - `diagram/ts/ble.ts`のBLEConnectionBlockでrobotのESP32へ接続する。`diagram/ts/servo.ts`のServoMotorBlockは明示的な90°有効化後、数値入力の角度（60～120°）をBLEのMOVEで送る。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/imu.ts`のIMUBlockがgyro・accの構造体を1つのStructPortから出力してconsoleへ表示し、配置されたIMUBlockが10HzのSTREAMを共有する。`diagram/ts/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
 - `diagram/ts/index.ts`の `diy_sbc = false` により旧HTTPセンサーの定期取得は無効。旧カメラ・センサーのHTTP `POST /send_data`は残るが、ServoMotorBlockはBLEを使う。BLEのIMU通知受信は独立している。
 - plotには実装ソースがない。lessonの `@let` は未実装。mediaのCanvas動画録画・音声合成部分はコメントアウトされている。
