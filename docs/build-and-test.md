@@ -1,6 +1,6 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-11。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-13。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
 ## コマンド
 
@@ -18,6 +18,56 @@
 | `npm.cmd run test:e2e` | Pythonで既存の5アプリ回帰テストを実行。接続先のサーバーとPython依存は事前準備が必要 |
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
+
+## AIチャットとTTSのデモ（2026-10-13）
+
+現行の教材向けAIChatBlockは、学習者のキーを入力してGoogleへ直接通信する。robot/chatのAPIサーバー起動は不要。uroa側はViteを起動する。
+
+```powershell
+cd D:\usr\prj\uroa
+npm.cmd run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+`http://127.0.0.1:5173/diagram/index.html`を開き、[ai-chat.json](../public/diagram/data/ai-chat.json)をcanvasへドロップする。AIChatBlockの「接続」を押し、自分のAPIキーとモデル名を入力する。旧バックエンドで別のGEMINI_MODELを使っていた場合は同じ名前を指定する。接続確認後、質問を編集してStartを押す。同じブロックならキーの再入力なしに質問を繰り返せる。「キー変更」で再設定、「切断」でキーを解除する。送信中は回答出力が空で、全文受信後だけTTSが読み上げる。手で作る場合はInputTextBlockの文字列出力をAIChatBlockの上側入力へ、AIChatBlockの下側出力をTTSBlockの文字列入力へ接続する。AIChatBlockはFunctionBlockなので手続き用のtop/bottom接続は不要。全AI回答を待ってから、単独のTTSBlockも実行される。ツールボックスのAIChatBlockはBLE・IMU・Plotの次に置く。
+
+Stop、Clear、別JSONの読込、実行中のブロック削除、pagehide・破棄は待機を中断する。空入力・キー未設定・通信失敗・空／不正回答・35秒タイムアウトではTTSへ進まない。接続確認は10秒でタイムアウトする。通常のStopでは保持済みキーを維持し、切断・AIブロック削除・Clear・図読込・pagehide・破棄で解除する。キーは各ブロックのprivateフィールドへ一時保持し、入力確定後にダイアログを消去する。Downloadとコピーにはキー・回答・送信状態を含めず、質問文・配線・モデル名は保存する。localStorage・sessionStorageへ保存せず、URL・ログへキーを含めない。ブラウザーの開発者ツールから完全に隠せる設計ではない。
+
+ブラウザーからGoogleのモデル情報取得で接続を確認し、質問はInteractions APIのRESTへ直接送る。Googleとの通信はHTTPS。静的HostingでもAPIプロキシ不要で、旧 `/api/ask` プロキシは解除した。`/api/save`はuroaの開発用保存処理を維持する。
+
+AI専用のブラウザーテストは [tests/ai-chat-browser.test.mjs](../tests/ai-chat-browser.test.mjs)。以下のPlaywright・Chrome環境変数を使い、ソース変更後に専用Viteを再起動して実行する。
+
+```powershell
+$env:UROA_TEST_BASE_URL = 'http://127.0.0.1:5173/'
+$env:UROA_PLAYWRIGHT_MODULE = '.\tmp\p0\tools\node_modules\playwright-core\index.mjs'
+$env:UROA_BROWSER_EXECUTABLE = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+node --test tests/ai-chat-browser.test.mjs
+```
+
+AI APIと音声出力は模擬する。通常応答、編集時の非送信、空・未接続・長すぎる入力、通信／HTTPエラー、空・不正JSON・非文字列回答、Stop・Clear・図読込・AI／入力／TTS削除・破棄・pagehide、本文待機中の中断、遅い旧応答、タイムアウト、依存順の実行、コピー・Download・JSON配線復元、720px画面での配置・DOM追従を確認する。接続ダイアログのcanvasクリック、入力欄消去、2問でのキー再利用、private保持・JSON非保存、切断後の未認証、接続中の切断・Clear・Stop・pagehide、接続失敗時のキーとエラー本文の非表示も確認する。
+
+[tests/ai-chat-integration.test.mjs](../tests/ai-chat-integration.test.mjs)は明示指定時だけ実Googleモデルへ1問を送る。上記Viteと環境変数を準備し、次を実行する。テストプロセスが既存robot/chat/.envを読み、GEMINI_API_KEY・GEMINI_MODELを使って画面に入力する。既存.envを変更・コピーせず、キーはログへ出さない。アプリ自体は.envを読み込まない。
+
+```powershell
+$env:UROA_AI_LIVE_TEST = '1'
+node --test tests/ai-chat-integration.test.mjs
+Remove-Item Env:UROA_AI_LIVE_TEST
+```
+
+この実通信テストはデモJSONを読み込み、ブロック内でキー入力 → Googleへ接続確認 → 直接Interactions API → 出力文字列 → 既存TTSBlock・Speechの音声出力呼出しまで確認する。スピーカー出力だけを模擬する。`/api/ask`呼び出しが0件であること、保存とログにキーを含めないこと、`/api/save`の保存内容も確認し、検証用保存ファイルは削除する。質問と回答、.env、SDK内部エラーはテスト結果へ出力しない。
+
+純粋なREST応答解析・エラー本文非公開・取消は、TypeScriptビルド後に `node --test tests/ai-client.test.mjs` で確認する。直接方式への変更後、実通信2件とNodeのAI3件・ライフサイクル5件、npm.cmd run verifyが成功した。画像で接続ボタン・キー保持表示・回答欄を確認した。音声出力・Android・公開デプロイは未確認。
+
+直接方式のChrome検証は29項目が成功した。全体実行では28件が成功し、保存・復元の1件は画面初期化待ちでタイムアウトしたため、同じ最終ソースで単独再実行して成功を確認した。実質問・キー保持・保存復元に進む前の初期化タイムアウトであり、既存CDNを含む起動環境の制約として記録する。
+
+直接方式の追加後も既存tests/test_lifecycle.pyが成功した。5画面の初期化・重複起動・破棄、diagramのStop・再実行、movie/game/WebGPUへの委譲停止、初期化失敗時の片付けを確認した。初回は起動待ちタイムアウトが出たため、単独再実行でNODE_OPTIONS=--max-old-space-size=4096を指定した。
+
+初期のExpress方式では、2026-10-13に5187番のViteと既存3001番のExpressを使い、実通信2件、AI専用ブラウザーテスト23件、既存Nodeテスト15件、robot/chatのAPIテスト5件が成功した。最終の文字列表示調整後にAI専用23件とnpm.cmd run verifyを再実行し、画像で回答欄とポート表示を確認した。既存tests/test_lifecycle.pyも5画面の初期化・破棄、diagramの待機取消・再実行・子アプリ停止、初期化失敗時の片付けが成功した。APIキー・モデル・.env・robot側ソースは変更していない。
+
+検証環境の制限により、Chromeの既存CDN取得とtsx起動は隔離環境外で実行した。既存BLEテストの「IMU streams a converted immutable struct through one port and logs it once」は現在のHEADでコメントアウトされたIMUのconsole.logを待つため失敗する。ログ有効化や既存テスト変更は今回のAI追加に含めない。
+
+既存BLE・サーボ・IMU・Plotの残る23件は、最終ソースで上記ログ待ち1件を除いて再実行し、すべて成功した。ソース更新中の実行では3件に状態待ちタイムアウトが出たため、再実行は更新後にViteを再起動して行った。
+
+既存tests/test.pyは公開ビルド4178番でWebGPU・game・diagram・algebra・movieの全5アプリが成功した。開発版の初回実行はPlaywright driverが途中終了したため、公開版の単独再実行でNODE_OPTIONS=--max-old-space-size=4096を指定した。Python 3.12と既存tmp/ble-run-python.pyを使い、元の回帰テストソースは変更していない。
 
 ## 構造体ポートとBLE・サーボ・IMU・Plotブロックの確認
 

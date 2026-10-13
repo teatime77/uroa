@@ -6,7 +6,7 @@ import { ActionBlock, NestBlock } from "./procedure";
 import { Port } from "./port";
 import { incRepaintCount, PortType, setCanvas, theCanvas } from "./diagram_util";
 import { setEditor, theEditor } from "./json-util";
-import { BlockClassCount, geBlockName, makeBlock } from "./index"
+import { BlockClassCount, geBlockName, makeBlock, stopDiagram } from "./index"
 
 let animationFrameId : number | null = null;
 
@@ -386,6 +386,8 @@ export class Editor {
         setEditor(this);
 
         this.tools = range(BlockClassCount).map(x => new ToolItem(x));
+        // Keep the demo's AI tool visible alongside BLE, IMU and Plot.
+        this.tools.splice(3, 0, this.tools.pop()!);
 
         let x = 10;
         let y = 60;
@@ -401,8 +403,10 @@ export class Editor {
     }
 
     clearBlock() : void {        
+        stopDiagram();
         this.blocks.forEach(x => x.clearBlock());
         this.blocks = [];
+        theCanvas?.requestUpdateCanvas();
     }
 
     addBlock(block : Block){

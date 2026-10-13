@@ -493,7 +493,7 @@ export function makeActionBlockByTypeName(typeName : string) : ActionBlock | und
 }
 
 export function makeBlockByTypeName(typeName : string) : Block {
-    let block = makeFunctionBlockByTypeName(typeName);
+    let block: Block | undefined = makeFunctionBlockByTypeName(typeName);
     if(block == undefined){
         block = makeActionBlockByTypeName(typeName);
         if(block == undefined){

@@ -7,6 +7,7 @@ import { nest_h1, sendData } from "./diagram_util";
 import { tab, UI, Attr } from "./ui";
 import { NumberPort, Port, TextPort } from "./port";
 import { theEditor } from "./json-util";
+import { isRunning, stopDiagram } from "./runtime";
 
 // export const inputHeight = 21;
 
@@ -47,6 +48,7 @@ export abstract class Block extends UI {
     }
 
     clearBlock() : void {        
+        if (isRunning) stopDiagram();
         this.ports.forEach(port => port.disconnectAll());
     }
 
@@ -308,6 +310,10 @@ export abstract class Block extends UI {
 }
 
 export abstract class FunctionBlock extends Block {
+    /** Functions that must finish before the action chains start. */
+    readonly runOnStart: boolean = false;
+    resetForRun(): void {}
+
     copy() : Block {
         const block = makeFunctionBlockByTypeName(this.constructor.name)!;
         this.copyUI(block);

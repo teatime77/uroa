@@ -8,11 +8,15 @@
 
 ユーザーは、2026-10-16までに簡単なロボット＋AIのデモを作る必要があると明示した。このデモを最優先とし、P4の継続的な責任分割と全面的なrobot取り込みは、デモ成立に必要な部分だけ進める。期限までに全体統合を完成させる計画ではない。
 
-デモは既存のrobotのAI画面・API、ESP32制御を再利用する。2026-10-12のユーザー指定により、diagramでのAIチャット（InputTextBlock・チャットブロック・TTSBlock）と、ServoMotorBlockによる指定角度の操作・IMUBlock／グラフブロックによる計測表示を独立した2つのデモとして作る。AIが定型動作を選んでサーボを操作する機能は不要。音声認識は余裕があれば追加する。APIキーはバックエンドで保持する。
+デモは既存のrobotのAI画面・API、ESP32制御を再利用する方向で開始した。2026-10-12のユーザー指定により、diagramでのAIチャット（InputTextBlock・チャットブロック・TTSBlock）と、ServoMotorBlockによる指定角度の操作・IMUBlock／グラフブロックによる計測表示を独立した2つのデモとして作る。AIが定型動作を選んでサーボを操作する機能は不要。音声認識は余裕があれば追加する。2026-10-13の後続指示で、AI部分は学習者自身のキーをAIChatBlockで一時保持し、APIサーバーを使わずGoogleへ直接送る教材向けの構成に変更した。キーを保存・コピー・ログへ含めない。
 
 実機はESP32、PCA9685、SG90、MPU-6050／GY-521で、IMU取得はユーザー確認済み。本人のAndroidタブレットで動作を見せ、携帯電話のアクセスポイント経由でインターネットに接続する。他人への共有・操作やログインはデモ要件に含めない。AndroidのHTTPS公開・AIバックエンド配置が難しい場合はWindows PC＋ローカルViteを使う。公開先・実機サーボ・最終的な完了条件は別途確認する。
 
-最初の実装としてdiagram/ts/ble.tsにBLEConnectionBlockを追加した。canvasボタンから機器選択・接続・切断を行う。接続ブロックだけではサーボ／IMU出力を開始しない。続くIMUBlock・PlotBlockの実装は下記のとおり。2026-10-13にServoMotorBlockをdiagram/ts/servo.tsへ移し、明示ARM、角度入力からのMOVE、CH・移動時間、DISABLE/STOPを追加した。接続・再接続だけではサーボを有効化せず、停止時は待機中の古い指令を取り消す。チャットの追加とAndroid・サーボの実機確認は後続作業。
+最初の実装としてdiagram/ts/ble.tsにBLEConnectionBlockを追加した。canvasボタンから機器選択・接続・切断を行う。接続ブロックだけではサーボ／IMU出力を開始しない。続くIMUBlock・PlotBlockの実装は下記のとおり。2026-10-13にServoMotorBlockをdiagram/ts/servo.tsへ移し、明示ARM、角度入力からのMOVE、CH・移動時間、DISABLE/STOPを追加した。接続・再接続だけではサーボを有効化せず、停止時は待機中の古い指令を取り消す。同日にユーザーはサーボの実機確認・commit・pushを報告した。エージェントの模擬確認とは区別する。
+
+同日、InputTextBlock → AIChatBlock（FunctionBlock）→ TTSBlockを実装した。uroaの `/api/ask` 限定プロキシから既存robot/chatのExpress・Interactions APIを再利用する。Startで回答全文を待ち、成功時だけTTSへ渡す。送信状態・回答・エラー、中断と遅延応答の抑止、コピー・JSON配線復元に対応し、ライブの回答は保存しない。Googleまでの実通信1問とTTSの音声出力直前まで確認した。音声出力は模擬で、実際に聞こえること、Android、HTTPS公開は後続確認。操作と検証は [build-and-test.md](build-and-test.md) を参照する。
+
+後続指示による現行実装は、AIChatBlock内の接続ボタンからキー・モデル名を入力し、Googleのモデル情報を取得して接続を確認する。キーをprivateフィールドに保持し、Startごとに再利用する。切断・削除・Clear・読込・pagehide・破棄で解除する。質問はInteractions APIのRESTへ直接送信し、Viteの `/api/ask` プロキシは解除した。ブラウザーでGoogle接続確認・実質問1問・TTSの音声出力直前まで成功した。従来のExpress方式の確認結果は初期実装の記録として扱う。
 
 ユーザーはBLE接続を確認してcommit・pushしたと報告した。続いて、IMUなどの複数値を1本の接続線で渡す構造体入出力を必須と指定した。既存Structを使い、IMUはgyro: vec3とacc: vec3を持つ。CalcBlockの式によるフィールド参照・構造体計算も必要で、if文・whileループは不要。汎用構造体と計算は10月16日に間に合わなくてもよいが、今後のIMU・Port・グラフ修正を6数値ポートに固定せず、この方針に沿わせる。[構造体ポートと式評価の設計案](diagram-struct-design.md)に現行ソースの制約と未実装の提案を記録する。
 

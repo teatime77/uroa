@@ -1,0 +1,9 @@
+[
+  { "idx": 0, "typeName": "InputTextBlock", "x": 300, "y": 100,
+    "ports": [{ "idx": 0, "destinations": [1] }],
+    "text": "ロボットとは何ですか？短く教えてください。" },
+  { "idx": 1, "typeName": "AIChatBlock", "x": 300, "y": 220,
+    "ports": [{ "idx": 1, "destinations": [] }, { "idx": 2, "destinations": [5] }] },
+  { "idx": 2, "typeName": "TTSBlock", "x": 350, "y": 540,
+    "ports": [{ "idx": 3, "destinations": [] }, { "idx": 4, "destinations": [] }, { "idx": 5, "destinations": [] }] }
+]

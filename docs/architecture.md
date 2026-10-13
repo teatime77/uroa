@@ -101,6 +101,18 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 [canvas.ts](../diagram/ts/canvas.ts)と [ui.ts](../diagram/ts/ui.ts)が編集・描画、[port.ts](../diagram/ts/port.ts)が接続・値の伝播、[json-util.ts](../diagram/ts/json-util.ts)がJSON保存を担当する。入力・計算ブロックと手続きブロックを接続し、Start／Stopで実行する。
 
+2026-10-13に [ai-chat.ts](../diagram/ts/ai-chat.ts) のAIChatBlockを追加した。FunctionBlockで、文字列入力・出力を1つずつ持つ。InputTextBlock → AIChatBlock → TTSBlockへデータポートを配線し、Startで質問を送る。FunctionBlockのrunOnStartは既定falseで、AIChatBlockのみtrue。[runtime.ts](../diagram/ts/runtime.ts)はStart時に入力欄の値を反映した後、対象FunctionBlockの前回出力を消し、データ依存順に1回ずつawaitする。全AI応答が成功してからActionBlockのチェーンを実行する。入力編集・コピー・JSON復元では送信しない。AIによるサーボ操作は実装しない。
+
+同日の後続指示により、学習者が自分のAPIキーを入力する教材向けの直接通信へ変更した。AIChatBlock内の「接続」でキー・モデル名のダイアログを開き、入力確定後にGoogleのmodels.getでモデル情報を取得する。「接続確認済み」はモデル情報の取得成功であり、質問生成の利用枠まで保証しない。Startでは [ai-client.ts](../diagram/ts/ai-client.ts)から `https://generativelanguage.googleapis.com/v1beta/interactions` へ直接POSTする。質問はinput、モデル名はmodel、store=falseを指定し、認証はx-goog-api-keyヘッダーへ渡す。APIサーバー・ViteのAPIプロキシ・Google SDK依存は不要。[公式REST仕様](https://ai.google.dev/api/interactions-api)、[モデル情報取得](https://ai.google.dev/api/models)
+
+キーは各AIChatBlockのECMAScript privateフィールド #apiKeyだけに保持する。ダイアログのpassword入力を確定・キャンセル・閉じる際に消去する。Startごとの再入力は不要で、「切断」、そのブロックの削除、Clear、図読込、pagehide、破棄で保持を解除する。通常のStopでは保持済みキーを維持し、接続確認・回答待ちのみを中断する。キーをポート・JSON・コピー・localStorage・sessionStorage・URL・ログへ含めず、失敗時にGoogleの生のエラー本文を表示しない。fetchはcredentials=omit、redirect=errorとし、固定のGoogleホストへだけ認証ヘッダーを送る。ブラウザー内の実行権限や開発者ツールからの完全な隠蔽・メモリの物理消去を保証するものではない。モデル名は公開設定としてJSONへ保存し、初期値は旧バックエンドの既定値gemini-3.5-flash-liteに合わせる。別のGEMINI_MODELを使っていた場合はダイアログで同じモデル名を指定する。robot/chatと既存.envは変更しない。
+
+送信中・成功・中断はcanvas、回答全文・エラーはスクロール可能な読み取り専用textareaで表示する。返答をHTMLとして実行しない。文字列ポートのプレビューはブロック内の幅に合わせて省略し、値本体とTTSへ渡す全文は維持する。空入力・未接続・通信失敗・不正／空回答・35秒のクライアントタイムアウトでは出力をundefinedにしてStartを失敗させ、TTSへ進まない。バックエンドの生のエラー本文は表示・ログへ転記しない。
+
+Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・破棄で実行を停止する。待機は実行単位のAbortSignalとブロックのAbortControllerに接続し、通信がabortを無視しても待機を直ちに終了する。接続確認は10秒、回答待ちは35秒でタイムアウトする。削除・再実行の世代を確認し、遅延した回答を表示・出力・読み上げへ反映しない。Clearは全手続きも停止する。AIブロックは登録済みfactoryからコピー・JSON復元でき、保存は位置・型・ポート配線・モデル名で、キー・回答・通信状態・会話履歴を含めない。質問文は既存InputTextBlockのtextとして保存する。デモ図は [ai-chat.json](../public/diagram/data/ai-chat.json)。
+
+以前追加したViteの `/api/ask` プロキシは解除し、既存開発用 `/api/save` を維持する。静的配信のみで直接通信する構成となり、ローカルのExpress起動は不要。Android・HTTPSへの実際のデプロイは今回未確認。
+
 サーボは以下のBLE経路を使う。旧カメラ、顔検出結果、超音波距離センサー向けの処理は、ブラウザー内で取得を完結する構成ではない。[diagram_util.ts](../diagram/ts/diagram_util.ts)の `sendData()` は同一オリジンの `POST /send_data` にJSONを送る。
 
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
@@ -265,8 +277,9 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでrobotのESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートとconsoleへ出力し、汎用PlotBlockへ配線してgyro・accを表示 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
+| uroa/diagramのAIChatBlock | 学習者のキーをブロック内で一時保持し、ブラウザーからGoogle Interactions APIへ直接質問。回答全文をTTSBlockへ渡す |
 
-BLE接続・サーボ・IMUはrobotのESP32と同じGATT仕様を使う。AIとの連携は未実装で、実装・模擬確認・実機確認はそれぞれ区別する。
+BLE接続・サーボ・IMUはrobotのESP32と同じGATT仕様を使う。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
 
 2026-10-12にユーザーがデモ仕様を提示した。diagram内でInputTextBlock・チャットブロック・TTSBlockを使うAIチャットと、ServoMotorBlock・IMUBlock・グラフブロックを使う実機操作／計測の2種類を独立して作る。AIによる定型動作の選択・サーボ操作は要件ではない。ESP32、PCA9685、SG90、MPU-6050／GY-521を使い、IMU取得はユーザー確認済み。本番は携帯電話のアクセスポイント経由でインターネットへ接続した本人のAndroidタブレット、予備はWindowsのローカルVite。HTTPS・公開AIバックエンドの配置とサーボ動作はエージェント未確認。
 

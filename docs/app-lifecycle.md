@@ -13,6 +13,7 @@
 | [diagram/ts/servo.ts](../diagram/ts/servo.ts) | 角度入力からBLEサーボ操作。明示ARM、MOVE、DISABLE/STOP。CH変更・削除で以前のCH停止、削除で購読・DOMを解除 |
 | [diagram/ts/imu.ts](../diagram/ts/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
 | [diagram/ts/plot.ts](../diagram/ts/plot.ts) | 型と配線を参照する汎用グラフ。削除時にPlotly・DOM・統計タイマー・ResizeObserver・購読・描画予約を解除 |
+| [diagram/ts/ai-chat.ts](../diagram/ts/ai-chat.ts) | キー入力とGoogle接続確認、Startで直接AI質問。Stopで待機を取消。切断・Clear・読込・削除・pagehide・破棄で保持キーを解除。削除では回答DOM・ダイアログ・配線と停止の購読を解除 |
 | [diagram/ts/runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、チェーン実行、キャンセル可能な待機、子アプリ停止の接続口 |
 | [diagram/ts/procedure.ts](../diagram/ts/procedure.ts) | 個々のブロック。runtimeを利用し、indexへの逆向きimportを持たない |
 | 各アプリのindex.ts | 個別の初期化と停止・破棄。algebraは初期化の中で数式処理を開始する |
@@ -27,6 +28,8 @@
 状態は `idle` → `initializing` → `ready`。例外時は `failed` になり、原因を `error` に残して、途中まで作成したアプリも含めて後片付けする。失敗したPromiseを共有するため、再度startを呼ぶだけで未完了の初期化を重ねない。初期化中に停止すると `stopped` になり、残りのアプリとready通知を抑止する。
 
 `stop()` は初期化済みUIを保持して再生・実行を止める。ready後の再実行は各画面のStart／再生ボタンで行う。`start()`を再度呼ぶことは教材の再生を意味しない。
+
+diagramのStartはrunOnStartがtrueのFunctionBlock（現在はAIChatBlock）をデータ依存順にawaitし、その後にActionBlockを実行する。失敗時はTTSへ進まず、Startボタンを戻す。回答待ちのStopではAbortSignalが即時に待機を解除し、再実行で新しいSignalを作る。Clear・図読込は既存チェーンも停止する。実行中の任意のブロック削除もチェーンを止め、削除したTTSや切断した入力へ遅い回答を反映しない。ブラウザー側の中断は、Google側で進行中の生成まで取り消す保証ではない。
 
 `dispose()` は終了処理で、複数回呼んでも一度だけ処理する。初期化中ならAbortSignalを立て、await後に作成された資源も初期化処理が戻った後に破棄する。処理済みのアプリを初期化の逆順に破棄し、一つの後片付けが失敗しても残りを処理する。
 

@@ -193,11 +193,22 @@ export class Port {
         if(this.value != undefined){
 
             ctx.save();
-            ctx.font = '24px Arial';
+            ctx.font = typeof this.value === "string" ? '14px Arial' : '24px Arial';
             ctx.fillStyle = "black";
             const x = this.position.x - 7 + Port.radius;
             const y = this.position.y + 7;
-            ctx.fillText(`${this.value}`, x, y);
+            let label = `${this.value}`;
+            if (typeof this.value === "string") {
+                const text = this.value.replace(/\s+/g, " ");
+                const chars = Array.from(text).slice(0, 64);
+                let suffix = chars.length < Array.from(text).length ? "…" : "";
+                const width = Math.max(0, this.parent.drawBox()[2] - x - Port.radius);
+                while (chars.length && ctx.measureText(chars.join("") + suffix).width > width) {
+                    chars.pop(); suffix = "…";
+                }
+                label = chars.join("") + suffix;
+            }
+            ctx.fillText(label, x, y);
             ctx.restore();
         }
     }

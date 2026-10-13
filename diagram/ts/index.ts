@@ -10,9 +10,10 @@ import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble";
 import { IMUBlock } from "./imu";
 import { PlotBlock } from "./plot";
 import { ServoMotorBlock } from "./servo";
+import { AIChatBlock } from "./ai-chat";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
-import { isRunning, runBlockChain, runProcedures, stopDiagram as stopProcedures, stopFlag } from "./runtime";
+import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
 
 export function stopDiagram(): void {
     stopProcedures();
@@ -24,7 +25,7 @@ export function stopDiagram(): void {
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const BlockClassCount = 21;
+export const BlockClassCount = 22;
 
 export function makeBlock(idx : number) : Block {
     switch(idx){
@@ -49,6 +50,7 @@ export function makeBlock(idx : number) : Block {
     case 18: return new PlayMovieBlock({});
     case 19: return new PlayGameBlock({});
     case 20: return new PlayWebGPUBlock({});
+    case 21: return new AIChatBlock({});
     default: throw new MyError();
     }
 }
@@ -76,6 +78,7 @@ export function geBlockName(idx : number) : string {
     case 18: return "PlayMovieBlock";
     case 19: return "PlayGameBlock";
     case 20: return "PlayWebGPUBlock";
+    case 21: return "AIChatBlock";
     default: throw new MyError();
     }
 }
@@ -184,6 +187,7 @@ async function startProcedures() {
         await runProcedures(async () => {
             const input_blocks = theEditor.blocks.filter(x => x instanceof InputBlock);
             input_blocks.forEach(x => x.updatePort());
+            await runStartFunctions(theEditor.blocks);
             for (const top_block of getTopActions()) {
                 if (stopFlag) break;
                 msg(`top proc:${top_block.constructor.name}`);
