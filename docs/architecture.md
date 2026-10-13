@@ -99,6 +99,8 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 ### diagramの実機向け処理
 
+ブロック追加のための現行実装・登録手順・実行方式・保存形式・既知の制約は [diagram実装ガイド](diagram-implementation.md) を参照する。構造体の未実装の式評価・型推論は [設計案](diagram-struct-design.md) と区別する。
+
 [canvas.ts](../diagram/ts/canvas.ts)と [ui.ts](../diagram/ts/ui.ts)が編集・描画、[port.ts](../diagram/ts/port.ts)が接続・値の伝播、[json-util.ts](../diagram/ts/json-util.ts)がJSON保存を担当する。入力・計算ブロックと手続きブロックを接続し、Start／Stopで実行する。
 
 2026-10-13に [ai-chat.ts](../diagram/ts/ai-chat.ts) のAIChatBlockを追加した。FunctionBlockで、文字列入力・出力を1つずつ持つ。InputTextBlock → AIChatBlock → TTSBlockへデータポートを配線し、Startで質問を送る。FunctionBlockのrunOnStartは既定falseで、AIChatBlockのみtrue。[runtime.ts](../diagram/ts/runtime.ts)はStart時に入力欄の値を反映した後、対象FunctionBlockの前回出力を消し、データ依存順に1回ずつawaitする。全AI応答が成功してからActionBlockのチェーンを実行する。入力編集・コピー・JSON復元では送信しない。AIによるサーボ操作は実装しない。

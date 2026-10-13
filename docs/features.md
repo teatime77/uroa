@@ -42,6 +42,8 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 
 ## ブロック編集・実行・実機向け指令
 
+ブロックを追加する場合は [diagram実装ガイド](diagram-implementation.md) の継承・登録・配線・実行・保存・後片付けの説明を参照する。
+
 | ID | やりたいこと | 最初に見るソース・入口 | 関連資産・確認の観点 |
 |---|---|---|---|
 | DIAGRAM-01 | ブロック配置・選択・接続を変える | [canvas.ts](../diagram/ts/canvas.ts): Canvas、Editor、[port.ts](../diagram/ts/port.ts) | [ui.ts](../diagram/ts/ui.ts)、[画面](../public/diagram/index.html) |
