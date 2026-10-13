@@ -19,11 +19,31 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
-## 構造体ポートとBLE・IMU・Plotブロックの確認
+## 構造体ポートとBLE・サーボ・IMU・Plotブロックの確認
 
 `tests/ble-browser.test.mjs` はVite開発サーバーとテスト用Chromeを使う。実Web Bluetooth APIは模擬し、ツールボックスからの配置、canvasのクリック／タップ・ドラッグ取消、機器選択取消、非対応機器、INFO ACK・PING、接続途中のClear、共有状態、JSON保存・復元、画面終了、ACKタイムアウトを確認する。IMUについては単位変換・構造体入力への伝播・数値ポートへの接続拒否・console出力・10Hz STREAMの共有と停止・IMU未検出・不正パケット・切断時の値の解除・型の保存復元も確認する。実ESP32・無線・Android実端末の確認にはならない。既存diagramのCDN依存も読み込むため、ネットワークが必要。
 
 Plotの追加確認は、Portの有効型・両端への配線通知、測定前のField解析、実PlotlyのRGB描画、1秒ごとの3σ範囲更新、IMU以外のStruct、ブロック移動への追従、JSONによる配線復元、Clear・破棄・ライブラリ読込中のClearを含む。Plotly自体は模擬せず、BLEだけを模擬する。
+
+サーボの追加確認は、現在のToolItemツールボックスからの配置、数値ポート配線、明示ARM、角度の100倍変換、CH・時間のパケット、入力範囲検査、即時MOVE、停止時の未送信指令取消、IMU通知の継続、CH変更、ARM書込中の削除、PCA未検出、ACKタイムアウト、全OFF通知、再接続、JSON・コピー・旧JSONのduration省略を含む。計算伝播でMOVEを重複送信しないことと、アプリStopがPWMのみを止めることも確認する。ESP32とPWM出力は模擬であり、実サーボの動作確認ではない。
+
+2026-10-13のServoMotorBlock追加後は `npm.cmd run verify`、Nodeテスト15件、模擬BLE・サーボ・IMU・Plot画面テスト22件が成功した。最終のポート表示修正・calc維持後にverifyとサーボ6件を再実行して成功し、実際の描画も画像で確認した。既存 `tests/test_lifecycle.py` は5画面の初期化・重複起動・破棄、diagramの長時間待機取消と再実行、movie/game/WebGPUへの委譲とStop、初期化失敗時の片付けが成功した。
+
+ブラウザーテストはViteの5184番ポートとインストール済みChromeを使用した。最初は検証環境のネットワーク制限で既存CDNのdagreを取得できなかったため、CDNを読める実行環境でサーバーとテストを起動して確認した。Pythonテストには既存のPlaywright環境とPython 3.12を使った。実ESP32への送信、実サーボ、Android、HTTPSデプロイは今回未確認。
+
+同日の実機テスト報告後、保存した数値欄が出力ポートへ反映されず、サーボの入力がundefinedとなる読込経路を模擬ブラウザーで再現した。InputNumberBlockの数値復元とServoMotorBlockの配線時の値の取込みを修正し、ARM/MOVEのコンソール送信・ACKログも追加した。追加テストは保存値81°の復元と、実際の [ble-imu-pca9685.json](../public/diagram/data/ble-imu-pca9685.json) を使った接続・ボタンクリック・入力変更・IMU併用・表示・コンソールログを確認する。実機の不反応が解消したかは別途確認する。
+
+この修正後、5186番ポートのViteと模擬BLEでサーボテスト8件が成功した。受信結果の表示とコンソールのARM/MOVE送信・ACKログを確認し、`npm.cmd run verify`も成功した。入力値・移動時間・配線など、提供されたデータファイルの内容は変更していない。
+
+サーボを実機で確認するときの操作例は次のとおり。
+
+1. BLEConnectionBlock、InputNumberBlock、ServoMotorBlockを配置し、数値出力をサーボの入力ポートへ配線する。
+2. BLE接続ボタンでESP32へ接続し、ServoMotorBlockでCH（例: 0）と時間（例: 1000ms）を指定する。
+3. 「90°で有効化」を押す。この操作で90°のPWM指令が出る。
+4. 数値入力へ105を入れる、または入力済みなら「入力角度へ移動」を押す。60～120°の範囲で値の変更に追従する。
+5. 「このCHを停止」と「全サーボ停止」を確認する。停止後・再接続後は改めて有効化する。IMUを併用していれば、全サーボ停止で計測通知は継続する。
+
+以前の即時指令に合わせる場合は移動時間を0msにする。初期1000msでは、その時間をかけて目標へ補間する。コンソールの`Servo input`で入力角度・armed状態、`BLE servo send`で送信、`BLE servo ACK`でESP32の受付を確認できる。入力変更だけで毎回有効化をやり直す必要はない。
 
 実行例（別ターミナルでViteを起動）。`playwright-core`はテスト用の補助フォルダーなどに準備し、モジュールの入口とChromeの実際のパスを指定する。アプリの実行時依存ではない。
 

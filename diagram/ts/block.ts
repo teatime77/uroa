@@ -2,7 +2,7 @@
 
 import { assert, msg, MyError, sum, Vec2 } from "@i18n";
 import { Term, Rational, ConstNum, RefVar, App, parseMath, SyntaxError } from "@parser";
-import { cameraIcon, cameraImg, distanceSensorIcon, motorIcon, notchRadius, PortType, theCanvas } from "./diagram_util";
+import { cameraIcon, cameraImg, distanceSensorIcon, notchRadius, PortType, theCanvas } from "./diagram_util";
 import { nest_h1, sendData } from "./diagram_util";
 import { tab, UI, Attr } from "./ui";
 import { NumberPort, Port, TextPort } from "./port";
@@ -483,84 +483,6 @@ export class InputRangeBlock extends InputBlock {
 }
 
 
-export class ServoMotorBlock extends FunctionBlock {
-    inputPort = new NumberPort(this, PortType.inputPort);
-    input : HTMLInputElement;
-
-    constructor(data : Attr){
-        super(data);
-        
-        this.ports.push(this.inputPort);
-        this.input = document.createElement("input");
-        this.input.type = "number";
-        this.input.style.width = "45px";
-        this.input.value = "0";
-        this.input.min   = "0";
-        this.input.max   = "15";
-        this.input.style.position = "absolute";
-
-        document.body.appendChild(this.input);
-    }
-
-    makeObj() : any {
-        let obj = Object.assign(super.makeObj(), {
-            channel : parseInt(this.input.value)
-        });
-
-        return obj;
-    }
-
-    loadObj(obj : any ){        
-        super.loadObj(obj);
-        this.input.value = `${obj.channel}`;
-    }
-
-    setBoxSize() : void {
-        this.boxSize = new Vec2(200, 50);
-    }
-
-    setPosition(position : Vec2) : void {
-        super.setPosition(position);
-
-        const [x1, y1, x2, y2] = this.borderInnerBox();
-
-        const rect = this.input.getBoundingClientRect();
-        msg(`input h:${rect.height} ${this.input.type}`);
-
-        const input_x = x1 + 10;
-        const input_y = y1 + 0.5 * ((y2 - y1) - rect.height);
-
-        this.input.style.left = `${input_x}px`;
-        this.input.style.top  = `${input_y}px`;
-    }
-
-    draw(): void {
-        super.draw();
-        this.drawIcon(motorIcon);
-    }
-
-    async valueChanged(){
-        const channel = parseInt(this.input.value);
-        const value   = this.ports[0].value;
-        msg(`motor changed : ch:${channel} value:[${value}]`);
-        if(typeof value != "number"){
-            msg(`illegal motor value:${value}`);
-            return;
-        }
-
-        await sendData({
-            command : "servo",
-            channel : channel,
-            value   : value
-        });
-    }
-
-    calc(){
-        msg(`motor calc:${this.ports[0].value}`);
-    }
-}
-
-
 export class InputTextBlock extends InputBlock {
     textPort : TextPort;
 
@@ -618,6 +540,7 @@ export class InputNumberBlock extends InputBlock {
     loadObj(obj : any ){        
         super.loadObj(obj);
         this.input.value = obj.value;
+        this.updatePort();
     }
 
     updatePort() : void {        
@@ -957,7 +880,6 @@ export function registerFunctionBlock(typeName: string, factory: () => FunctionB
 export function makeFunctionBlockByTypeName(typeName : string) : FunctionBlock | undefined {
     switch(typeName){
     case InputRangeBlock.name:               return new InputRangeBlock({});
-    case ServoMotorBlock.name:               return new ServoMotorBlock({});
     case InputTextBlock.name:                return new InputTextBlock({});
     case InputNumberBlock.name:              return new InputNumberBlock({});
     case CameraBlock.name:                   return new CameraBlock({});

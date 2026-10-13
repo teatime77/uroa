@@ -31,7 +31,7 @@ export class IMUBlock extends FunctionBlock {
     setIMU(value: IMUValue): void {
         if (this.removed || this.inToolbox) return;
         this.outputPort.setPortValue(value);
-        console.log("IMU", this.outputPort.structValue());
+        // console.log("IMU", this.outputPort.structValue());
         theCanvas?.requestUpdateCanvas();
     }
 

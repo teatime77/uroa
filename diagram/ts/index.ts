@@ -1,5 +1,5 @@
 import { msg, assert, $, sleep, MyError } from "@i18n";
-import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, ServoMotorBlock, CameraBlock, FaceDetectionBlock, CalcBlock, UltrasonicDistanceSensorBlock, ConditionGate, InputBlock } from "./block";
+import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, CameraBlock, FaceDetectionBlock, CalcBlock, UltrasonicDistanceSensorBlock, ConditionGate, InputBlock } from "./block";
 import { Canvas, Editor, getTopActions } from "./canvas";
 import { fetchImage, initUI, repaintCount, sendData, startButton, theCanvas, urlOrigin } from "./diagram_util";
 import { saveJson, theEditor } from "./json-util";
@@ -9,10 +9,17 @@ import { Port } from "./port";
 import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble";
 import { IMUBlock } from "./imu";
 import { PlotBlock } from "./plot";
+import { ServoMotorBlock } from "./servo";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
-import { isRunning, runBlockChain, runProcedures, stopDiagram, stopFlag } from "./runtime";
-export { stopDiagram } from "./runtime";
+import { isRunning, runBlockChain, runProcedures, stopDiagram as stopProcedures, stopFlag } from "./runtime";
+
+export function stopDiagram(): void {
+    stopProcedures();
+    if (diagramBLE.state.phase === "connected") {
+        void diagramBLE.stopServos().catch(error => console.error("Servo stop failed", error));
+    }
+}
 
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;

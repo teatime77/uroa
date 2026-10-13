@@ -48,7 +48,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | DIAGRAM-02 | 入力・計算・比較ブロックを追加する | [block.ts](../diagram/ts/block.ts): 入力、CalcBlock、CompareBlock | ポートの値・型、生成関数、保存項目 |
 | DIAGRAM-03 | 条件・繰り返し・待機・読み上げを変える | [procedure.ts](../diagram/ts/procedure.ts): IfBlock、InfiniteLoop、SleepBlock、TTSBlock | [runtime.ts](../diagram/ts/runtime.ts): runBlockChain、runProcedures、stopDiagram、waitProcedure。index.tsはStart/StopのUI |
 | DIAGRAM-04 | ブロック図を保存・読込する | [json-util.ts](../diagram/ts/json-util.ts): saveJson、[index.ts](../diagram/ts/index.ts): loadJsonとdrop処理 | [diagram.json](../public/diagram/data/diagram.json)。ファイルdrop、Download、Clear、ポート参照の復元 |
-| DIAGRAM-05 | サーボ指令・旧センサー連携を変える | [block.ts](../diagram/ts/block.ts): ServoMotorBlockなど、[diagram_util.ts](../diagram/ts/diagram_util.ts): sendData | 現行はPOST /send_data。対応サーバーは未確認、旧センサー定期取得はdiy_sbc=false。ServoMotorBlockのBLE送信は未実装 |
+| DIAGRAM-05 | BLEサーボ指令・旧センサー連携を変える | [servo.ts](../diagram/ts/servo.ts): ServoMotorBlock、[ble.ts](../diagram/ts/ble.ts): BLEConnection、[diagram_util.ts](../diagram/ts/diagram_util.ts): 旧sendData | サーボは明示ARM後、角度60～120°と時間をMOVE。DISABLE/STOP、停止時の待機指令取消。旧センサーはPOST /send_data、定期取得はdiy_sbc=false |
 | DIAGRAM-06 | BLE機器を選択して接続・切断する | [ble.ts](../diagram/ts/ble.ts): BLEConnectionBlock、BLEConnection、diagramBLE | ツールボックスから配置。canvasのButton、接続状態・端末名・エラー表示、INFOのACK・PING。実機検証とは区別する |
 | DIAGRAM-07 | IMUを受信して構造体を出力する | [imu.ts](../diagram/ts/imu.ts): IMUBlock、[ble.ts](../diagram/ts/ble.ts): parseIMUSample、subscribeSamples | 1ポートにgyro・accのvec3。配置／接続で10Hz STREAM、console表示、最後のIMU削除で計測停止。グラフ・姿勢推定は未実装 |
 | DIAGRAM-08 | ポートに構造体の型と値を指定する | [data_type.ts](../diagram/ts/data_type.ts): Struct、Field、DataType、[port.ts](../diagram/ts/port.ts): StructPort、getDataType、subscribeConnections | 入れ子検証、複製・freeze、型一致、型参照の保存・復元。型未指定の入力は単一接続元を参照。配線変更後に両端へ通知。CalcBlockの構造体評価は未実装 |
@@ -116,7 +116,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | ID | 移行・変更したい機能 | 現在のソース | 実装の境界 |
 |---|---|---|---|
 | ROBOT-01 | AI質問画面とAPI | [chat/src/main.ts](../../robot/chat/src/main.ts)、[server/app.ts](../../robot/chat/server/app.ts)、[server/index.ts](../../robot/chat/server/index.ts) | 1問ごとの文章応答。モーターへの直接指令は未実装 |
-| ROBOT-02 | BLE接続・サーボ操作 | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ARM/MOVE/STOP/DISABLE、ACK、直列化、切断。uroaにはDIAGRAM-06の接続ブロックを追加。既存ServoMotorBlockとの接続は未実装 |
+| ROBOT-02 | BLE接続・サーボ操作 | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ARM/MOVE/STOP/DISABLE、ACK、直列化、切断。uroaの接続はDIAGRAM-06、ServoMotorBlockのBLE操作はDIAGRAM-05 |
 | ROBOT-03 | IMU表示・グラフ・CSV | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | 加速度・角速度。姿勢角やサーボ実測角度ではない |
 | ROBOT-04 | ESP32のBLEサーボ・IMU処理 | [main.cpp](../../robot/esp32-ble-lab/firmware/src/main.cpp)、[config.h](../../robot/esp32-ble-lab/firmware/include/config.h) | PWM、I2C、指令キュー、ハートビート、停止。通信変更はWeb側と同期する |
 | ROBOT-05 | DCモーター・エンコーダーの診断 | [main.cpp](../../robot/esp32_recovery/src/main.cpp) | 別ファームウェア。シリアル指令、IMU、手動停止と2秒経過停止 |

@@ -31,7 +31,7 @@ interface BLEAdapter {
     requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<BLEDevice>;
 }
 export type BLEPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
-export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; imuAvailable: boolean; streaming: boolean; }
+export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; }
 export interface IMUSample { readonly sequence: number; readonly uptime: number; readonly value: IMUValue; }
 
 /** Decode robot's 20-byte telemetry: gyro °/s, acceleration m/s². */
@@ -45,11 +45,13 @@ export function parseIMUSample(data: DataView): IMUSample {
     });
 }
 
-const errors = ["成功", "指令形式が不正", "範囲外の指令", "応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー"];
+const errors = ["成功", "指令形式が不正", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー"];
+type BLEOpcode = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+const servoOperations: Partial<Record<BLEOpcode, string>> = { 1: "ARM", 2: "MOVE", 3: "STOP", 7: "DISABLE" };
 
 /** One connection per diagram document. Blocks subscribe; GATT objects are never saved. */
 export class BLEConnection {
-    state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", imuAvailable: false, streaming: false };
+    state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
     private listeners = new Set<(state: BLEConnectionState) => void>();
     private sampleListeners = new Set<(sample: IMUSample) => void>();
     private requestedRate = 0;
@@ -63,6 +65,73 @@ export class BLEConnection {
     private connectTimer?: ReturnType<typeof setTimeout>;
     private tail: Promise<unknown> = Promise.resolve();
     private pending = new Map<number, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+    private armedChannels = new Set<number>();
+    private servoVersions = Array<number>(16).fill(0);
+
+    isServoArmed(channel: number): boolean { return this.armedChannels.has(channel); }
+
+    private notify(): void { this.listeners.forEach(listener => listener(this.state)); }
+
+    private resetServos(): void {
+        this.armedChannels.clear();
+        this.servoVersions = this.servoVersions.map(version => version + 1);
+    }
+
+    private checkChannel(channel: number): void {
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) throw new Error("チャンネルは0～15の整数で指定してください。");
+    }
+
+    private checkServoConnection(): void {
+        if (this.state.phase !== "connected") throw new Error("BLE接続ブロックでESP32へ接続してください。");
+        if (!this.state.pcaAvailable) throw new Error("PCA9685が見つかりません。");
+    }
+
+    async armServo(channel: number, isCurrent = () => true): Promise<void> {
+        this.checkChannel(channel);
+        this.checkServoConnection();
+        const version = this.servoVersions[channel];
+        await this.sendControl(1, 9000, channel, 0,
+            () => version === this.servoVersions[channel] && isCurrent(),
+            () => { this.armedChannels.add(channel); this.notify(); });
+    }
+
+    async moveServo(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
+        this.checkChannel(channel);
+        this.checkServoConnection();
+        if (!Number.isFinite(angle) || angle < 60 || angle > 120) throw new Error("角度は60～120°で指定してください。");
+        if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
+        if (!this.isServoArmed(channel)) throw new Error("先に90°で有効化してください。");
+        const version = this.servoVersions[channel];
+        await this.sendControl(2, Math.round(angle * 100), channel, duration,
+            () => version === this.servoVersions[channel] && this.isServoArmed(channel) && isCurrent());
+    }
+
+    async disableServo(channel: number): Promise<void> {
+        this.checkChannel(channel);
+        // Cancel queued ARM/MOVE before placing DISABLE behind any in-flight write.
+        this.servoVersions[channel]++;
+        this.armedChannels.delete(channel);
+        this.notify();
+        if (this.state.phase !== "connected") return;
+        const generation = this.generation;
+        try { await this.sendControl(7, 0, channel); }
+        catch (error) {
+            if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
+            throw error;
+        }
+    }
+
+    async stopServos(): Promise<void> {
+        this.resetServos();
+        this.notify();
+        if (this.state.phase !== "connected") return;
+        const generation = this.generation;
+        try { await this.sendControl(3); }
+        catch (error) {
+            if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
+            throw error;
+        }
+    }
 
     availabilityMessage(): string {
         if (!window.isSecureContext) return "HTTPS、またはこのPCのlocalhostで開いてください。";
@@ -101,16 +170,21 @@ export class BLEConnection {
 
     private publish(phase: BLEPhase, deviceName = "", message = ""): void {
         const active = phase === "connected" || phase === "connecting";
-        this.state = { phase, deviceName, message, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming };
-        this.listeners.forEach(listener => listener(this.state));
+        this.state = { phase, deviceName, message, pcaAvailable: active && this.state.pcaAvailable, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming };
+        this.notify();
     }
 
     private hardwareStatus(data: DataView): void {
         const flags = data.getUint8(4);
-        const imuAvailable = !!(flags & 2), streaming = !!(flags & 8);
-        if (this.state.imuAvailable !== imuAvailable || this.state.streaming !== streaming) {
-            this.state = { ...this.state, imuAvailable, streaming };
-            this.listeners.forEach(listener => listener(this.state));
+        const pcaAvailable = !!(flags & 1), imuAvailable = !!(flags & 2), streaming = !!(flags & 8);
+        const stopped = !pcaAvailable || (!(flags & 4) && (this.armedChannels.size > 0 || data.getUint16(2, true) === 0));
+        if (stopped) this.resetServos();
+        const channel = data.getUint8(5);
+        const channelStopped = data.getUint8(1) === 3 && channel < 16 && this.armedChannels.delete(channel);
+        if (channelStopped) this.servoVersions[channel]++;
+        if (stopped || channelStopped || this.state.pcaAvailable !== pcaAvailable || this.state.imuAvailable !== imuAvailable || this.state.streaming !== streaming) {
+            this.state = { ...this.state, pcaAvailable, imuAvailable, streaming };
+            this.notify();
             this.updateStream();
         }
     }
@@ -153,6 +227,7 @@ export class BLEConnection {
 
     private close(phase: BLEPhase, message = ""): void {
         this.generation++;
+        this.resetServos();
         clearInterval(this.heartbeat);
         clearTimeout(this.connectTimer);
         this.heartbeat = this.connectTimer = undefined;
@@ -241,16 +316,21 @@ export class BLEConnection {
         }
     }
 
-    private sendControl(opcode: 4 | 5 | 6, value = 0): Promise<void> {
+    private sendControl(opcode: BLEOpcode, value = 0, channel = 255, duration = 0,
+        isCurrent = () => true, accepted = () => {}): Promise<void> {
         const generation = this.generation;
         const task = this.tail.catch(() => {}).then(async () => {
             if (generation !== this.generation || !this.tx || !this.device?.gatt?.connected) throw new Error("BLE接続が切れました。");
+            if (!isCurrent()) throw new Error("サーボ操作を取り消しました。");
             const sequence = this.sequence = this.sequence % 65535 + 1;
             const bytes = new Uint8Array(10);
             const packet = new DataView(bytes.buffer);
-            bytes[0] = 1; bytes[1] = opcode; bytes[4] = 255;
+            bytes[0] = 1; bytes[1] = opcode; bytes[4] = channel;
             packet.setUint16(2, sequence, true);
             packet.setUint16(6, value, true);
+            packet.setUint16(8, duration, true);
+            const operation = servoOperations[opcode];
+            const details = { operation, sequence, channel, value, duration };
             const ack = new Promise<void>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     this.pending.delete(sequence);
@@ -260,13 +340,21 @@ export class BLEConnection {
                 this.pending.set(sequence, { resolve, reject, timer });
             });
             void ack.catch(() => {});
+            if (operation) console.log("BLE servo send", details);
             const write = this.tx.writeValueWithResponse(bytes).catch(error => {
                 const pending = this.pending.get(sequence);
                 if (pending) { clearTimeout(pending.timer); this.pending.delete(sequence); pending.reject(error as Error); }
                 throw error;
             });
             // A missing ACK must unblock the queue even if the native write hangs.
-            await Promise.all([write, ack]);
+            try { await Promise.all([write, ack]); }
+            catch (error) {
+                if (operation) console.error("BLE servo error", details, error);
+                throw error;
+            }
+            if (operation) console.log("BLE servo ACK", details);
+            if (generation !== this.generation || !isCurrent()) throw new Error("サーボ操作を取り消しました。");
+            accepted();
         });
         this.tail = task;
         return task;

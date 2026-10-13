@@ -9,7 +9,8 @@
 | [app/ts/main.ts](../app/ts/main.ts) | DOM準備後のURL判定、5アプリの初期化、diagramの子アプリ接続、pagehide・HMR時の終了 |
 | [app/ts/lifecycle.ts](../app/ts/lifecycle.ts) | 初期化Promiseの共有、状態・エラー、逆順での停止・破棄 |
 | [diagram/ts/index.ts](../diagram/ts/index.ts) | diagramのUI、読込、実機用HTTP処理、BLEのイベント登録と破棄。全アプリを起動する処理は置かない |
-| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | BLE接続ブロックと共有接続・IMU通知管理。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
+| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | BLE接続ブロックと共有接続・サーボ指令・IMU通知管理。停止時に待機中のサーボ指令を取消。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
+| [diagram/ts/servo.ts](../diagram/ts/servo.ts) | 角度入力からBLEサーボ操作。明示ARM、MOVE、DISABLE/STOP。CH変更・削除で以前のCH停止、削除で購読・DOMを解除 |
 | [diagram/ts/imu.ts](../diagram/ts/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
 | [diagram/ts/plot.ts](../diagram/ts/plot.ts) | 型と配線を参照する汎用グラフ。削除時にPlotly・DOM・統計タイマー・ResizeObserver・購読・描画予約を解除 |
 | [diagram/ts/runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、チェーン実行、キャンセル可能な待機、子アプリ停止の接続口 |
@@ -34,7 +35,7 @@
 ## 停止・資源の管理
 
 - diagramはSleepとループ内の待機を即時解除する。実行が成功・中断・例外のいずれで終わってもStart表示と実行中状態を戻す。
-- BLE接続ボタンとIMU受信はStartと独立している。通常の手続きStopは接続・IMU受信を保持する。diagram破棄では共有BLE接続を切断し、配置済みブロックの購読とDOM部品をclearBlockで解除する。BLEのvisibilitychange・pagehideはdiagramのAbortSignalで登録し、非表示時に切断する。接続だけではサーボを有効化しない。配置済みIMUBlockがある場合だけIMU正常フラグを確認して10HzのSTREAMを要求し、最後のIMUBlock削除時はSTREAM=0を送る。切断・計測停止では出力ポートをundefinedへ戻す。
+- BLE接続ボタン、サーボ入力、IMU受信はStartと独立している。通常の手続きStop・アプリ停止はBLEのSTOPで全PWMと待機中のサーボ指令を停止し、接続・IMU受信を保持する。diagram破棄では共有BLE接続を切断し、配置済みブロックの購読とDOM部品をclearBlockで解除する。BLEのvisibilitychange・pagehideはdiagramのAbortSignalで登録し、非表示時に切断する。接続だけではサーボを有効化しない。配置済みIMUBlockがある場合だけIMU正常フラグを確認して10HzのSTREAMを要求し、最後のIMUBlock削除時はSTREAM=0を送る。切断・計測停止では出力ポートをundefinedへ戻す。
 - 子アプリから戻る処理はtry/finallyでdiagramレイヤーを復元する。画面から離れる子アプリを停止し、diagram自体の実行は継続する。diagramのStopは子アプリにも届く。
 - PlotBlockの受信と表示もStart/Stopから独立する。入力のundefined・配線変更で履歴を消し、受信停止で統計タイマーを解除する。通常のStopでは接続・IMU受信を保持する。Clear・図の読込・diagram破棄でPlotBlock.clearBlockを呼ぶ。遅れて完了したライブラリ読込は削除済みのブロックを再描画しない。Plotlyの非同期描画中に削除された場合は完了時にもpurgeする。
 - gameはSequencerのgeneratorと音声を停止し、読込待ちの古い実行から再開しない。Canvasの入力イベントと描画要求は破棄時に解除する。

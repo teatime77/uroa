@@ -101,15 +101,22 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 [canvas.ts](../diagram/ts/canvas.ts)と [ui.ts](../diagram/ts/ui.ts)が編集・描画、[port.ts](../diagram/ts/port.ts)が接続・値の伝播、[json-util.ts](../diagram/ts/json-util.ts)がJSON保存を担当する。入力・計算ブロックと手続きブロックを接続し、Start／Stopで実行する。
 
-サーボ、カメラ、顔検出結果、超音波距離センサー向けのブロックがある。ただし、ブラウザー内で顔検出やセンサー取得を完結する構成ではない。[diagram_util.ts](../diagram/ts/diagram_util.ts)の `sendData()` は同一オリジンの `POST /send_data` にJSONを送る。
+サーボは以下のBLE経路を使う。旧カメラ、顔検出結果、超音波距離センサー向けの処理は、ブラウザー内で取得を完結する構成ではない。[diagram_util.ts](../diagram/ts/diagram_util.ts)の `sendData()` は同一オリジンの `POST /send_data` にJSONを送る。
 
-- サーボ: `{command: "servo", channel, value}`。
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
-- 現在は `diy_sbc = false` によりキュー初期化・センサーの定期取得が無効。サーボ送信コードは別に残っている。
+- 現在は `diy_sbc = false` によりキュー初期化・旧センサーの定期取得が無効。
 
 2026-10-12に [ble.ts](../diagram/ts/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、robot/esp32-ble-labと同じサービス・3つのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
 
-同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlockまたはIMUBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+
+2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）。CH0～15と移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
+
+「このCHを停止」はDISABLE、「全サーボ停止」とdiagramの手続きStop・アプリ停止はSTOPを送る。STOPはIMU通知とBLE接続を保持する。チャンネル変更・ブロック削除では以前のCHをDISABLEする。停止・切断・CH変更・削除後に待機中のARM/MOVEを送らないよう、接続世代、CHごとの操作世代、ブロックの操作世代を確認する。連続する角度変更は未送信の古いMOVEを取り消す。停止ACKを確認できなければ切断する。全OFFのStatusやPCA異常で有効状態を解除し、サーボの自動再有効化は行わない。
+
+有効状態は共有BLE接続のCH単位で保持するため、同じCHを指定した複数ブロックは同じ出力を操作する。CH・移動時間はJSONに保存し、接続・有効状態は保存しない。旧JSONのchannelと数値入力ポートは維持し、duration省略時は1000msとする。角度は内部指令値であり、MOVEのACKは受付結果で、動作完了や実角度の確認ではない。詳しいファームウェア処理は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
+
+InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。ServoMotorBlockは配線接続時にその値を入力ポートへ取り込み、解除時は未入力に戻す。値の復元・配線だけではMOVEを送らず、有効化後の入力変更または移動ボタンで送信する。サーボの入力変更は`Servo input`、実際の送信は`BLE servo send`、ACK受信は`BLE servo ACK`としてコンソールにも表示する。送信・受信ログにはARM/MOVE/STOP/DISABLE、指令番号、CH、value、durationを含む。MOVEのvalueは角度の100倍であり、ACKは受付確認を示す。
 
 続いて同日に [data_type.ts](../diagram/ts/data_type.ts) へ既存のVariable・Field・Struct・DataTypeを移し、vec3とIMU（gyro: vec3、acc: vec3）を登録した。PortTypeの接続方向とは別にPort.dataTypeを追加した。StructPortは入出力双方で構造体を検証・複製・深いfreezeを行い、1つの値として伝播する。NumberPort・TextPortは値の型を指定し、既知の型同士の不一致を接続時に拒否する。型未指定の既存Portは互換のため維持する。型参照は既存のポートJSONへ任意のdataTypeとして保存・復元し、ライブの計測値は保存しない。CalcBlock・CompareBlockは現段階では数値型で、構造体のフィールド計算は未実装。
 
@@ -125,7 +132,7 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 グラフはcanvasの枠内へ位置を合わせたdivにPlotly.jsで描き、移動・画面リサイズへ追従する。見出し・ポート・枠は従来のcanvasで扱う。Plotly.reactは要求をまとめて直列実行し、削除時はタイマー・ResizeObserver・購読・描画予約を解除してpurgeとDOM削除を行う。ライブラリはdiagramのnpm依存plotly.js-gl3d-dist-min 4.1.2を初回配置時に遅延読込する。scatterと将来の3Dに必要な種類を含む配布版だが、今回のPlotBlockは2D時系列表示のみ。Viteの開発・公開ビルド双方でローカル資産として配信する。[公式配布構成](https://github.com/plotly/plotly.js/blob/main/dist/README.md)、[Plotly API](https://plotly.com/javascript/plotlyjs-function-reference/)
 
-[ui.ts](../diagram/ts/ui.ts)のButtonをcanvasの再利用部品として拡張し、通常・押下・無効状態を描画する。[canvas.ts](../diagram/ts/canvas.ts)は前面のブロック内のポート・子ボタン・本体を判定する。ボタンを押した場合はブロックを動かさず、8 CSS pxを超える移動・pointercancelでは押下を取り消す。ブロック生成はblock.tsのregisterFunctionBlockへ登録し、新しいブロックモジュールをblock.tsから逆importしない。既存ServoMotorBlockのHTTP送信と旧センサー定期取得は今回BLEへ接続していない。
+[ui.ts](../diagram/ts/ui.ts)のButtonをcanvasの再利用部品として拡張し、通常・押下・無効状態を描画する。[canvas.ts](../diagram/ts/canvas.ts)は前面のブロック内のポート・子ボタン・本体を判定する。ボタンを押した場合はブロックを動かさず、8 CSS pxを超える移動・pointercancelでは押下を取り消す。ブロック生成はblock.tsのregisterFunctionBlockへ登録し、新しいブロックモジュールをblock.tsから逆importしない。旧HTTPセンサーの定期取得はBLEへ接続していない。
 
 ### game・movieのデータと実行
 
@@ -254,12 +261,12 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 
 | 機能 | 現在の方式 |
 |---|---|
-| uroa/diagramの実機ブロック | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock・IMUBlock・PlotBlock | Web BluetoothでrobotのESP32へ接続・切断し、IMUを構造体ポートとconsoleへ出力。汎用PlotBlockへ配線してgyro・accを表示。サーボのBLE操作は未実装 |
+| uroa/diagramの旧カメラ・センサー処理 | HTTP `POST /send_data` |
+| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでrobotのESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートとconsoleへ出力し、汎用PlotBlockへ配線してgyro・accを表示 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 
-BLE接続ブロックはrobotのESP32と同じGATT仕様を使う。既存サーボブロックやAIとの連携は未実装で、接続の実装・模擬確認・実機確認はそれぞれ区別する。
+BLE接続・サーボ・IMUはrobotのESP32と同じGATT仕様を使う。AIとの連携は未実装で、実装・模擬確認・実機確認はそれぞれ区別する。
 
 2026-10-12にユーザーがデモ仕様を提示した。diagram内でInputTextBlock・チャットブロック・TTSBlockを使うAIチャットと、ServoMotorBlock・IMUBlock・グラフブロックを使う実機操作／計測の2種類を独立して作る。AIによる定型動作の選択・サーボ操作は要件ではない。ESP32、PCA9685、SG90、MPU-6050／GY-521を使い、IMU取得はユーザー確認済み。本番は携帯電話のアクセスポイント経由でインターネットへ接続した本人のAndroidタブレット、予備はWindowsのローカルVite。HTTPS・公開AIバックエンドの配置とサーボ動作はエージェント未確認。
 
