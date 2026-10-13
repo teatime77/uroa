@@ -1,4 +1,4 @@
-import { msg, assert, $, sleep } from "@i18n";
+import { msg, assert, $, sleep, MyError } from "@i18n";
 import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, ServoMotorBlock, CameraBlock, FaceDetectionBlock, CalcBlock, UltrasonicDistanceSensorBlock, ConditionGate, InputBlock } from "./block";
 import { Canvas, Editor, getTopActions } from "./canvas";
 import { fetchImage, initUI, repaintCount, sendData, startButton, theCanvas, urlOrigin } from "./diagram_util";
@@ -17,6 +17,61 @@ export { stopDiagram } from "./runtime";
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
+export const BlockClassCount = 21;
+
+export function makeBlock(idx : number) : Block {
+    switch(idx){
+    case  0: return new BLEConnectionBlock({});
+    case  1: return new IMUBlock({});
+    case  2: return new PlotBlock({});
+    case  3: return new IfBlock({});
+    case  4: return new InfiniteLoop({});
+    case  5: return new TTSBlock({});
+    case  6: return new SleepBlock({});
+    case  7: return new TriggerGate({});
+    case  8: return new InputTextBlock({});
+    case  9: return new InputNumberBlock({});
+    case 10: return new CompareBlock({});
+    case 11: return new InputRangeBlock({});
+    case 12: return new ServoMotorBlock({});
+    case 13: return new CameraBlock({});
+    case 14: return new FaceDetectionBlock({});
+    case 15: return new CalcBlock({});
+    case 16: return new UltrasonicDistanceSensorBlock({});
+    case 17: return new ConditionGate({});
+    case 18: return new PlayMovieBlock({});
+    case 19: return new PlayGameBlock({});
+    case 20: return new PlayWebGPUBlock({});
+    default: throw new MyError();
+    }
+}
+
+export function geBlockName(idx : number) : string {
+    switch(idx){
+    case  0: return "BLEConnectionBlock";
+    case  1: return "IMUBlock";
+    case  2: return "PlotBlock";
+    case  3: return "IfBlock";
+    case  4: return "InfiniteLoop";
+    case  5: return "TTSBlock";
+    case  6: return "SleepBlock";
+    case  7: return "TriggerGate";
+    case  8: return "InputTextBlock";
+    case  9: return "InputNumberBlock";
+    case 10: return "CompareBlock";
+    case 11: return "InputRangeBlock";
+    case 12: return "ServoMotorBlock";
+    case 13: return "CameraBlock";
+    case 14: return "FaceDetectionBlock";
+    case 15: return "CalcBlock";
+    case 16: return "UltrasonicDistanceSensorBlock";
+    case 17: return "ConditionGate";
+    case 18: return "PlayMovieBlock";
+    case 19: return "PlayGameBlock";
+    case 20: return "PlayWebGPUBlock";
+    default: throw new MyError();
+    }
+}
 
 export class Main {
     static one : Main;
@@ -25,51 +80,7 @@ export class Main {
     constructor(){
         Main.one = this;
 
-        const tools : Block[] = [
-            new BLEConnectionBlock({ inToolbox : true })
-            ,
-            new IMUBlock({ inToolbox : true })
-            ,
-            new PlotBlock({ inToolbox : true })
-            ,
-            new IfBlock({ inToolbox : true })
-            ,
-            new InfiniteLoop({ inToolbox : true })
-            ,
-            new TTSBlock({ inToolbox : true })
-            ,
-            new SleepBlock({ inToolbox : true })
-            ,
-            new TriggerGate({ inToolbox : true })
-            ,
-            new InputTextBlock({ inToolbox : true })
-            ,
-            new InputNumberBlock({ inToolbox : true })
-            ,
-            new CompareBlock({ inToolbox : true })
-            ,
-            new InputRangeBlock({ inToolbox : true })
-            ,
-            new ServoMotorBlock({ inToolbox : true })
-            ,
-            new CameraBlock({ inToolbox : true })
-            ,
-            new FaceDetectionBlock({ inToolbox : true })
-            ,
-            new CalcBlock({ inToolbox : true })
-            ,
-            new UltrasonicDistanceSensorBlock({ inToolbox : true })
-            ,
-            new ConditionGate({ inToolbox : true })
-            ,
-            new PlayMovieBlock({ inToolbox : true })
-            ,
-            new PlayGameBlock({ inToolbox : true })
-            ,
-            new PlayWebGPUBlock({ inToolbox : true })
-        ];
-
-        new Editor(tools);
+        new Editor();
 
         const canvas_html = document.getElementById('world-diagram') as HTMLCanvasElement;
         this.canvas = new Canvas(canvas_html);

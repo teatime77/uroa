@@ -1,11 +1,12 @@
-import { assert, msg, MyError, Vec2 } from "@i18n";
+import { assert, msg, MyError, range, Vec2 } from "@i18n";
 import { AbstractCanvas } from "@plane";
-import { Button } from "./ui";
+import { Button, textColor, UI } from "./ui";
 import { Block, InputRangeBlock } from "./block";
 import { ActionBlock, NestBlock } from "./procedure";
 import { Port } from "./port";
 import { incRepaintCount, PortType, setCanvas, theCanvas } from "./diagram_util";
 import { setEditor, theEditor } from "./json-util";
+import { BlockClassCount, geBlockName, makeBlock } from "./index"
 
 let animationFrameId : number | null = null;
 
@@ -38,7 +39,7 @@ function dumpActions(){
 }
 
 export class Canvas extends AbstractCanvas {
-    draggedUI? : Block | Port | Button;
+    draggedUI? : ToolItem | Block | Port | Button;
     prevPortOfDraggedUI : Port | undefined;
     private pressedButton?: Button;
     private buttonCancelled = false;
@@ -118,6 +119,11 @@ export class Canvas extends AbstractCanvas {
             else if(target instanceof Port){
 
                 msg(`down port:${target.str()}`);
+                this.draggedUI = target;
+            }
+            else if(target instanceof ToolItem){
+
+                msg(`down tool item:${target.str()}`);
                 this.draggedUI = target;
             }
             else{
@@ -244,6 +250,18 @@ export class Canvas extends AbstractCanvas {
                     }
                 }
             }
+            else if(this.draggedUI instanceof ToolItem){
+                const block = makeBlock(this.draggedUI.toolIdx);
+                block.setBoxSize();
+                if(block instanceof ActionBlock){
+                    block.adjustActionPosition(pos);
+                }
+                else{
+                    block.setBlockPortPosition(pos );
+                }
+
+                theEditor.addBlock(block);
+            }
         }
         else{
             msg(`click:${this.draggedUI.constructor.name}`);
@@ -308,6 +326,9 @@ export class Canvas extends AbstractCanvas {
         if(this.draggedUI instanceof Port){
             this.draggedUI.drawDraggedPort(this.movePos);
         }
+        else if(this.draggedUI instanceof ToolItem){
+            this.draggedUI.drawDraggedTool(this.movePos);
+        }
 
         incRepaintCount();
     }
@@ -324,30 +345,59 @@ export class Canvas extends AbstractCanvas {
     }
 }
 
+class ToolItem extends UI {
+    toolIdx : number;
+
+    constructor(idx : number){
+        super({});
+        this.toolIdx = idx;
+        this.boxSize = new Vec2(32, 32);
+    }
+
+    draw(){
+        super.draw();
+        const [xa, ya, xb, yb] = this.marginBox();
+
+        this.ctx.save();
+        this.ctx.textBaseline = "top";
+        this.ctx.font = "20px serif";
+        this.ctx.strokeStyle = textColor;
+        this.ctx.strokeText(geBlockName(this.toolIdx), xa, ya);
+        this.ctx.restore();
+    }
+
+    drawDraggedTool(move_pos : Vec2){       
+        let [xa, ya, xb, yb] = this.marginBox();
+
+        const w = xb - xa;
+        const h = yb - ya;
+
+        xa = move_pos.x;
+        ya = move_pos.y;
+        this.drawRidgeRect(this.ctx, xa, ya, w, h, this.borderWidth);
+    }
+}
 
 export class Editor {
-    tools  : Block[];
+    tools  : ToolItem[];
     blocks : Block[] = [];
 
-    constructor(tools : Block[]){
+    constructor(){
         setEditor(this);
 
-        this.tools = tools.slice();
+        this.tools = range(BlockClassCount).map(x => new ToolItem(x));
 
         let x = 10;
         let y = 60;
-        for(const block of this.tools){
-            block.setBoxSize();
-            block.setBlockPortPosition(new Vec2(x, y));
+        for(const tool of this.tools){
+            tool.setPosition(new Vec2(x, y));
 
-            y += block.boxSize!.y + 10;
+            y += tool.boxSize!.y + 2;
         }
-
-        this.tools.forEach(x => x.setPortPositions());
     }
 
-    allBlocks() : Block[] {
-        return this.tools.concat(this.blocks);
+    allToolBlocks() : UI[] {
+        return (this.tools as UI[]).concat(this.blocks);
     }
 
     clearBlock() : void {        
@@ -361,7 +411,7 @@ export class Editor {
     }
 
     setContext2D(ctx : CanvasRenderingContext2D){
-        this.allBlocks().forEach(x => x.setContext2D(ctx));
+        this.allToolBlocks().forEach(x => x.setContext2D(ctx));
     }
 
     setNestBoxSize() : void {
@@ -385,19 +435,30 @@ export class Editor {
         this.blocks.forEach(x => x.draw());
     }
 
-    getPortBlockFromPosition(pos : Vec2) : Port | Button | Block | undefined {
-        const blocks = this.allBlocks().filter(x => x.inMarginBox(pos)).reverse();
+    getPortBlockFromPosition(pos : Vec2) : ToolItem | Port | Button | Block | undefined {
+        const blocks = this.allToolBlocks().filter(x => x.inMarginBox(pos)).reverse();
         for(const block of blocks){
-            const port = block.ports.find(x => x.isNear(pos));
-            if(port != undefined){
-                return port;
+            if(block instanceof ToolItem){
+                if(block.inDrawBox(pos)){
+                    return block;
+                }
             }
-            if (!block.inToolbox) {
-                const button = block.children().find(child => child instanceof Button && child.inMarginBox(pos));
-                if (button instanceof Button) return button;
+            else if(block instanceof Block){
+
+                const port = block.ports.find(x => x.isNear(pos));
+                if(port != undefined){
+                    return port;
+                }
+                if (!block.inToolbox) {
+                    const button = block.children().find(child => child instanceof Button && child.inMarginBox(pos));
+                    if (button instanceof Button) return button;
+                }
+                if(block.inDrawBoxes(pos)){
+                    return block;
+                }
             }
-            if(block.inDrawBoxes(pos)){
-                return block;
+            else{
+                throw new MyError();
             }
         }
 

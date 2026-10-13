@@ -175,6 +175,11 @@ export abstract class UI {
         return this.borderInnerBox();
     }
 
+    inDrawBox(pos : Vec2) : boolean {
+        const [ xa, ya, xb, yb ] = this.drawBox();
+        return xa <= pos.x && pos.x < xb && ya <= pos.y && pos.y < yb;
+    }
+
     inMarginBox(pos : Vec2) : boolean {
         const [ xa, ya, xb, yb ] = this.marginBox();
         return xa <= pos.x && pos.x < xb && ya <= pos.y && pos.y < yb;
