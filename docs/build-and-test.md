@@ -19,6 +19,12 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## diagramの公開JSONを開く（2026-10-14）
+
+JSONファイルは`public/diagram/data`へ置く。`npm.cmd run build`で各JSONと一覧の`dist/diagram/data-list.json`が公開成果物へ入る。開発サーバーでも同じ`/diagram/data-list.json`を動的に取得できる。Openを押し、表示されたファイル名をクリックすると現在の図を置き換える。表示内容はファイル名で、成功すると一覧を閉じる。通信・JSON形式・ブロック復元の失敗時は一覧内へエラーを表示し、閉じる・Escapeで取得を中断する。未対応の旧JSONは既存復元処理の制約を引き継ぐため、正常に開けることを保証しない。
+
+今回の作業範囲はソース変更とビルド成功までとした。`NODE_OPTIONS=--max-old-space-size=1024`を指定した`npm.cmd run build`が成功し、一覧ファイルに現在の9件のJSON名が生成されたことと差分を確認した。既存gameモジュールの動的／静的import併用の警告は残る。ブラウザーの操作テストは実施せず、ユーザーによる差分確認後に行う。
+
 ## AIチャットとTTSのデモ（2026-10-13）
 
 現行の教材向けAIChatBlockは、学習者のキーを入力してGoogleへ直接通信する。robot/chatのAPIサーバー起動は不要。uroa側はViteを起動する。

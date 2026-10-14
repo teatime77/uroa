@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
 import path from 'path';
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
 
 // Public HTML is copied without Vite transforms. Reuse the shared entry's
@@ -46,6 +46,38 @@ function buildAppPagesPlugin(): Plugin {
                     source: source.replace(sourceTag, tags),
                 });
             }
+        },
+    };
+}
+
+function diagramDataListPlugin(): Plugin {
+    const listPath = '/diagram/data-list.json';
+    const listFiles = async () => {
+        const entries = await readdir(resolve(__dirname, 'public/diagram/data'), { withFileTypes: true });
+        return JSON.stringify(entries.filter(entry => entry.isFile() && /\.json$/i.test(entry.name))
+            .map(entry => entry.name).sort());
+    };
+
+    return {
+        name: 'diagram-data-list',
+        configureServer(server) {
+            server.middlewares.use(async (req, res, next) => {
+                if ((req.method !== 'GET' && req.method !== 'HEAD') || req.url?.split('?')[0] !== listPath) {
+                    next(); return;
+                }
+                try {
+                    const body = await listFiles();
+                    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.setHeader('Cache-Control', 'no-store');
+                    res.end(req.method === 'HEAD' ? undefined : body);
+                } catch {
+                    res.statusCode = 500;
+                    res.end('Unable to list diagram files.');
+                }
+            });
+        },
+        async generateBundle() {
+            this.emitFile({ type: 'asset', fileName: listPath.slice(1), source: await listFiles() });
         },
     };
 }
@@ -168,6 +200,7 @@ export default defineConfig(({ command }) => ({
         })
         ,
         saveDataPlugin(),
+        diagramDataListPlugin(),
         buildAppPagesPlugin()
     ]
 }));

@@ -2,7 +2,7 @@ import { msg, assert, $, sleep, MyError } from "@i18n";
 import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, CameraBlock, FaceDetectionBlock, CalcBlock, UltrasonicDistanceSensorBlock, ConditionGate, InputBlock } from "./block";
 import { Canvas, Editor, getTopActions } from "./canvas";
 import { fetchImage, initUI, repaintCount, sendData, startButton, theCanvas, urlOrigin } from "./diagram_util";
-import { saveJson, theEditor } from "./json-util";
+import { saveJson, theEditor, initDiagramOpen } from "./json-util";
 import { IfBlock, InfiniteLoop, TTSBlock, SleepBlock, TriggerGate, ActionBlock, makeBlockByTypeName, PlayMovieBlock, PlayGameBlock, PlayWebGPUBlock } from "./procedure";
 import { Block } from "./block"
 import { Port } from "./port";
@@ -229,6 +229,7 @@ export async function initDiagram(_signal?: AbortSignal){
 
 
     new Main();
+    initDiagramOpen(loadJsonAndDraw, listeners.signal);
 
     const diy_sbc = false;
     if(diy_sbc){
@@ -291,6 +292,17 @@ function loadJson(objs:any[]){
     theEditor.layoutRoot();
 }
 
+async function loadJsonAndDraw(objs: any[]): Promise<void> {
+    loadJson(objs);
+    const repaint_count = repaintCount;
+    theCanvas.requestUpdateCanvas();
+    // Restore DOM positions after the first paint has positioned the ports.
+    while (repaint_count === repaintCount && !listeners.signal.aborted) await sleep(100);
+    if (listeners.signal.aborted) return;
+    theEditor.blocks.forEach(block => block.setBlockPortPosition(block.position));
+    theCanvas.requestUpdateCanvas();
+}
+
 function preventDefaults(ev:DragEvent) {
     ev.preventDefault(); 
     ev.stopPropagation();
@@ -344,21 +356,7 @@ function setDragDrop(canvas : HTMLCanvasElement){
                 assert(Array.isArray(obj));
 
                 // msg(`dropped:[${JSON.stringify(data, null, 2)}]`);
-                loadJson(obj as any[]);
-
-                const repaint_count = repaintCount;
-                theCanvas.requestUpdateCanvas();
-
-                // port positions are set on paing.
-                // edges can be drawn after port position settings.
-                while(repaint_count == repaintCount && !listeners.signal.aborted){
-                    await sleep(100);
-                }
-                if (listeners.signal.aborted) return;
-
-                // draw input elements in blocks.
-                theEditor.blocks.forEach(x => x.setBlockPortPosition(x.position));
-                theCanvas.requestUpdateCanvas();
+                await loadJsonAndDraw(obj as any[]);
             };
 
             reader.readAsText(file);        

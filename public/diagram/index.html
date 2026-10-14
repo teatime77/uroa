@@ -51,6 +51,33 @@ html, body {
     font-size: xx-large;
 }
 
+#diagram-open-dialog {
+    box-sizing: border-box;
+    width: min(480px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    border: 2px solid #35658a;
+    border-radius: 8px;
+    padding: 20px;
+    font: 16px sans-serif;
+}
+
+#diagram-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 50vh;
+    overflow: auto;
+    margin-bottom: 16px;
+}
+
+#diagram-file-list button {
+    padding: 10px;
+    font: inherit;
+    text-align: left;
+    overflow-wrap: anywhere;
+}
+
 </style>
 </head>
 
@@ -70,7 +97,14 @@ html, body {
             <button id="clear-btn" class="ui_button">Clear</button>
             <button id="start-btn" class="ui_button">Start</button>
             <button id="download-btn" class="ui_button">Download</button>
+            <button id="open-btn" class="ui_button">Open</button>
         </div>
+        <dialog id="diagram-open-dialog" aria-labelledby="diagram-open-title">
+            <h2 id="diagram-open-title">図を開く</h2>
+            <p id="diagram-open-status" role="status" aria-live="polite"></p>
+            <div id="diagram-file-list"></div>
+            <button id="diagram-open-close" type="button">閉じる</button>
+        </dialog>
     </div>
 
     <!-- Game Layer -->

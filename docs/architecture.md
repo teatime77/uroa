@@ -220,7 +220,7 @@ CLIが生成するのはJSONとDSLであり、WGSLの計算コードは別ソー
 | ファイル | 役割 |
 |---|---|
 | [tsconfig.sys.json](../tsconfig.sys.json)、[tsc-all.bat](../tsc-all.bat) | TypeScript一括ビルド。バッチはルートのnpmコマンドを呼ぶ |
-| [vite.config.ts](../vite.config.ts) | 共通入口、モジュール別名、WebGPU資産コピー、5アプリの公開用HTML生成 |
+| [vite.config.ts](../vite.config.ts) | 共通入口、モジュール別名、WebGPU資産コピー、5アプリの公開用HTML生成、diagramのJSON一覧生成・開発時配信 |
 | [vite.config.base.ts](../vite.config.base.ts) | 現在は参照されていない共通設定の補助ファイル |
 | [build_all.py](../build_all.py) | ルートの `npm run build` を呼び、終了コードを返す互換用入口 |
 | [scripts/check-dist.mjs](../scripts/check-dist.mjs) | 5アプリの公開HTML・参照資産・WebGPUコピー資産の静的確認 |

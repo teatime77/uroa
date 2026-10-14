@@ -255,6 +255,10 @@ registerFunctionBlock(UpperTextBlock.name, () => new UpperTextBlock({}));
 
 diagramの保存形式は**ブロックオブジェクトの配列**。plane/movieのversion 3操作形式とは別である。
 
+2026-10-14にOpenボタンを追加した。[json-util.ts](../diagram/ts/json-util.ts)が`/diagram/data-list.json`を取得してファイル名をボタンで表示し、選択した`/diagram/data/<ファイル名>`を取得する。index.tsのloadJsonAndDrawを経由し、ドラッグ＆ドロップと同じ復元・再描画・DOM配置を行う。読込成功でダイアログを閉じ、一覧取得中・読込中・空一覧・エラーを表示する。閉じる・Escape・Clear・pagehide・破棄で通信を中断し、遅れた取得結果は読込へ進めない。JSON復元自体の事前検証は既存loadJsonの範囲であり、未対応形式の扱いは下記の制約を引き継ぐ。
+
+一覧は[vite.config.ts](../vite.config.ts)のdiagramDataListPluginが`public/diagram/data`直下の通常ファイルから拡張子.jsonの名前を並べて生成する。開発時は同じURLへのGET／HEADに応答し、ビルド時は`dist/diagram/data-list.json`へ出力する。JSONを追加・編集する場所は`public/diagram/data`で、公開一覧とJSONの更新には再ビルド・再デプロイが必要。Firebase Hostingのディレクトリ一覧機能やAPIサーバーは使わない。
+
 | 保存項目 | 現行の内容 |
 |---|---|
 | Block | idx、typeName、x、y、ports。typeNameはconstructor.name |
