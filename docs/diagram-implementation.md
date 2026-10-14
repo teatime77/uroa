@@ -35,6 +35,8 @@
 | [json-util.ts](../diagram/ts/json-util.ts) | theEditorの保持、saveJsonでの採番・Download |
 | [diagram_util.ts](../diagram/ts/diagram_util.ts) | PortType、共有canvas、UI要素、再描画回数、レイヤー切替、旧sendData |
 | [ble.ts](../diagram/ts/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
+| [robot-wifi.ts](../diagram/ts/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts) | BLEによるWi-Fi設定、Wi-Fi transport、SSID・接続キーの設定画面、接続先とChrome資格情報保存 |
+| [camera-feed.ts](../diagram/ts/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
 | [servo.ts](../diagram/ts/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
 | [imu.ts](../diagram/ts/imu.ts) | IMUの受信購読と構造体出力 |
 | [plot.ts](../diagram/ts/plot.ts)、[plot_data.ts](../diagram/ts/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |

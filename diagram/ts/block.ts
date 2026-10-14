@@ -8,6 +8,7 @@ import { tab, UI, Attr } from "./ui";
 import { NumberPort, Port, TextPort } from "./port";
 import { theEditor } from "./json-util";
 import { isRunning, stopDiagram } from "./runtime";
+import { subscribeCamera } from "./camera-feed";
 
 // export const inputHeight = 21;
 
@@ -560,10 +561,14 @@ export class InputNumberBlock extends InputBlock {
 }
 
 export class CameraBlock extends FunctionBlock {
+    private releaseCamera?: () => void;
+    private cameraMessage = "Wi-Fiカメラ未接続";
     constructor(data : Attr){
         super(data);
         this.ports = [ new Port(this, PortType.outputPort) ];
-
+        if (!this.inToolbox) this.releaseCamera = subscribeCamera(message => {
+            this.cameraMessage = message; theCanvas?.requestUpdateCanvas();
+        });
     }
 
     setBoxSize() : void {
@@ -592,6 +597,8 @@ export class CameraBlock extends FunctionBlock {
         else{
 
             if(cameraImg == undefined){
+                this.ctx.save(); this.ctx.font = "14px sans-serif"; this.ctx.fillStyle = "#555";
+                this.ctx.fillText(this.cameraMessage, x1 + 8, y1 + 24, x2 - x1 - 16); this.ctx.restore();
                 return;
             }
             img = cameraImg;
@@ -604,6 +611,10 @@ export class CameraBlock extends FunctionBlock {
         const img_y = y1;
 
         this.ctx.drawImage(img, img_x, img_y, img_width, img_height);
+    }
+    clearBlock(): void {
+        this.releaseCamera?.(); this.releaseCamera = undefined;
+        super.clearBlock();
     }
 }
 

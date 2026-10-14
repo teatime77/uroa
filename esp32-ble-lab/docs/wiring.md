@@ -37,7 +37,7 @@ I²Cの配線を次のように置き換える。D4/D5は基板の表記、GPIO5
 | 3V3 | 3V3 | PCA9685 VCC / GY-521 VCC |
 | GND | GND | PCA9685 GND / GY-521 GND / 外部5V電源− |
 
-PCA9685のV+とSG90には引き続き外部5V電源を使う。I²Cのプルアップは3.3V。サーボ用5VはXIAOの3V3へ接続しない。外部MPU-6050／GY-521をそのまま使う。Senseのカメラ・マイク・SDカードは今回のファームウェアでは初期化しない。
+PCA9685のV+とSG90には引き続き外部5V電源を使う。I²Cのプルアップは3.3V。サーボ用5VはXIAOの3V3へ接続しない。外部MPU-6050／GY-521をそのまま使う。SenseのカメラはWi-Fi接続時に初期化し、マイク・SDカードは使用しない。[Wi-Fi接続ガイド](../../docs/esp32-ble-lab-wifi.md)も参照する。
 
 `platformio.ini`の`xiao_esp32s3`環境を選ぶと、`config.h`がI²CをGPIO5/6へ切り替える。`esp32dev`環境はGPIO21/22のまま。
 

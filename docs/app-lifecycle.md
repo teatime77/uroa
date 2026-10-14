@@ -21,6 +21,10 @@
 
 共通入口は通常のTypeScript参照ビルドの対象とするため `app/tsconfig.json` を追加した。npm依存はルートを使用し、workspacesを増やしていない。
 
+## ESP32 Wi-Fi追加時の資源管理（2026-10-14）
+
+共有diagramBLEはBLEとWi-Fiの接続を管理する。Clear・図読込・最後の接続所有ブロック削除・タブ非表示・pagehide・破棄でWi-Fi設定ダイアログ、待機、WebSocket／HTTP通知取得、カメラの取得を解除する。保存先localStorageには接続先だけを残し、秘密情報と有効状態は保存しない。CameraBlockは配置中に画像を購読し、削除で解除する。Wi-Fiへ切り替える前にサーボ停止・IMU停止を要求し、接続確認後も手動ARMを要求する。操作と制約は [Wi-Fiガイド](esp32-ble-lab-wifi.md) を参照する。今回はユーザー指定でビルドまでとし、ライフサイクルテストを実行していない。
+
 ## 起動と状態
 
 `AppLifecycle.start()` は画面を初期化する。同じdocumentで複数回呼んでも同じPromiseを返し、イベント、Canvas、ボタン、GPUデバイスを重複して作らない。diagramではdiagram → game → webgpu → movieの順で初期化し、全処理の成功後に従来の `diagram ready` を出す。他の既存テスト通知も維持する。

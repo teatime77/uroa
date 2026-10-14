@@ -2,6 +2,10 @@
 
 作成日: 2026-10-13、配置更新日: 2026-10-14（日本時間）。対象は [esp32-ble-lab/firmware/src/main.cpp](../esp32-ble-lab/firmware/src/main.cpp)。2026-10-14にrobotの作業ツリーを、`main.cpp`の未コミット変更も含めてuroaへ取り込んだ。ソースの内容は変更していない。2026-10-13の解説作成ではソース・設定・関連仕様を照合し、ビルドや実機動作の再確認は行っていない。取り込み後のビルド結果・確認範囲は [build-and-test.md](build-and-test.md) に記録する。
 
+## 2026-10-14: Wi-Fi機能追加後の読み方
+
+取り込み後にWi-Fi設定・NVS・mDNS・Wi-Fi制御・XIAOカメラを追加したため、現在の`main.cpp`は取り込み元と同一ではない。I²C・サーボ・IMUは共通化し、[network.cpp](../esp32-ble-lab/firmware/src/network.cpp)が設定・通信・認証、[camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp)が画像を担当する。Wi-Fiも同じ`handle()`へ指令を渡し、接続世代と通知先を切り替える。起動にnetworkBegin/startBLE、サービスに設定Characteristic、loopにnetworkTickとWi-Fi通知を追加した。以下のBLE単体解説は2026-10-13時点を中心とする。現在の操作・通信・保存・制約は [Wi-Fiガイド](esp32-ble-lab-wifi.md) を参照する。今回はユーザー指定でビルドまでで、Upload・テスト・ブラウザー／実機確認は行っていない。
+
 ## 1. このプログラムの役割
 
 `main.cpp`はESP32上で動き、BLEで受け取った指令に応じてPCA9685のサーボ用PWMを制御し、MPU-6050の加速度・角速度を通知する。ブラウザーは目標角度と移動時間を送るだけでよく、途中の角度の計算はESP32が担当する。

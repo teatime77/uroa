@@ -15,6 +15,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
 - ESP32 BLEファームウェア: `esp32-ble-lab/firmware/`。PlatformIOで独立してビルドし、npmの`verify`には含めない。操作・配線・BLE仕様は [esp32-ble-lab/README.md](esp32-ble-lab/README.md) を参照する。
+- ESP32のWi-Fi設定・NVS・mDNS・Wi-Fi制御・XIAOカメラは `esp32-ble-lab/firmware/src/network.cpp`・`camera.cpp` と `diagram/ts/robot-wifi.ts`・`robot-wifi-dialog.ts`・`camera-feed.ts`。操作・保存・認証・制約は [docs/esp32-ble-lab-wifi.md](docs/esp32-ble-lab-wifi.md)。2026-10-14の追加確認はユーザー指定でビルドまで。実通信・ブラウザー・実機の確認済みとは扱わない。
 - 旧13サブモジュールはすべてuroaの通常フォルダーとして管理する。変更・コミットはuroaで行う。履歴統合・検証結果は [docs/monorepo-migration.md](docs/monorepo-migration.md)、algebraの先行移行は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
 - `dist/`、各モジュールの `lib/`、`node_modules/` は主な編集対象のソースではない。`tmp/zip/`には過去の展開コピーがある。
 

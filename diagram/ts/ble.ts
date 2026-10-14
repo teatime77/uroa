@@ -3,6 +3,9 @@ import { FunctionBlock, registerFunctionBlock } from "./block";
 import { Button, type Attr, type UI } from "./ui";
 import { theCanvas } from "./diagram_util";
 import { imuType, type IMUValue } from "./data_type";
+import { BLEWifiSetup, RobotWifi, rememberRobot, type RobotEndpoint } from "./robot-wifi";
+import { RobotWifiDialog } from "./robot-wifi-dialog";
+import { setCameraProvider } from "./camera-feed";
 
 // Same GATT service and packet format as robot/esp32-ble-lab.
 export const BLE_UUID = {
@@ -10,6 +13,8 @@ export const BLE_UUID = {
     command: "f3641401-00b0-4240-ba50-05ca45bf8abc",
     telemetry: "f3641402-00b0-4240-ba50-05ca45bf8abc",
     status: "f3641403-00b0-4240-ba50-05ca45bf8abc",
+    wifiConfig: "f3641404-00b0-4240-ba50-05ca45bf8abc",
+    wifiResult: "f3641405-00b0-4240-ba50-05ca45bf8abc",
 } as const;
 
 // Structural types keep this browser-only module independent of the robot build.
@@ -31,7 +36,7 @@ interface BLEAdapter {
     requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<BLEDevice>;
 }
 export type BLEPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
-export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; }
+export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; transport?: "ble" | "wifi"; }
 export interface IMUSample { readonly sequence: number; readonly uptime: number; readonly value: IMUValue; }
 
 /** Decode robot's 20-byte telemetry: gyro °/s, acceleration m/s². */
@@ -67,6 +72,11 @@ export class BLEConnection {
     private pending = new Map<number, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
     private armedChannels = new Set<number>();
     private servoVersions = Array<number>(16).fill(0);
+    private service?: BLEService;
+    private wifi?: RobotWifi;
+    private wifiDialog?: RobotWifiDialog;
+    private provisioning = false;
+    private closing = false;
 
     isServoArmed(channel: number): boolean { return this.armedChannels.has(channel); }
 
@@ -158,7 +168,7 @@ export class BLEConnection {
     }
 
     private updateStream(): void {
-        if (this.state.phase !== "connected") return;
+        if (this.state.phase !== "connected" || this.provisioning) return;
         const rate = this.sampleListeners.size && this.state.imuAvailable ? 10 : 0;
         if (rate === this.requestedRate) return;
         this.requestedRate = rate;
@@ -170,7 +180,8 @@ export class BLEConnection {
 
     private publish(phase: BLEPhase, deviceName = "", message = ""): void {
         const active = phase === "connected" || phase === "connecting";
-        this.state = { phase, deviceName, message, pcaAvailable: active && this.state.pcaAvailable, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming };
+        this.state = { phase, deviceName, message, pcaAvailable: active && this.state.pcaAvailable, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming,
+            transport: this.wifi?.connected ? "wifi" : "ble" };
         this.notify();
     }
 
@@ -206,7 +217,10 @@ export class BLEConnection {
         }
     };
 
-    private lost = (): void => this.close("idle", "BLE接続が切れました。");
+    private lost = (): void => {
+        if (this.wifi?.connected) return;
+        this.close("idle", "BLE接続が切れました。");
+    };
     private statusChanged = (event: Event): void => {
         try {
             const value = (event.target as BLECharacteristic).value;
@@ -226,7 +240,13 @@ export class BLEConnection {
     };
 
     private close(phase: BLEPhase, message = ""): void {
+        this.closing = true;
         this.generation++;
+        this.wifiDialog?.close(); this.wifiDialog = undefined;
+        this.provisioning = false;
+        this.wifi?.close(); this.wifi = undefined; this.service = undefined;
+        setCameraProvider();
+        this.state.transport = "ble";
         this.resetServos();
         clearInterval(this.heartbeat);
         clearTimeout(this.connectTimer);
@@ -244,9 +264,11 @@ export class BLEConnection {
         this.pending.clear();
         try { device?.gatt?.disconnect(); } catch { /* Already disconnected. */ }
         this.publish(phase, "", message);
+        this.closing = false;
     }
 
     disconnect(): void { this.close("idle"); }
+    cancelWifiSetup(): void { this.wifiDialog?.close(); }
 
     async connect(): Promise<void> {
         if (["selecting", "connecting", "connected"].includes(this.state.phase)) return;
@@ -278,6 +300,7 @@ export class BLEConnection {
             const server = await selected.gatt.connect();
             check();
             const service = await server.getPrimaryService(BLE_UUID.service);
+            this.service = service;
             check();
             const tx = await service.getCharacteristic(BLE_UUID.command);
             check();
@@ -301,11 +324,7 @@ export class BLEConnection {
             clearTimeout(this.connectTimer); this.connectTimer = undefined;
             this.publish("connected", selected.name || "名前のない機器");
             this.updateStream();
-            this.heartbeat = setInterval(() => {
-                void this.sendControl(5).catch(error => {
-                    if (this.generation === generation) this.close("error", error.message);
-                });
-            }, 1500);
+            this.startHeartbeat(generation);
         } catch (error) {
             if (this.generation !== generation) return;
             const name = error instanceof Error ? error.name : "";
@@ -316,11 +335,88 @@ export class BLEConnection {
         }
     }
 
+    private startHeartbeat(generation: number): void {
+        clearInterval(this.heartbeat);
+        this.heartbeat = setInterval(() => {
+            void this.sendControl(5).catch(error => {
+                if (this.generation === generation) this.close("error", error instanceof Error ? error.message : "機器の応答がありません。");
+            });
+        }, 1500);
+    }
+
+    async openWifi(): Promise<void> {
+        if (this.wifiDialog || ["selecting", "connecting"].includes(this.state.phase) || this.wifi?.connected) return;
+        const generation = this.generation;
+        try {
+            let setup: BLEWifiSetup | undefined;
+            if (this.service && this.device?.gatt?.connected) {
+                this.provisioning = true; clearInterval(this.heartbeat);
+                await this.stopServos();
+                await this.sendControl(4, 0); this.requestedRate = 0;
+                const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
+                const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
+                if (generation !== this.generation) return;
+                setup = new BLEWifiSetup(tx as BLECharacteristic & { readValue(): Promise<DataView> }, rx as BLECharacteristic & { readValue(): Promise<DataView> });
+            }
+            const dialog = this.wifiDialog = new RobotWifiDialog(
+                (target, key, signal) => this.connectWifi(target, key, signal),
+                () => {
+                    if (this.wifiDialog === dialog) this.wifiDialog = undefined;
+                    this.provisioning = false;
+                    if (!this.closing && this.device?.gatt?.connected && this.state.phase === "connected") { this.updateStream(); this.startHeartbeat(this.generation); }
+                }, setup);
+            dialog.open();
+        } catch {
+            this.provisioning = false;
+            if (this.device?.gatt?.connected && this.state.phase === "connected") { this.updateStream(); this.startHeartbeat(this.generation); }
+            if (generation === this.generation) { this.state = { ...this.state, message: "Wi-Fi設定を開けません。対応するファームウェアとBLE接続を確認してください。" }; this.notify(); }
+        }
+    }
+
+    private async connectWifi(target: RobotEndpoint, key: string, signal: AbortSignal): Promise<void> {
+        const oldGeneration = this.generation, wifi = new RobotWifi();
+        const originalMessage = this.state.message;
+        this.state = { ...this.state, message: "Wi-Fi接続を確認しています…" }; this.notify();
+        try {
+            const actual = await wifi.connect(target, key, signal);
+            signal.throwIfAborted();
+            if (this.generation !== oldGeneration) throw new Error("接続を取り消しました。");
+            // Remove native disconnection listener before the deliberate BLE handover.
+            clearInterval(this.heartbeat); this.resetServos();
+            this.device?.removeEventListener("gattserverdisconnected", this.lost);
+            this.status?.removeEventListener("characteristicvaluechanged", this.statusChanged);
+            this.rx?.removeEventListener("characteristicvaluechanged", this.sampleChanged);
+            this.device?.gatt?.disconnect(); this.device = this.tx = this.status = this.rx = undefined; this.service = undefined;
+            this.wifi = wifi; const generation = ++this.generation;
+            this.requestedRate = 0;
+            for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Wi-Fiへ切り替えました。")); }
+            this.pending.clear();
+            wifi.onPacket = data => {
+                if (this.generation !== generation) return;
+                if (data.byteLength === 12) this.statusChanged({ target: { value: data } } as unknown as Event);
+                else this.sampleChanged({ target: { value: data } } as unknown as Event);
+            };
+            wifi.onLost = message => { if (this.generation === generation) this.close("error", message); };
+            this.state = { phase: "connecting", deviceName: actual.name, transport: "wifi", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
+            await this.sendControl(6); signal.throwIfAborted();
+            if (generation !== this.generation) throw new Error("接続を取り消しました。");
+            this.publish("connected", actual.name); rememberRobot(actual);
+            this.provisioning = false;
+            if (actual.camera) setCameraProvider(cameraSignal => wifi.image(cameraSignal));
+            this.updateStream(); this.startHeartbeat(generation);
+        } catch (error) {
+            wifi.close();
+            if (this.wifi === wifi) this.close("error", "Wi-Fiの制御接続を確認できません。再接続してください。");
+            else { this.state = { ...this.state, message: originalMessage }; this.notify(); }
+            throw error;
+        }
+    }
+
     private sendControl(opcode: BLEOpcode, value = 0, channel = 255, duration = 0,
         isCurrent = () => true, accepted = () => {}): Promise<void> {
         const generation = this.generation;
         const task = this.tail.catch(() => {}).then(async () => {
-            if (generation !== this.generation || !this.tx || !this.device?.gatt?.connected) throw new Error("BLE接続が切れました。");
+            if (generation !== this.generation || (!this.wifi?.connected && (!this.tx || !this.device?.gatt?.connected))) throw new Error("機器の接続が切れました。");
             if (!isCurrent()) throw new Error("サーボ操作を取り消しました。");
             const sequence = this.sequence = this.sequence % 65535 + 1;
             const bytes = new Uint8Array(10);
@@ -341,7 +437,7 @@ export class BLEConnection {
             });
             void ack.catch(() => {});
             if (operation) console.log("BLE servo send", details);
-            const write = this.tx.writeValueWithResponse(bytes).catch(error => {
+            const write = (this.wifi?.connected ? this.wifi.write(bytes) : this.tx!.writeValueWithResponse(bytes)).catch(error => {
                 const pending = this.pending.get(sequence);
                 if (pending) { clearTimeout(pending.timer); this.pending.delete(sequence); pending.reject(error as Error); }
                 throw error;
@@ -372,6 +468,7 @@ export function initBLE(signal: AbortSignal): void {
 
 export class BLEConnectionBlock extends FunctionBlock {
     readonly button: Button;
+    readonly wifiButton: Button;
     private unsubscribe?: () => void;
     private removed = false;
 
@@ -382,6 +479,9 @@ export class BLEConnectionBlock extends FunctionBlock {
             if (diagramBLE.state.phase === "connected") diagramBLE.disconnect();
             else return diagramBLE.connect();
         } });
+        this.wifiButton = new Button({ text: "Wi-Fi設定／接続", click: () => {
+            if (!this.removed && !this.inToolbox) return diagramBLE.openWifi();
+        } });
         if (!this.inToolbox) this.unsubscribe = diagramBLE.subscribe(() => {
             this.updateButton();
             theCanvas?.requestUpdateCanvas();
@@ -390,8 +490,8 @@ export class BLEConnectionBlock extends FunctionBlock {
         this.updateButton();
     }
 
-    children(): UI[] { return [this.button]; }
-    setBoxSize(): void { this.boxSize = new Vec2(280, this.inToolbox ? 60 : 190); }
+    children(): UI[] { return [this.button, this.wifiButton]; }
+    setBoxSize(): void { this.boxSize = new Vec2(280, this.inToolbox ? 60 : 246); }
 
     copy(): BLEConnectionBlock {
         const block = new BLEConnectionBlock({});
@@ -414,12 +514,15 @@ export class BLEConnectionBlock extends FunctionBlock {
     private positionButton(): void {
         this.button.setPosition(this.position.add(new Vec2(16, 126)));
         this.button.boxSize = new Vec2(248, 48);
+        this.wifiButton.setPosition(this.position.add(new Vec2(16, 182)));
+        this.wifiButton.boxSize = new Vec2(248, 48);
     }
 
     private updateButton(): void {
         const phase = diagramBLE.state.phase;
         this.button.text = phase === "connected" ? "切断" : phase === "error" ? "再接続" : "接続";
-        this.button.disabled = this.removed || this.inToolbox || !!diagramBLE.availabilityMessage() || phase === "selecting" || phase === "connecting";
+        this.button.disabled = this.removed || this.inToolbox || (diagramBLE.state.transport !== "wifi" && !!diagramBLE.availabilityMessage()) || phase === "selecting" || phase === "connecting";
+        this.wifiButton.disabled = this.removed || this.inToolbox || !window.isSecureContext || phase === "selecting" || phase === "connecting" || diagramBLE.state.transport === "wifi";
     }
 
     draw(): void {
@@ -429,10 +532,10 @@ export class BLEConnectionBlock extends FunctionBlock {
         ctx.font = "18px sans-serif";
         ctx.textBaseline = "top";
         ctx.fillStyle = "#17384f";
-        ctx.fillText("BLE接続", this.position.x + 16, this.position.y + 16);
+        ctx.fillText(diagramBLE.state.transport === "wifi" ? "Wi-Fi接続" : "BLE接続", this.position.x + 16, this.position.y + 16);
         if (!this.inToolbox) {
             const state = diagramBLE.state;
-            const unavailable = diagramBLE.availabilityMessage();
+            const unavailable = state.transport === "wifi" ? "" : diagramBLE.availabilityMessage();
             const phase = unavailable ? "unavailable" : state.phase;
             const labels: Record<BLEPhase, string> = {
                 idle: "未接続", selecting: "機器を選択してください", connecting: "接続中", connected: "接続済み", error: "接続失敗", unavailable: "利用不可",
@@ -458,14 +561,17 @@ export class BLEConnectionBlock extends FunctionBlock {
             this.positionButton();
             this.updateButton();
             this.button.draw();
+            this.wifiButton.draw();
         }
         ctx.restore();
     }
 
     clearBlock(): void {
         this.removed = true;
+        diagramBLE.cancelWifiSetup();
         this.button.disabled = true;
         this.button.pressed = false;
+        this.wifiButton.disabled = true; this.wifiButton.pressed = false;
         this.unsubscribe?.();
         this.unsubscribe = undefined;
         super.clearBlock();

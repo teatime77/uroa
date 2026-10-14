@@ -153,6 +153,12 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 [ui.ts](../diagram/ts/ui.ts)のButtonをcanvasの再利用部品として拡張し、通常・押下・無効状態を描画する。[canvas.ts](../diagram/ts/canvas.ts)は前面のブロック内のポート・子ボタン・本体を判定する。ボタンを押した場合はブロックを動かさず、8 CSS pxを超える移動・pointercancelでは押下を取り消す。ブロック生成はblock.tsのregisterFunctionBlockへ登録し、新しいブロックモジュールをblock.tsから逆importしない。旧HTTPセンサーの定期取得はBLEへ接続していない。
 
+### 2026-10-14: ESP32のWi-Fi設定・制御・カメラ
+
+共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/robot-wifi.ts)はBLE設定、Wi-Fi認証、接続先のlocalStorage保存、[robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts)はSSID選択・手入力・Chrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有ID・接続キーを保存する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
+
+WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
+
 ### game・movieのデータと実行
 
 gameのデータは `public/game/data/` にある。`initGame()`が開発／本番設定を読み、初期画面の等角投影マップを構築する。`loadWorld()`が指定ステージを読んでUIを作り、`playGameWorld()`がシーケンサーを起動する。

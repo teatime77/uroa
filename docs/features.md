@@ -122,7 +122,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | ROBOT-01 | AI質問画面とAPI | [chat/src/main.ts](../../robot/chat/src/main.ts)、[server/app.ts](../../robot/chat/server/app.ts)、[server/index.ts](../../robot/chat/server/index.ts) | 1問ごとの文章応答。モーターへの直接指令は未実装 |
 | ROBOT-02 | BLE接続・サーボ操作 | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ARM/MOVE/STOP/DISABLE、ACK、直列化、切断。uroaの接続はDIAGRAM-06、ServoMotorBlockのBLE操作はDIAGRAM-05 |
 | ROBOT-03 | IMU表示・グラフ・CSV | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | 加速度・角速度。姿勢角やサーボ実測角度ではない |
-| ROBOT-04 | ESP32のBLEサーボ・IMU処理 | [main.cpp](../esp32-ble-lab/firmware/src/main.cpp)、[config.h](../esp32-ble-lab/firmware/include/config.h)、[platformio.ini](../esp32-ble-lab/firmware/platformio.ini) | 2026-10-14にuroaへ取り込み済み。PWM、I2C、指令キュー、ハートビート、停止。PlatformIOでビルドし、通信変更はdiagram/ts/ble.ts・[仕様](../esp32-ble-lab/docs/protocol.md)と同期する。移行後の実機再確認は未実施 |
+| ROBOT-04 | ESP32のBLE／Wi-Fiサーボ・IMU・XIAOカメラ | [main.cpp](../esp32-ble-lab/firmware/src/main.cpp)、[network.cpp](../esp32-ble-lab/firmware/src/network.cpp)、[camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp)、[platformio.ini](../esp32-ble-lab/firmware/platformio.ini) | BLE設定、NVS、mDNS、Wi-Fi制御、PWM・I2C・停止とXIAOのJPEGを実装。操作・保存・認証は[Wi-Fiガイド](esp32-ble-lab-wifi.md)。今回の確認はビルドまでで実機テストはユーザーが行う |
 | ROBOT-05 | DCモーター・エンコーダーの診断 | [main.cpp](../../robot/esp32_recovery/src/main.cpp) | 別ファームウェア。シリアル指令、IMU、手動停止と2秒経過停止 |
 
 ## 更新するとき

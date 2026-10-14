@@ -12,7 +12,11 @@ export const nest_h1 = 35;
 export let startButton : HTMLButtonElement;
 export let cameraIcon : HTMLImageElement;
 export let motorIcon  : HTMLImageElement;
-export let cameraImg : HTMLImageElement;
+export let cameraImg : HTMLImageElement | undefined;
+export function setCameraImage(image?: HTMLImageElement): void {
+    cameraImg = image;
+    theCanvas?.requestUpdateCanvas();
+}
 export let distanceSensorIcon : HTMLImageElement;
 export let ttsIcon : HTMLImageElement;
 export let sleepIcon : HTMLImageElement;

@@ -4,6 +4,7 @@
 #include <Adafruit_PWMServoDriver.h>
 #include <atomic>
 #include "config.h"
+#include "network.h"
 
 enum Op : uint8_t
 {
@@ -46,6 +47,7 @@ struct Queued
 {
     Command command;
     uint32_t session;
+    bool wifi = false;
 };
 NimBLECharacteristic *telemetryChar, *statusChar;
 bool pcaOK = false, pcaInitialized = false, imuOK = false;
@@ -133,9 +135,11 @@ void status(uint8_t code, uint16_t seq, uint8_t ch = 255)
         uint32_t elapsed = millis() - s.started;
         put16(b + 10, s.moving && elapsed < s.duration ? s.duration - elapsed : 0);
     }
-    statusChar->setValue(b, sizeof b);
-    if (connected)
-        statusChar->notify();
+    if (!networkBLEStopping() && statusChar) {
+        statusChar->setValue(b, sizeof b);
+        if (connected) statusChar->notify();
+    }
+    networkPublish(b, sizeof b);
 }
 bool output(uint8_t ch, uint16_t angle)
 {
@@ -158,10 +162,14 @@ class ServerCallbacks : public NimBLEServerCallbacks
         connected = true;
         mustStop = true;
         Serial.println("BLE connected");
+        // A configured passkey bypasses NimBLE 2.3.6's onPassKeyDisplay callback.
+        // Repeat the local display when connecting so a monitor opened after boot sees it.
+        Serial.printf("BLE setup pairing code: %06lu\n", static_cast<unsigned long>(networkPairingPasskey()));
     }
     void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int reason) override
     {
         connected = false;
+        if (networkBLEStopping()) return;
         ++session;
         mustStop = true;
         Serial.printf("BLE disconnected: reason=%d\n", reason);
@@ -175,6 +183,7 @@ class CommandCallbacks : public NimBLECharacteristicCallbacks
 {
     void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &) override
     {
+        if (networkConnected()) return;
         auto value = c->getValue();
         // Keep I2C and notifications in loop(), never in the BLE callback.
         if (value.size() == 10 && uint8_t(value[0]) == 1 && uint8_t(value[1]) == STOP)
@@ -298,6 +307,32 @@ void handle(const Command &command)
     }
     status(CODE_OK, seq, ch);
 }
+void startBLE()
+{
+    NimBLEDevice::init(DEVICE_NAME);
+    NimBLEDevice::setSecurityAuth(true, true, true);
+    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
+    NimBLEDevice::setSecurityPasskey(networkPairingPasskey());
+    // Deliberate local display for the OS pairing prompt; never expose Wi-Fi credentials or device keys.
+    Serial.printf("BLE setup pairing code: %06lu\n", static_cast<unsigned long>(networkPairingPasskey()));
+    auto server = NimBLEDevice::createServer();
+    server->setCallbacks(new ServerCallbacks());
+    auto service = server->createService(SERVICE_UUID);
+    auto cmd = service->createCharacteristic(COMMAND_UUID, NIMBLE_PROPERTY::WRITE, 10);
+    static CommandCallbacks commandCallbacks;
+    cmd->setCallbacks(&commandCallbacks);
+    telemetryChar = service->createCharacteristic(TELEMETRY_UUID, NIMBLE_PROPERTY::NOTIFY, 20);
+    statusChar = service->createCharacteristic(STATUS_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 12);
+    networkRegisterBLE(service);
+    status(CODE_OK, 0);
+    service->start();
+    auto adv = NimBLEDevice::getAdvertising();
+    adv->enableScanResponse(true);
+    if (!adv->addServiceUUID(SERVICE_UUID) || !adv->setName(DEVICE_NAME) || !adv->start())
+        Serial.println("BLE advertising setup FAILED");
+    else Serial.printf("BLE advertising: %s\n", DEVICE_NAME);
+}
+
 void setup()
 {
     Serial.begin(115200);
@@ -328,36 +363,17 @@ void setup()
         while (true)
             delay(1000);
     }
-    NimBLEDevice::init(DEVICE_NAME);
-    auto server = NimBLEDevice::createServer();
-    server->setCallbacks(new ServerCallbacks());
-    auto service = server->createService(SERVICE_UUID);
-    auto cmd = service->createCharacteristic(COMMAND_UUID, NIMBLE_PROPERTY::WRITE, 10);
-    cmd->setCallbacks(new CommandCallbacks());
-    telemetryChar = service->createCharacteristic(TELEMETRY_UUID, NIMBLE_PROPERTY::NOTIFY, 20);
-    statusChar = service->createCharacteristic(STATUS_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 12);
-    status(CODE_OK, 0);
-    service->start();
-    auto adv = NimBLEDevice::getAdvertising();
-    // Flags + 128-bit UUID + name exceed the 31-byte advertising payload.
-    // Enable scan response BEFORE setName so the complete name goes there.
-    adv->enableScanResponse(true);
-    if (!adv->addServiceUUID(SERVICE_UUID))
-    {
-        Serial.println("BLE service UUID advertising setup FAILED");
-        return;
-    }
-    if (!adv->setName(DEVICE_NAME))
-    {
-        Serial.println("BLE device name advertising setup FAILED");
-        return;
-    }
-    if (!adv->start())
-    {
-        Serial.println("BLE advertising start FAILED");
-        return;
-    }
-    Serial.printf("BLE advertising: %s\n", DEVICE_NAME);
+    networkBegin(
+        [](const uint8_t *data, size_t length, uint32_t gen) {
+            if (length != 10) return;
+            if (data[0] == 1 && data[1] == STOP) {
+                urgentSeq = get16(data + 2); urgentStop = true; return;
+            }
+            Queued q{}; memcpy(q.command.bytes, data, 10); q.wifi = true; q.session = gen;
+            if (xQueueSend(commands, &q, 0) != pdTRUE) { mustStop = true; networkStopControl(); }
+        },
+        [](bool, uint32_t) { mustStop = true; }, startBLE);
+    startBLE();
     Serial.printf("BLE address: %s\n", NimBLEDevice::getAddress().toString().c_str());
 }
 void loop()
@@ -381,10 +397,11 @@ void loop()
     Queued q;
     // Bound work per iteration so motion and watchdog are not starved.
     for (int n = 0; n < 4 && xQueueReceive(commands, &q, 0) == pdTRUE; n++)
-        if (connected && q.session == session.load())
+        if ((q.wifi && networkConnected() && q.session == networkGeneration()) ||
+            (!q.wifi && !networkConnected() && connected && q.session == session.load()))
             handle(q.command);
     now = millis();
-    if (connected && now - lastCommand > HEARTBEAT_TIMEOUT_MS)
+    if ((connected || networkConnected()) && now - lastCommand > HEARTBEAT_TIMEOUT_MS)
     {
         bool active = anyArmed() || streamHz;
         if (active)
@@ -393,6 +410,7 @@ void loop()
             streamHz = 0;
             status(CODE_NOT_ARMED, 0);
         }
+        networkStopControl();
     }
     if (now - lastMotion >= 20)
     {
@@ -414,7 +432,7 @@ void loop()
                 break;
         }
     }
-    if (connected && imuOK && streamHz && now - lastSample >= 1000 / streamHz)
+    if ((connected || networkConnected()) && imuOK && streamHz && now - lastSample >= 1000 / streamHz)
     {
         lastSample = now;
         uint8_t raw[14];
@@ -439,9 +457,10 @@ void loop()
                 b[14 + 2 * i] = raw[9 + 2 * i];
                 b[15 + 2 * i] = raw[8 + 2 * i];
             }
-            telemetryChar->setValue(b, sizeof b);
-            telemetryChar->notify();
+            if (connected && !networkBLEStopping()) { telemetryChar->setValue(b, sizeof b); telemetryChar->notify(); }
+            networkPublish(b, sizeof b);
         }
     }
+    networkTick();
     delay(2);
 }

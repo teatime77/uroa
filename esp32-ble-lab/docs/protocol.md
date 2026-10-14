@@ -7,10 +7,14 @@ GATT service: `f3641400-00b0-4240-ba50-05ca45bf8abc`
 | Command | f3641401 | Write with response | 10 bytes |
 | Telemetry | f3641402 | Notify | 20 bytes |
 | Status | f3641403 | Read / Notify | 12 bytes |
+| Wi-Fi Config | f3641404 | Write（暗号化・認証必須） | 分割JSON要求、384バイト未満 |
+| Wi-Fi Result | f3641405 | Read（暗号化・認証必須） | JSON結果、最大512バイト |
 
-UUIDの残り部分はサービスと同じです。全てlittle endian。BLEの既定ATT MTU 23（データ20byte）に収まります。
+UUIDの残り部分はサービスと同じです。Command／Status／Telemetryの数値はlittle endianで、BLEの既定ATT MTU 23（データ20byte）に収まります。Wi-Fi ConfigのUTF-8 JSONは分割Write、Wi-Fi Resultは長いReadを使用します。
 BLEのWrite responseはGATTの受付を示し、Status通知がアプリ側の受付結果を示します。
 MOVEの受付成功は動作完了を意味しません。INFOにチャンネルを指定すると現在の内部指令値・目標値・残り時間を取得できます。
+
+Wi-Fi設定のJSON操作、分割送信、Wi-Fi上の指令・署名・セッション・ポート・停止は [Wi-Fi接続ガイド](../../docs/esp32-ble-lab-wifi.md) を参照する。下記Command／Status／Telemetryのバイナリ形式はBLE・Wi-Fiで共通。
 
 ## Command
 

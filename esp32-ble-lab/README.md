@@ -1,6 +1,6 @@
 # ESP32 BLE Lab（uroa）
 
-ESP32 DevKit V1またはSeeed Studio XIAO ESP32S3 Senseと、PCA9685、MPU-6050／GY-521をBLEで操作するPlatformIOプロジェクト。ブラウザー側はuroaのdiagramを使う。Wi-FiやAI APIはファームウェアでは使わない。
+ESP32 DevKit V1またはSeeed Studio XIAO ESP32S3 Senseと、PCA9685、MPU-6050／GY-521をBLEまたはWi-Fiで操作するPlatformIOプロジェクト。ブラウザー側はuroaのdiagramを使う。2026-10-14にBLEによるWi-Fi設定、NVS保存、mDNS、Wi-Fi制御、XIAOのJPEGカメラを追加した。初回・次回の操作、Chrome保存、認証、復旧は [Wi-Fi接続ガイド](../docs/esp32-ble-lab-wifi.md) を参照する。AI APIはファームウェアで使わない。
 
 ## 配置と取り込み元
 
@@ -8,7 +8,9 @@ ESP32 DevKit V1またはSeeed Studio XIAO ESP32S3 Senseと、PCA9685、MPU-6050�
 
 | パス | 内容 |
 |---|---|
-| [firmware/src/main.cpp](firmware/src/main.cpp) | BLE、指令キュー、PWM補間、IMU通知、停止 |
+| [firmware/src/main.cpp](firmware/src/main.cpp) | 共通指令キュー、PWM補間、IMU通知、停止、BLE／Wi-Fi応答 |
+| [firmware/src/network.cpp](firmware/src/network.cpp) | Wi-Fi設定・NVS・mDNS・HTTP／WebSocket・認証 |
+| [firmware/src/camera.cpp](firmware/src/camera.cpp) | XIAO専用の320×240 JPEGカメラ |
 | [firmware/include/config.h](firmware/include/config.h) | ピン、角度範囲、パルス幅、UUID、タイムアウト |
 | [firmware/platformio.ini](firmware/platformio.ini) | `esp32dev`／Arduinoと固定した依存バージョン |
 | [docs/protocol.md](docs/protocol.md) | BLE protocol v1 |
@@ -43,7 +45,7 @@ pio device monitor --project-dir esp32-ble-lab/firmware -b 115200 -p COM3
 
 ### XIAO ESP32S3 Sense（COM4）
 
-2026-10-14に`xiao_esp32s3`環境を追加した。PlatformIOのボードIDは`seeed_xiao_esp32s3`（[公式設定](https://docs.platformio.org/en/latest/boards/espressif32/seeed_xiao_esp32s3.html)）。DevKit V1と同じライブラリー・BLEプロトコル・サーボ範囲・停止処理を使い、I²CピンだけをD4／GPIO5（SDA）、D5／GPIO6（SCL）へ切り替える。[配線表](docs/wiring.md)に従ってPCA9685と外部GY-521を接続する。カメラ・マイク・SDカードは使用しない。
+2026-10-14に`xiao_esp32s3`環境を追加した。PlatformIOのボードIDは`seeed_xiao_esp32s3`（[公式設定](https://docs.platformio.org/en/latest/boards/espressif32/seeed_xiao_esp32s3.html)）。DevKit V1と同じライブラリー・BLEプロトコル・サーボ範囲・停止処理を使い、I²CピンをD4／GPIO5（SDA）、D5／GPIO6（SCL）へ切り替える。[配線表](docs/wiring.md)に従ってPCA9685と外部GY-521を接続する。Wi-Fi機能追加後はSenseのカメラも使用する。マイク・SDカードは使用しない。
 
 uroaルートで実行する。CLIがPATHにない場合は`pio`を`& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe"`へ置き換える。
 
@@ -62,10 +64,16 @@ COM4はこの環境の`upload_port`と`monitor_port`へ設定した。USBの再�
 
 ## diagramでの操作
 
+BLE／Wi-Fiの設定画面の各項目と初回・次回の操作は [画面説明](../docs/diagram-esp32-connection-ui.md)、通信・保存・認証の実装は [Wi-Fi接続ガイド](../docs/esp32-ble-lab-wifi.md) を参照する。
+
 uroaルートで `npm.cmd run dev` を起動し、Chromeで `http://localhost:5173/diagram/index.html` を開く。[ble-imu-pca9685.json](../public/diagram/data/ble-imu-pca9685.json) を読み込み、BLE接続ブロックから `ESP32-BLE-Lab` を選ぶ。サーボを使う場合はServoMotorBlockへ数値入力を配線し、「90°で有効化」後に60～120°の角度を送る。操作・模擬テストの詳細は [build-and-test.md](../docs/build-and-test.md) を参照する。
 
 起動・接続・切断時と5秒のハートビート期限超過ではPWM・IMU通知を停止する。再接続で自動有効化しない。STOPは全PWMと待機指令を停止し、IMU通知は継続する。IMU停止はSTREAM=0。角度は内部指令値で、MOVEのACKは受付結果。実角度測定・姿勢推定は含まない。
 
-## 今回の検証
+## Wi-Fi機能追加後の確認範囲
+
+Wi-Fi設定は暗号化・認証したBLEでのみ受け付ける。OSのペアリング要求が出た場合、Serial Monitorの6桁のコードを入力する。接続キーをChromeへ保存しておくと、次回は保存済み機器を選びWi-Fiから接続できる。Wi-Fiに切り替えた後もServoMotorBlock・IMUBlockを使い、CameraBlockでJPEGを表示する。今回はユーザー指定でビルドまでとし、Upload・テスト・ブラウザー／実機確認は行っていない。
+
+## 取り込み時の検証記録
 
 取り込み時に元とのファイル一致、diagram側のUUID・パケット形式との対応、文書リンクを確認した。XIAO対応追加後もPlatformIOの`esp32dev`・`xiao_esp32s3`両環境でビルドが成功し、それぞれの`firmware.bin`を生成した。`main.cpp`の制御処理は取り込み元との一致を維持している。条件・使用量は [build-and-test.md](../docs/build-and-test.md) に記録した。2026-10-05の旧Web画面の模擬結果は今回の検証に含めない。COM4への書き込み、起動ログ、実BLE通信、実サーボ・IMU、Androidでの再確認は今回実施していない。

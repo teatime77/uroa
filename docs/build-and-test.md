@@ -1,6 +1,6 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-13。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-14。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
 ## コマンド
 
@@ -23,6 +23,8 @@
 
 [esp32-ble-lab/firmware](../esp32-ble-lab/firmware/)へrobotの現行ソースを取り込んだ。PlatformIOで独立してビルドする。npmの`build`・`verify`はESP32向けのビルドを含まない。設定・配線・書き込み・diagram操作は [README](../esp32-ble-lab/README.md)、実装解説は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
 
+以下の取り込み・XIAO環境追加時の結果はWi-Fi機能追加前の記録。現在のソースとビルド結果は後述の「diagram／ESP32のWi-Fi機能追加」を参照する。
+
 ```powershell
 # uroaルート。PlatformIO CLIがPATHにある場合
 pio run --project-dir esp32-ble-lab/firmware -e esp32dev
@@ -36,7 +38,7 @@ WindowsのPlatformIO IDE付属CLIで上記ビルドが成功し、`firmware/.pio
 
 diagram/ts/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の [validation.md](../esp32-ble-lab/docs/validation.md) は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
 
-### XIAO ESP32S3 Sense対応（2026-10-14）
+### XIAO ESP32S3 Sense対応時の記録（2026-10-14、Wi-Fi機能追加前）
 
 `platformio.ini`へ`xiao_esp32s3`環境を追加し、ボードIDを`seeed_xiao_esp32s3`、書き込み・モニターポートをユーザー指定のCOM4へ設定した。ライブラリーと接続数の設定は`esp32dev`から継承する。同日のUploadエラー報告を受け、環境未指定時の既定値を`xiao_esp32s3`へ変更した。DevKit V1では`-e esp32dev`を明示する。Espressif32 6.10.0のXIAOボード定義にはUSB CDCの有効化が含まれる。`config.h`は`ARDUINO_XIAO_ESP32S3`でSDA/SCLをGPIO5/6（D4/D5）へ切り替え、DevKit V1のGPIO21/22を維持する。`main.cpp`の制御・通信・停止処理は変更していない。[配線表](../esp32-ble-lab/docs/wiring.md)と[操作手順](../esp32-ble-lab/README.md)を更新した。
 
@@ -47,6 +49,36 @@ diagram/ts/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイ
 両環境でビルド成功。XIAO用の初回はESP32-S3用ツールチェーン・環境ごとのライブラリーを準備した。DevKit V1は61.98秒、XIAOは242.67秒。XIAOのRAMは29,464／327,680 bytes（9.0%）、Flashは509,489／3,342,336 bytes（15.2%）で、`.pio/build/xiao_esp32s3/firmware.bin`を生成した。DevKit V1の使用量は上記取り込み時と同じ。ファームウェアの`main.cpp`は元のrobot側とのSHA256一致を確認した。COM4への書き込み、起動ログ、実BLE・サーボ・IMUの確認は今回行っていない。Senseのカメラ・マイク・SDカードはこのファームウェアでは使用しない。
 
 既定環境の変更後、PlatformIOの設定パーサーで`default_envs = xiao_esp32s3`、ボード`seeed_xiao_esp32s3`、書き込み先COM4へ解決されることを確認した。ビルド環境の中身は上記成功時と同じで、今回の修正は環境未指定時の選択だけを変更する。エージェントによるUploadの再実行・書き込み成功の確認は行っていない。
+
+## diagram／ESP32のWi-Fi機能追加（2026-10-14）
+
+BLEによるSSID検索・設定、NVS保存、mDNS、Wi-Fiでのサーボ／IMU制御、XIAOのJPEG取得とCameraBlock表示を追加した。DevKit V1とXIAOは通信・制御を共通化し、カメラだけをXIAO向けに条件コンパイルする。初回設定・Chrome保存・次回接続・通信制約は [Wi-Fi接続ガイド](esp32-ble-lab-wifi.md) を参照する。
+
+```powershell
+npm.cmd run build
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev -e xiao_esp32s3
+```
+
+最終ソースで両コマンドが正常終了。Web側はTypeScript参照ビルドとVite公開ビルドを完了し、Viteは18.00秒、公開資産92項目をコピーした。既存gameの動的／静的import併用の警告は残る。
+
+| PlatformIO環境 | 結果・時間 | RAM | Flash |
+|---|---|---|---|
+| `esp32dev` | SUCCESS、33.55秒 | 58,464／327,680 bytes（17.8%） | 1,148,561／1,310,720 bytes（87.6%） |
+| `xiao_esp32s3` | SUCCESS、28.95秒 | 58,800／327,680 bytes（17.9%） | 1,047,449／3,342,336 bytes（31.3%） |
+
+両環境の`.pio/build/<環境>/firmware.bin`を生成した。今回追加した依存はArduinoJson 6.21.5とWebSockets 2.7.1。ユーザー指定により実装とビルドまでで終了し、テスト・Upload・ブラウザー／実機確認は実行していない。既存のテストファイルは変更していない。
+
+### BLEペアリングコード表示の修正（2026-10-14）
+
+ユーザーから、BLE接続ログは表示されるがペアリングコードが表示されないと報告された。インストール済みNimBLE-Arduino 2.3.6の`NimBLEServer.cpp`を確認し、`setSecurityPasskey()`で既定値以外のコードを設定すると`onPassKeyDisplay()`を呼ばないことを確認した。表示用のコールバックを削除し、設定するコードをBLE開始時と`onConnect()`でSerialへ直接表示するよう修正した。コードは引き続き起動ごとに生成し、Wi-Fiパスワード・接続キーは出力しない。
+
+PlatformIOの`esp32dev`と`xiao_esp32s3`のビルドが正常終了（36.75秒／32.30秒）。Web側は変更していない。Upload・テスト・修正後の実機表示確認は行っていない。再書き込み後の操作は [Wi-Fi接続ガイド](esp32-ble-lab-wifi.md) を参照する。
+
+### Wi-FiカメラのCORS応答修正（2026-10-14）
+
+ユーザーのChromeで、`/capture`のOPTIONS応答にある`Access-Control-Allow-Origin`が空として拒否された。`cors()`内のローカル`String`を応答ヘッダーへ渡し、関数終了時に破棄していた。ESP-IDFの`httpd_resp_set_hdr()`は値を送信まで有効に保つ必要があるため、要求ごとの`CorsHeaders`を送信側のスコープへ置いてOrigin文字列を保持するよう修正した。OPTIONS、JPEG、JSON、認証失敗・接続拒否の応答に適用した。許可Origin・認証方式は変更していない。
+
+PlatformIOの`esp32dev`と`xiao_esp32s3`が正常終了（32.38秒／32.16秒）。Web側は変更していない。Upload・テスト・実機でのCORS応答と画像表示確認はユーザーが行う。
 
 ## diagramのツールアイコン（2026-10-14）
 
