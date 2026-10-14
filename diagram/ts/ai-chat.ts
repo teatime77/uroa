@@ -6,7 +6,7 @@ import { getProcedureSignal, isRunning, stopDiagram, subscribeDiagramStop } from
 import { Button, type Attr, type UI } from "./ui";
 import { AIRequestError, askAI, checkAIConnection, waitAIRequest } from "./ai-client";
 
-/** Learner-provided credentials live only in this block's private memory. */
+/** Application-held credentials live in private memory; optional persistence is browser-managed. */
 export class AIChatBlock extends FunctionBlock {
     override readonly runOnStart = true;
     readonly inputPort = new TextPort(this, PortType.inputPort);
@@ -99,19 +99,26 @@ export class AIChatBlock extends FunctionBlock {
         dialog.setAttribute("aria-label", "Googleに接続");
         dialog.style.cssText = "box-sizing:border-box;width:min(420px,calc(100vw - 32px));border:2px solid #35658a;border-radius:8px;padding:20px;font:16px sans-serif";
         const form = document.createElement("form");
-        const title = document.createElement("h3"); title.textContent = "Googleに接続";
-        const makeInput = (text: string, type: string, value = "") => {
+        form.method = "post";
+        form.name = "gemini-credentials";
+        const title = document.createElement("h3"); title.textContent = "Gemini APIキー設定";
+        const makeInput = (text: string, type: string, name: string, autocomplete: HTMLInputElement["autocomplete"], value = "") => {
             const label = document.createElement("label"); label.textContent = text;
             label.style.cssText = "display:block;margin:12px 0";
             const input = document.createElement("input"); input.type = type; input.value = value;
-            input.setAttribute("aria-label", text); input.autocomplete = "off"; input.spellcheck = false;
+            input.name = name; input.autocomplete = autocomplete; input.required = true;
+            input.setAttribute("aria-label", text); input.spellcheck = false; input.autocapitalize = "none";
             input.style.cssText = "display:block;box-sizing:border-box;width:100%;font:inherit;margin-top:4px";
             label.appendChild(input); form.appendChild(label); return input;
         };
         form.appendChild(title);
-        const key = makeInput("APIキー", "password");
-        const model = makeInput("モデル名", "text", this.model);
-        const note = document.createElement("p"); note.textContent = "キーはこのブロックで一時保持し、保存・コピーには含めません。";
+        const username = makeInput("ユーザー名", "text", "username", "username");
+        username.placeholder = "例：gemini";
+        username.pattern = ".*\\S.*";
+        username.title = "空白以外の文字を含むユーザー名を入力してください。";
+        const key = makeInput("APIキー", "password", "api-key", "current-password");
+        const model = makeInput("モデル名", "text", "model", "off", this.model);
+        const note = document.createElement("p"); note.textContent = "ユーザー名は保存したキーの識別用で、Googleへは送りません。接続成功後にChromeのパスワードマネージャーで保存できます。図の保存・コピーには含めません。";
         const cancel = document.createElement("button"); cancel.type = "button"; cancel.textContent = "キャンセル";
         const connect = document.createElement("button"); connect.type = "submit"; connect.textContent = "接続";
         cancel.addEventListener("click", () => this.closeDialog());
@@ -119,17 +126,33 @@ export class AIChatBlock extends FunctionBlock {
         form.addEventListener("submit", event => {
             event.preventDefault();
             let apiKey = key.value.trim();
+            const credentialId = username.value.trim();
+            if (!credentialId) { username.reportValidity(); return; }
             const modelName = model.value.trim().replace(/^models\//, "");
             this.closeDialog();
-            void this.connect(apiKey, modelName);
+            void this.connect(apiKey, modelName, credentialId);
             apiKey = "";
         });
         form.append(note, cancel, connect); dialog.appendChild(form);
         (document.getElementById("layer-diagram") || document.body).appendChild(dialog);
-        dialog.showModal(); key.focus();
+        dialog.showModal(); username.focus();
     }
 
-    async connect(apiKey: string, model = this.model): Promise<void> {
+    private requestPasswordSave(username: string): void {
+        // PasswordCredential is not included in TypeScript's DOM declarations.
+        const PasswordCredential = (window as Window & {
+            PasswordCredential?: new (data: { id: string; password: string }) => Credential;
+        }).PasswordCredential;
+        if (!username || !window.isSecureContext || typeof PasswordCredential !== "function" ||
+            typeof navigator.credentials?.store !== "function") return;
+        try {
+            const credential = new PasswordCredential({ id: username, password: this.#apiKey });
+            // Browser refusal or storage failure must neither break connection nor expose credentials.
+            void navigator.credentials.store(credential).catch(() => {});
+        } catch { /* Unsupported or blocked password storage; manual input still works. */ }
+    }
+
+    async connect(apiKey: string, model = this.model, credentialId = ""): Promise<void> {
         if (this.removed || this.inToolbox || this.request) return;
         this.disconnect();
         if (!apiKey.trim() || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(model)) {
@@ -143,11 +166,13 @@ export class AIChatBlock extends FunctionBlock {
             if (!current() || request.signal.aborted) return;
             this.#apiKey = apiKey.trim(); this.model = model;
             this.show("接続確認済み：Startで質問");
+            this.requestPasswordSave(credentialId);
         } catch (error) {
             if (current()) this.show("接続エラー", request.signal.aborted ? "接続確認が時間切れになりました。"
                 : error instanceof AIRequestError ? error.message : "Googleへ接続できませんでした。通信状態を確認してください。");
         } finally {
             apiKey = "";
+            credentialId = "";
             if (this.request === request) this.request = undefined;
             if (current()) this.connecting = false;
             this.refreshButtons();

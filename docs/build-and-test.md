@@ -34,6 +34,10 @@ Stop、Clear、別JSONの読込、実行中のブロック削除、pagehide・�
 
 ブラウザーからGoogleのモデル情報取得で接続を確認し、質問はInteractions APIのRESTへ直接送る。Googleとの通信はHTTPS。静的HostingでもAPIプロキシ不要で、旧 `/api/ask` プロキシは解除した。`/api/save`はuroaの開発用保存処理を維持する。
 
+APIキー設定フォームにはユーザー名を追加した。初回は識別名（例：gemini）、APIキー、モデル名を入力して「接続」を押す。Googleへの接続確認成功後、Chromeのパスワードマネージャーへ保存を要求する。Chromeの保存確認が出たら保存し、次回は同じ教材ページで「接続」を開き、保存したユーザー名・キーを自動入力で選んで接続する。ユーザー名はGoogleへ送らない。HTTPSまたはlocalhost／127.0.0.1のsecure contextで使用し、同じホストを使い続ける（localhostと127.0.0.1は別オリジン）。Chromeの設定・プロファイルにより保存確認や自動入力が出ない場合も、手入力で接続できる。切断・Clear等はアプリ内の保持を解除し、Chrome側に保存したキーは残る。保存したキーの削除はChromeのパスワードマネージャーで行う。[Googleのフォーム設計資料](https://web.dev/articles/sign-in-form-best-practices)、[Credential Management API](https://web.dev/articles/security-credential-management)。
+
+パスワード保存対応の最終確認ではnpm.cmd run verify、NodeのAI3件・ライフサイクル5件、ChromeのAI回帰33件が成功した。Chromeの実PasswordCredentialで認証情報を構築し、保存要求・Google応答・音声出力を模擬した。保存拒否・同期例外・非対応API・接続失敗・取消後の遅延応答で接続やキー保持を誤らないこと、空白だけのユーザー名を拒否すること、入力イベントなしの自動入力値を送信できることを確認した。ダイアログの画面画像と文書のローカルリンクも確認した。初回はCDN取得制限、検証の並行実行中はメモリ不足やテスト失敗が発生したため、ビルド完了後にViteを再起動し、CDNへアクセスできる環境で最終33件を実行した。Chrome自身の保存確認UI・永続保存後の実自動入力・Google実通信は今回未確認。
+
 AI専用のブラウザーテストは [tests/ai-chat-browser.test.mjs](../tests/ai-chat-browser.test.mjs)。以下のPlaywright・Chrome環境変数を使い、ソース変更後に専用Viteを再起動して実行する。
 
 ```powershell

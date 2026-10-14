@@ -63,8 +63,9 @@ test('real browser → Google connection check → Interactions API → TTS with
     await page.getByRole('dialog', { name: 'Googleに接続' }).waitFor();
     await page.evaluate(({ apiKey, model }) => {
         const dialog = document.querySelector('dialog');
+        dialog.querySelector('input[name=username]').value = 'gemini-test';
         dialog.querySelector('input[type=password]').value = apiKey;
-        dialog.querySelector('input[type=text]').value = model;
+        dialog.querySelector('input[name=model]').value = model;
         dialog.querySelector('form').requestSubmit();
     }, { apiKey, model });
     await page.waitForFunction(() => window.directAI.connected || window.directAI.message === '接続エラー', undefined, { timeout: 15_000 });

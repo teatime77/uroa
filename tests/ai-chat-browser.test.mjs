@@ -18,7 +18,15 @@ async function fixture(context) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-        window.aiMock = { mode: 'ok', connectionMode: 'ok', connections: [], requests: [], signals: [], spoken: [], held: [], answer: '東京です。\n<img src=x onerror=alert(1)>' };
+        window.aiMock = { mode: 'ok', connectionMode: 'ok', connections: [], requests: [], signals: [], spoken: [], held: [],
+            credentialMode: 'ok', credentialStores: [], answer: '東京です。\n<img src=x onerror=alert(1)>' };
+        // Use Chrome's real PasswordCredential constructor, but never persist test keys.
+        Object.defineProperty(navigator.credentials, 'store', { configurable: true, value: credential => {
+            const m = window.aiMock;
+            m.credentialStores.push({ id: credential.id, password: credential.password, type: credential.type });
+            if (m.credentialMode === 'throw') throw new Error('test-api-key');
+            return m.credentialMode === 'reject' ? Promise.reject(new Error('test-api-key')) : Promise.resolve(credential);
+        } });
         const nativeFetch = window.fetch.bind(window);
         window.fetch = async (url, options) => {
             if (!String(url).startsWith('https://generativelanguage.googleapis.com/v1beta/')) return nativeFetch(url, options);
@@ -190,19 +198,25 @@ test('canvas connection dialog checks Google immediately, keeps credentials priv
     });
     await page.mouse.click(center.x, center.y);
     const dialog = page.getByRole('dialog', { name: 'Googleに接続' });
+    await dialog.getByRole('textbox', { name: 'ユーザー名' }).fill('gemini-learner');
     await dialog.getByRole('textbox', { name: 'モデル名' }).fill('gemini-test-model');
     await dialog.locator('input[type=password]').fill('learner-private-key');
     await dialog.getByRole('button', { name: '接続', exact: true }).click();
     await page.waitForFunction(() => window.aiFixture.ai.connected);
+    assert.deepEqual(await page.evaluate(() => window.aiMock.credentialStores),
+        [{ id: 'gemini-learner', password: 'learner-private-key', type: 'password' }]);
     assert.equal(await page.getByRole('dialog', { name: 'Googleに接続' }).count(), 0);
     assert.equal(await page.locator('#layer-diagram input[type=password]').count(), 0);
     assert.equal(await page.evaluate(() => window.aiMock.requests.length), 0);
     assert.equal(await page.evaluate(() => JSON.stringify(window.aiFixture.ai.makeObj()).includes('learner-private-key')), false);
+    assert.equal(await page.evaluate(() => JSON.stringify(window.aiFixture.ai.makeObj()).includes('gemini-learner')), false);
+    assert.equal(await page.evaluate(() => Object.values(window.aiFixture.ai).includes('gemini-learner')), false);
     assert.equal(await page.evaluate(() => Object.values(window.aiFixture.ai).includes('learner-private-key')), false);
     await start(page); await start(page);
     assert.equal(await page.evaluate(() => window.aiMock.connections.length), 2);
     assert.equal(await page.evaluate(() => window.aiMock.requests.length), 2);
     assert.equal(await page.evaluate(() => window.aiMock.requests.every(req => req.model === 'gemini-test-model' && req.headers['x-goog-api-key'] === 'learner-private-key')), true);
+    assert.equal(await page.evaluate(() => JSON.stringify(window.aiMock.requests).includes('gemini-learner')), false);
     const disconnected = await page.evaluate(() => { window.aiFixture.ai.disconnect(); return window.aiFixture.ai.connected; });
     assert.equal(disconnected, false);
     await start(page);
@@ -215,7 +229,7 @@ for (const operation of ['disconnect', 'clear', 'stop', 'pagehide']) {
         const page = await fixture(context);
         await page.evaluate(() => {
             window.aiFixture.ai.disconnect(); window.aiMock.connectionMode = 'hold';
-            window.pendingConnection = window.aiFixture.ai.connect('late-key');
+            window.pendingConnection = window.aiFixture.ai.connect('late-key', window.aiFixture.ai.model, 'gemini-late');
         });
         await page.waitForFunction(() => window.aiMock.held.length > 0);
         await page.evaluate(async operation => {
@@ -228,6 +242,7 @@ for (const operation of ['disconnect', 'clear', 'stop', 'pagehide']) {
         assert.equal(await page.evaluate(() => window.aiMock.connections.at(-1).signal.aborted), true);
         await release(page);
         assert.equal(await page.evaluate(() => window.aiFixture.ai.connected), false);
+        assert.deepEqual(await page.evaluate(() => window.aiMock.credentialStores), []);
     });
 }
 
@@ -235,12 +250,74 @@ test('connection failure never retains or displays credentials or raw Google err
     const page = await fixture(context);
     const logs = [];
     page.on('console', message => logs.push(message.text()));
-    await page.evaluate(async () => { window.aiMock.connectionMode = 'fail'; await window.aiFixture.ai.connect('test-api-key'); });
+    await page.evaluate(async () => { window.aiMock.connectionMode = 'fail'; await window.aiFixture.ai.connect('test-api-key', window.aiFixture.ai.model, 'gemini-fail'); });
     assert.equal(await page.evaluate(() => window.aiFixture.ai.connected), false);
     assert.match(await page.locator('#layer-diagram textarea').inputValue(), /APIキーまたは利用権限/);
     assert.ok(!(await page.locator('#layer-diagram textarea').inputValue()).includes('test-api-key'));
     assert.ok(logs.every(message => !message.includes('test-api-key')));
+    assert.deepEqual(await page.evaluate(() => window.aiMock.credentialStores), []);
 });
+
+test('credential form supports autofill, validates required fields, and erases cancelled input', async context => {
+    const page = await fixture(context);
+    await page.evaluate(() => { window.aiFixture.ai.disconnect(); window.aiFixture.ai.openConnectionDialog(); });
+    const dialog = page.getByRole('dialog', { name: 'Googleに接続' });
+    assert.equal(await dialog.locator('form').getAttribute('method'), 'post');
+    assert.equal(await dialog.locator('input[name=username]').getAttribute('autocomplete'), 'username');
+    assert.equal(await dialog.locator('input[name=api-key]').getAttribute('autocomplete'), 'current-password');
+    assert.equal(await dialog.locator('input[name=api-key]').getAttribute('type'), 'password');
+    await page.screenshot({ path: 'tmp/ai-credentials-dialog.png' });
+    // Keep references to detached controls so cleanup can be asserted after Escape.
+    await page.evaluate(() => { window.credentialInputs = [...document.querySelector('dialog').querySelectorAll('input')]; });
+    await dialog.locator('input[name=api-key]').fill('cancelled-key');
+    await dialog.getByRole('button', { name: '接続', exact: true }).click();
+    assert.equal(await dialog.count(), 1);
+    await dialog.locator('input[name=username]').fill('   ');
+    await dialog.getByRole('button', { name: '接続', exact: true }).click();
+    assert.equal(await dialog.count(), 1);
+    assert.equal(await page.evaluate(() => window.aiMock.connections.length), 1);
+    await page.keyboard.press('Escape');
+    assert.equal(await dialog.count(), 0);
+    assert.deepEqual(await page.evaluate(() => window.credentialInputs.map(input => input.value)), ['', '', '']);
+    assert.deepEqual(await page.evaluate(() => window.aiMock.credentialStores), []);
+    await page.evaluate(() => window.aiFixture.ai.openConnectionDialog());
+    await dialog.locator('input[name=username]').fill('   ');
+    await dialog.locator('input[name=api-key]').fill('autofilled-key');
+    await dialog.getByRole('button', { name: '接続', exact: true }).click();
+    assert.equal(await dialog.count(), 1);
+    // Autofill can set DOM values without producing an input event.
+    await page.evaluate(() => {
+        const form = document.querySelector('dialog form');
+        form.elements.namedItem('username').value = 'gemini-autofill';
+        form.elements.namedItem('api-key').value = 'autofilled-key';
+        form.requestSubmit();
+    });
+    await page.waitForFunction(() => window.aiFixture.ai.connected);
+    await start(page);
+    assert.equal(await page.evaluate(() => window.aiMock.requests[0].headers['x-goog-api-key']), 'autofilled-key');
+});
+
+for (const mode of ['reject', 'throw', 'unsupported']) {
+    test(`password manager ${mode} preserves a usable connection without exposing errors`, async context => {
+        const page = await fixture(context);
+        const logs = [];
+        page.on('console', message => logs.push(message.text()));
+        await page.evaluate(mode => {
+            window.aiFixture.ai.disconnect(); window.aiMock.credentialMode = mode;
+            if (mode === 'unsupported') Object.defineProperty(window, 'PasswordCredential', { configurable: true, value: undefined });
+            window.aiFixture.ai.openConnectionDialog();
+        }, mode);
+        const dialog = page.getByRole('dialog', { name: 'Googleに接続' });
+        await dialog.getByRole('textbox', { name: 'ユーザー名' }).fill('gemini');
+        await dialog.locator('input[type=password]').fill('test-api-key');
+        await dialog.getByRole('button', { name: '接続', exact: true }).click();
+        await page.waitForFunction(() => window.aiFixture.ai.connected);
+        await start(page);
+        assert.equal(await page.evaluate(() => window.aiMock.spoken.length), 1);
+        assert.equal(await page.evaluate(() => window.aiMock.credentialStores.length), mode === 'unsupported' ? 0 : 1);
+        assert.ok(logs.every(message => !message.includes('test-api-key')));
+    });
+}
 
 test('Start awaits AI data dependencies once even when editor order is reversed', async context => {
     const page = await fixture(context);
