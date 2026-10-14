@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">サーボモーター</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#dc2626" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><rect x="11" y="19" width="26" height="20" rx="3"/><path d="M7 25h4m26 0h4M24 19V9m-8 0h18M16 39v4m16-4v4"/><circle cx="24" cy="28" r="5"/></g>
+</svg>

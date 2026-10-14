@@ -66,6 +66,7 @@ flowchart TD
 | `lesson` | 独自教材テキストから見出し・本文・定義・定理・数式をHTMLへ変換 | [lesson.ts](../lesson/ts/lesson.ts) |
 | `media` | マイク録音、録音の再生・ダウンロード | [media.ts](../media/ts/media.ts) |
 | `plot` | README・設定ファイルはあるが、調査時点では実装ソースがない | [README.md](../plot/README.md)、[package.json](../plot/package.json) |
+| `esp32-ble-lab/firmware` | ESP32 DevKit V1／XIAO ESP32S3 Sense上のBLEサーバー、PCA9685サーボ制御、MPU-6050計測。PlatformIOで独立してビルド | [main.cpp](../esp32-ble-lab/firmware/src/main.cpp)、[config.h](../esp32-ble-lab/firmware/include/config.h)、[platformio.ini](../esp32-ble-lab/firmware/platformio.ini) |
 
 ### 数学・図形処理の主要な境界
 
@@ -277,15 +278,18 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 
 隣接する [robotの設計文書](../../robot/docs/architecture.md) に、AI質問画面、BLEサーボ・IMU操作、DCモーター復旧確認を記録している。
 
+2026-10-14にESP32 BLEファームウェアを [esp32-ble-lab/firmware](../esp32-ble-lab/firmware/) へ通常フォルダーとして取り込んだ。robotの作業ツリーにある`main.cpp`の未コミット変更も含み、ソース・設定は変更していない。BLE仕様・配線・元の検証記録・MITライセンスも同梱した。PlatformIOのビルドはnpm workspaces・TypeScript・Viteから独立しており、`npm run verify`には含めない。今後のuroa側の変更はこの配置で管理する。元のrobot側と履歴は保持し、旧専用Web画面・chat・DCモーター用ファームウェアは今回取り込んでいない。手順と取り込み元は [README](../esp32-ble-lab/README.md)、今回の検証は [build-and-test.md](build-and-test.md) を参照する。
+
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの旧カメラ・センサー処理 | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでrobotのESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートとconsoleへ出力し、汎用PlotBlockへ配線してgyro・accを表示 |
+| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートとconsoleへ出力し、汎用PlotBlockへ配線してgyro・accを表示 |
+| uroa/esp32-ble-lab/firmware | 上記diagramとBLE protocol v1で通信するESP32側の処理。ソースはrobotから取り込み済み |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 | uroa/diagramのAIChatBlock | 学習者のキーをブロック内で一時保持し、ブラウザーからGoogle Interactions APIへ直接質問。回答全文をTTSBlockへ渡す |
 
-BLE接続・サーボ・IMUはrobotのESP32と同じGATT仕様を使う。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
+BLE接続・サーボ・IMUは取り込んだファームウェアのGATT仕様を使う。仕様は [protocol.md](../esp32-ble-lab/docs/protocol.md)、配線は [wiring.md](../esp32-ble-lab/docs/wiring.md) を参照する。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
 
 2026-10-12にユーザーがデモ仕様を提示した。diagram内でInputTextBlock・チャットブロック・TTSBlockを使うAIチャットと、ServoMotorBlock・IMUBlock・グラフブロックを使う実機操作／計測の2種類を独立して作る。AIによる定型動作の選択・サーボ操作は要件ではない。ESP32、PCA9685、SG90、MPU-6050／GY-521を使い、IMU取得はユーザー確認済み。本番は携帯電話のアクセスポイント経由でインターネットへ接続した本人のAndroidタブレット、予備はWindowsのローカルVite。HTTPS・公開AIバックエンドの配置とサーボ動作はエージェント未確認。
 
@@ -297,7 +301,7 @@ BLE接続・サーボ・IMUはrobotのESP32と同じGATT仕様を使う。AIChat
 
 2026-10-10追記。ユーザーによると、planeのall_functions.tsはnamespaceからモジュールへの移行時に循環参照を回避するため作られた。分割を検討するときは、既存のimport type、AppServices、生成関数登録による依存の整理を維持する。
 
-ユーザーはrobotの全機能をuroaへ組み込む方針を示した。単一リポジトリ化、5アプリの回帰テスト、共通入口と責任分担の整理を含む作業案と実施結果は [improvement-plan.md](improvement-plan.md) に記録する。単一リポジトリ化は完了済み。robotの取り込み・実機連携は未実施。
+ユーザーはrobotの全機能をuroaへ組み込む方針を示した。単一リポジトリ化、5アプリの回帰テスト、共通入口と責任分担の整理を含む作業案と実施結果は [improvement-plan.md](improvement-plan.md) に記録する。単一リポジトリ化は完了済み。robotの取り込みは2026-10-14のBLEファームウェア移行まで進めた。その他のrobotプロジェクトの取り込みと、移行後の実機再確認は未実施。
 
 ## 2026-10-10: 機能索引と実行確認
 

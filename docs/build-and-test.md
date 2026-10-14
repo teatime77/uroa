@@ -19,6 +19,41 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## ESP32 BLEファームウェア（2026-10-14）
+
+[esp32-ble-lab/firmware](../esp32-ble-lab/firmware/)へrobotの現行ソースを取り込んだ。PlatformIOで独立してビルドする。npmの`build`・`verify`はESP32向けのビルドを含まない。設定・配線・書き込み・diagram操作は [README](../esp32-ble-lab/README.md)、実装解説は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
+
+```powershell
+# uroaルート。PlatformIO CLIがPATHにある場合
+pio run --project-dir esp32-ble-lab/firmware -e esp32dev
+# WindowsのPlatformIO IDE付属CLIで実行する場合
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev
+```
+
+ソース・設定・`.gitignore`、仕様・配線・過去の検証文書、MITライセンスの計8ファイルをSHA256で元の作業ツリーと照合した。`main.cpp`の未コミット変更も含め、内容は変更していない。`.pio/`・IDE設定・旧専用Web画面は取り込んでいない。
+
+WindowsのPlatformIO IDE付属CLIで上記ビルドが成功し、`firmware/.pio/build/esp32dev/firmware.bin`を生成した（83.47秒）。Espressif32 6.10.0、Arduino ESP32 2.0.17、NimBLE-Arduino 2.3.6、Adafruit PWM Servo Driver Library 3.0.2、Adafruit BusIO 1.17.4を使用。RAMは36,108／327,680 bytes（11.0%）、Flashは621,425／1,310,720 bytes（47.4%）。初回は隔離環境でPlatformIO共通キャッシュの`platforms.lock`への書き込みが拒否されたため、ビルドを隔離環境外で実行した。生成物・依存は`.pio/`内に置かれ、Gitの追跡対象外である。
+
+diagram/ts/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の [validation.md](../esp32-ble-lab/docs/validation.md) は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
+
+### XIAO ESP32S3 Sense対応（2026-10-14）
+
+`platformio.ini`へ`xiao_esp32s3`環境を追加し、ボードIDを`seeed_xiao_esp32s3`、書き込み・モニターポートをユーザー指定のCOM4へ設定した。ライブラリーと接続数の設定は`esp32dev`から継承する。同日のUploadエラー報告を受け、環境未指定時の既定値を`xiao_esp32s3`へ変更した。DevKit V1では`-e esp32dev`を明示する。Espressif32 6.10.0のXIAOボード定義にはUSB CDCの有効化が含まれる。`config.h`は`ARDUINO_XIAO_ESP32S3`でSDA/SCLをGPIO5/6（D4/D5）へ切り替え、DevKit V1のGPIO21/22を維持する。`main.cpp`の制御・通信・停止処理は変更していない。[配線表](../esp32-ble-lab/docs/wiring.md)と[操作手順](../esp32-ble-lab/README.md)を更新した。
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev -e xiao_esp32s3
+```
+
+両環境でビルド成功。XIAO用の初回はESP32-S3用ツールチェーン・環境ごとのライブラリーを準備した。DevKit V1は61.98秒、XIAOは242.67秒。XIAOのRAMは29,464／327,680 bytes（9.0%）、Flashは509,489／3,342,336 bytes（15.2%）で、`.pio/build/xiao_esp32s3/firmware.bin`を生成した。DevKit V1の使用量は上記取り込み時と同じ。ファームウェアの`main.cpp`は元のrobot側とのSHA256一致を確認した。COM4への書き込み、起動ログ、実BLE・サーボ・IMUの確認は今回行っていない。Senseのカメラ・マイク・SDカードはこのファームウェアでは使用しない。
+
+既定環境の変更後、PlatformIOの設定パーサーで`default_envs = xiao_esp32s3`、ボード`seeed_xiao_esp32s3`、書き込み先COM4へ解決されることを確認した。ビルド環境の中身は上記成功時と同じで、今回の修正は環境未指定時の選択だけを変更する。エージェントによるUploadの再実行・書き込み成功の確認は行っていない。
+
+## diagramのツールアイコン（2026-10-14）
+
+ToolItemは`public/diagram/images/toolbox`の23種類のSVGを32×32で表示し、ドラッグ中も同じアイコンを表示する。マウスを重ねるとブラウザー標準のツールチップでクラス名を表示する。画像取得前・失敗時は「?」を表示する。画像とヒット領域は同じ32×32で、縦方向の項目数や配置順は従来のまま。アイコンだけの一覧は`/diagram/toolbox-icons.html`で開ける。
+
+`NODE_OPTIONS=--max-old-space-size=1024`を指定した`npm.cmd run build`が成功し、公開成果物へ23種類のSVGがコピーされたことと差分を確認した。既存gameモジュールの動的／静的import併用の警告は残る。今回の作業範囲はソース変更とビルド成功までとし、アイコンの実画面表示・ツールチップ・ドラッグ操作のテストはユーザーによる差分確認後に行う。
+
 ## diagramの公開JSONを開く（2026-10-14）
 
 JSONファイルは`public/diagram/data`へ置く。`npm.cmd run build`で各JSONと一覧の`dist/diagram/data-list.json`が公開成果物へ入る。開発サーバーでも同じ`/diagram/data-list.json`を動的に取得できる。Openを押し、表示されたファイル名をクリックすると現在の図を置き換える。表示内容はファイル名で、成功すると一覧を閉じる。通信・JSON形式・ブロック復元の失敗時は一覧内へエラーを表示し、閉じる・Escapeで取得を中断する。未対応の旧JSONは既存復元処理の制約を引き継ぐため、正常に開けることを保証しない。

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">条件で通す</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#d97706" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 12h10a12 12 0 0 1 0 24H13Z M5 18h8M5 30h8M35 24h8"/><path d="m18 24 4 4 7-9" stroke="#15803d"/></g>
+</svg>

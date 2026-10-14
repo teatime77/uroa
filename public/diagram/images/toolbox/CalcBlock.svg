@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">計算</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#7c3aed" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="7" width="24" height="34" rx="4"/><path d="M17 12h14v7H17Z M17 27h6m-3-3v6M27 27h4M17 35h6M27 33h4m-4 4h4"/></g>
+</svg>

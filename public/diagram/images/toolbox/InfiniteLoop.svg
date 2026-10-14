@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">繰り返し</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#d97706" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M24 24c-5-7-8-10-12-10a10 10 0 0 0 0 20c4 0 7-3 12-10s8-10 12-10a10 10 0 0 1 0 20c-4 0-7-3-12-10Z"/></g>
+</svg>

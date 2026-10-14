@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">教材動画を再生</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#9333ea" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 17h32v23H8Z M8 8h32v9H8Z M13 8l-4 9m13-9-4 9m13-9-4 9m13-9-4 9"/><path d="m21 23 10 6-10 6Z" fill="#f3e8ff"/></g>
+</svg>

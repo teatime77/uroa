@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">文字を読み上げる</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#9333ea" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 19h8l9-7v24l-9-7H8Z M31 18a9 9 0 0 1 0 12M35 12a17 17 0 0 1 0 24"/></g>
+</svg>

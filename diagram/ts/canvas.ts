@@ -53,6 +53,7 @@ export class Canvas extends AbstractCanvas {
         this.canvas.style.touchAction = "none";
         this.canvas.addEventListener("pointercancel", () => this.resetPointer(), { signal: this.eventSignal });
         this.canvas.addEventListener("lostpointercapture", () => this.resetPointer(), { signal: this.eventSignal });
+        this.canvas.addEventListener("pointerleave", () => this.canvas.removeAttribute("title"), { signal: this.eventSignal });
     }
 
     clearCanvas() : void {
@@ -77,6 +78,7 @@ export class Canvas extends AbstractCanvas {
     }
 
     pointerdown(ev:PointerEvent) : void {
+        this.canvas.removeAttribute("title");
         if (ev.button !== 0 || this.draggedUI || this.pressedButton) return;
         this.moved = false;
         this.prevPortOfDraggedUI = undefined;
@@ -151,6 +153,13 @@ export class Canvas extends AbstractCanvas {
     }
 
     pointermove(ev:PointerEvent) : void {
+        if (ev.pointerType === "mouse" && !this.draggedUI && !this.pressedButton) {
+            const target = theEditor.getPortBlockFromPosition(this.getPositionInCanvas(ev));
+            const title = target instanceof ToolItem ? geBlockName(target.toolIdx) : "";
+            if (this.canvas.title !== title) this.canvas.title = title;
+        } else {
+            this.canvas.removeAttribute("title");
+        }
         if (this.pressedButton) {
             if (ev.pointerId !== this.pointerId) return;
             if (this.buttonDownClient.distance(new Vec2(ev.clientX, ev.clientY)) > 8) this.buttonCancelled = true;
@@ -197,6 +206,7 @@ export class Canvas extends AbstractCanvas {
 
     override dispose(): void {
         this.resetPointer();
+        theEditor.tools.forEach(tool => tool.dispose());
         super.dispose();
         if (animationFrameId !== null) cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
@@ -286,6 +296,7 @@ export class Canvas extends AbstractCanvas {
     }
 
     private resetPointer(): void {
+        this.canvas.removeAttribute("title");
         if (this.pressedButton) this.pressedButton.pressed = false;
         const pointerId = this.pointerId;
         this.pressedButton = undefined;
@@ -347,34 +358,45 @@ export class Canvas extends AbstractCanvas {
 
 class ToolItem extends UI {
     toolIdx : number;
+    private readonly icon = new Image();
 
     constructor(idx : number){
         super({});
         this.toolIdx = idx;
         this.boxSize = new Vec2(32, 32);
+        // The SVG includes its own border. Match the image and hit area exactly.
+        this.margin = [0, 0, 0, 0];
+        this.borderWidth = 0;
+        this.icon.onload = this.icon.onerror = () => theCanvas?.requestUpdateCanvas();
+        this.icon.src = `/diagram/images/toolbox/${geBlockName(idx)}.svg`;
     }
 
     draw(){
-        super.draw();
-        const [xa, ya, xb, yb] = this.marginBox();
+        this.drawIcon(this.position.x, this.position.y);
+    }
 
+    private drawIcon(x: number, y: number): void {
         this.ctx.save();
-        this.ctx.textBaseline = "top";
-        this.ctx.font = "20px serif";
-        this.ctx.strokeStyle = textColor;
-        this.ctx.strokeText(geBlockName(this.toolIdx), xa, ya);
+        if (this.icon.complete && this.icon.naturalWidth > 0) {
+            this.ctx.drawImage(this.icon, x, y, this.boxSize.x, this.boxSize.y);
+        } else {
+            this.ctx.fillStyle = "white";
+            this.ctx.fillRect(x, y, this.boxSize.x, this.boxSize.y);
+            this.ctx.fillStyle = textColor;
+            this.ctx.font = "bold 18px sans-serif";
+            this.ctx.textAlign = "center";
+            this.ctx.textBaseline = "middle";
+            this.ctx.fillText("?", x + this.boxSize.x / 2, y + this.boxSize.y / 2);
+        }
         this.ctx.restore();
     }
 
-    drawDraggedTool(move_pos : Vec2){       
-        let [xa, ya, xb, yb] = this.marginBox();
+    drawDraggedTool(move_pos : Vec2){
+        this.drawIcon(move_pos.x, move_pos.y);
+    }
 
-        const w = xb - xa;
-        const h = yb - ya;
-
-        xa = move_pos.x;
-        ya = move_pos.y;
-        this.drawRidgeRect(this.ctx, xa, ya, w, h, this.borderWidth);
+    dispose(): void {
+        this.icon.onload = this.icon.onerror = null;
     }
 }
 

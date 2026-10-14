@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">音声認識</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#c026d3" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><rect x="19" y="7" width="10" height="22" rx="5"/><path d="M13 23v2a11 11 0 0 0 22 0v-2M24 36v6m-6 0h12M7 18v11m34-11v11"/></g>
+</svg>

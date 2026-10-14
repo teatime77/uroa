@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">GPUシミュレーション</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#9333ea" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><rect x="12" y="12" width="24" height="24" rx="3"/><path d="M18 6v6m6-6v6m6-6v6M18 36v6m6-6v6m6-6v6M6 18h6m-6 6h6m-6 6h6M36 18h6m-6 6h6m-6 6h6M18 20l6-3 6 3v8l-6 3-6-3Z M18 20l6 4 6-4m-6 4v7"/></g>
+</svg>

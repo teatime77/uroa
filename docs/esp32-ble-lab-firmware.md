@@ -1,6 +1,6 @@
 # ESP32 BLE Labのmain.cpp解説
 
-作成日: 2026-10-13（日本時間）。対象は [robot/esp32-ble-lab/firmware/src/main.cpp](../../robot/esp32-ble-lab/firmware/src/main.cpp)。同日のローカルソースには未コミット変更があるため、それを含む現在の実装を説明する。今回の確認はソース・設定・関連仕様の照合であり、ビルド、ESP32への書き込み、実機動作の再確認は行っていない。
+作成日: 2026-10-13、配置更新日: 2026-10-14（日本時間）。対象は [esp32-ble-lab/firmware/src/main.cpp](../esp32-ble-lab/firmware/src/main.cpp)。2026-10-14にrobotの作業ツリーを、`main.cpp`の未コミット変更も含めてuroaへ取り込んだ。ソースの内容は変更していない。2026-10-13の解説作成ではソース・設定・関連仕様を照合し、ビルドや実機動作の再確認は行っていない。取り込み後のビルド結果・確認範囲は [build-and-test.md](build-and-test.md) に記録する。
 
 ## 1. このプログラムの役割
 
@@ -24,11 +24,11 @@ flowchart LR
 
 | ファイル・ライブラリー | 役割 |
 |---|---|
-| [config.h](../../robot/esp32-ble-lab/firmware/include/config.h) | ピン、角度範囲、パルス幅、BLE UUID、タイムアウト |
-| [platformio.ini](../../robot/esp32-ble-lab/firmware/platformio.ini) | `esp32dev`、Arduino、依存ライブラリー、BLE接続数の設定 |
-| [protocol.md](../../robot/esp32-ble-lab/docs/protocol.md) | BLEパケットの仕様 |
-| [web/src/protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ブラウザー側の指令生成・受信解析・単位変換 |
-| [web/src/ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts) | BLE接続、ACK待ち、定期PING |
+| [config.h](../esp32-ble-lab/firmware/include/config.h) | ピン、角度範囲、パルス幅、BLE UUID、タイムアウト |
+| [platformio.ini](../esp32-ble-lab/firmware/platformio.ini) | `esp32dev`／`xiao_esp32s3`、Arduino、依存ライブラリー、BLE接続数の設定 |
+| [protocol.md](../esp32-ble-lab/docs/protocol.md) | BLEパケットの仕様 |
+| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
+| [web/src/protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts)、[web/src/ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts) | 取り込み元の専用Web画面。解説作成時の照合先。今回の移行対象外 |
 | `Arduino.h` | `setup()`、`loop()`、`millis()`、シリアル出力など |
 | `Wire.h` | I²C通信。PCA9685とIMUが同じバスを使う |
 | `NimBLEDevice.h` | BLEサーバー、接続イベント、書き込み・通知 |
@@ -50,6 +50,8 @@ flowchart LR
 | `MIN_PULSE_US` / `MAX_PULSE_US` | 1000 / 2000µs | 公称0～180°に対応させるパルス幅 |
 | `HEARTBEAT_TIMEOUT_MS` | 5000ms | 指令が途切れた場合の停止判定 |
 | `DEVICE_NAME` | `ESP32-BLE-Lab` | BLEのデバイス名 |
+
+2026-10-14にXIAO ESP32S3 Sense用の`xiao_esp32s3`ビルド環境を追加した。この環境では`SDA_PIN` / `SCL_PIN`を5 / 6（基板表記D4 / D5）へ切り替える。表の21 / 22はDevKit V1用の`esp32dev`環境の値。BLEプロトコル・サーボ制御・停止処理は共通で、Senseのカメラ・マイク・SDカードは使用しない。配線とCOM4への書き込みは [README](../esp32-ble-lab/README.md) を参照する。
 
 例えば90°は`9000`として保持・送信する。0～180°からパルス幅への換算式を使うが、ARM/MOVEが受け付ける範囲は60～120°に制限される。
 
@@ -95,7 +97,7 @@ Arduinoでは`setup()`が起動時に1回呼ばれ、その後`loop()`が繰り�
 `setup()`の処理順は次のとおり。
 
 1. シリアル通信を115200bpsで開始し、200ms待つ。
-2. GPIO21/22でI²Cを開始する。クロックは100kHz、I²Cタイムアウト設定は30ms。
+2. `SDA_PIN` / `SCL_PIN`でI²Cを開始する（DevKit V1はGPIO21/22、XIAO ESP32S3 SenseはGPIO5/6）。クロックは100kHz、I²Cタイムアウト設定は30ms。
 3. I²Cアドレス1～126を探索し、応答したアドレスをシリアルへ表示する。
 4. PCA9685を探索し、`pwm.begin()`で初期化する。成功時は全出力をOFFにし、50Hzを設定して再度OFFにする。
 5. `setupIMU()`でMPU-6050を探索・設定する。各デバイスの結果を`OK`または`MISSING`として表示する。
@@ -384,4 +386,4 @@ MOVEの10バイトは次のようになる。
 
 この文書で確認したのは、現在のソースにある処理、設定値、専用Web画面のプロトコルとの対応である。実サーボの到達角度、停止までの実時間、BLE通知の到達、実端末の接続は今回検証していない。
 
-配線・電源は [wiring.md](../../robot/esp32-ble-lab/docs/wiring.md)、操作手順は [README.md](../../robot/esp32-ble-lab/README.md)、過去の検証記録は [validation.md](../../robot/esp32-ble-lab/docs/validation.md)を参照する。uroaとの全体的な関係は [architecture.md](architecture.md)と [robotの設計文書](../../robot/docs/architecture.md)を参照する。
+配線・電源は [wiring.md](../esp32-ble-lab/docs/wiring.md)、ビルド・書き込み・uroaでの操作手順は [README.md](../esp32-ble-lab/README.md)、取り込み元の過去の検証記録は [validation.md](../esp32-ble-lab/docs/validation.md)を参照する。uroaとの全体的な関係は [architecture.md](architecture.md)を参照する。

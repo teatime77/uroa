@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">AIチャット</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#c026d3" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10h34v25H23l-9 7v-7H7Z"/><path d="m24 15 2.5 5.5L32 23l-5.5 2.5L24 31l-2.5-5.5L16 23l5.5-2.5Z" fill="#fae8ff"/><path d="M35 15v4m-2-2h4"/></g>
+</svg>

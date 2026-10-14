@@ -14,6 +14,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - ブロック編集: `diagram/ts/`。`index.ts`はdiagramのUI初期化、`runtime.ts`はブロック実行・停止・キャンセル可能な待機を担当する。ブロック追加時は [docs/diagram-implementation.md](docs/diagram-implementation.md) の機能・登録・ポート・実行・保存・後片付けの説明を参照する。
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
+- ESP32 BLEファームウェア: `esp32-ble-lab/firmware/`。PlatformIOで独立してビルドし、npmの`verify`には含めない。操作・配線・BLE仕様は [esp32-ble-lab/README.md](esp32-ble-lab/README.md) を参照する。
 - 旧13サブモジュールはすべてuroaの通常フォルダーとして管理する。変更・コミットはuroaで行う。履歴統合・検証結果は [docs/monorepo-migration.md](docs/monorepo-migration.md)、algebraの先行移行は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
 - `dist/`、各モジュールの `lib/`、`node_modules/` は主な編集対象のソースではない。`tmp/zip/`には過去の展開コピーがある。
 

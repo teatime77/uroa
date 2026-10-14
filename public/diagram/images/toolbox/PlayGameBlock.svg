@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">学習ゲーム</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#9333ea" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 15h16c5 0 7 4 8 10l2 9c1 5-4 7-7 4l-6-6H19l-6 6c-3 3-8 1-7-4l2-9c1-6 3-10 8-10Z"/><path d="M12 24h10m-5-5v10M31 22h.1m4.9 6h.1"/></g>
+</svg>

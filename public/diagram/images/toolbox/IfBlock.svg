@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">条件分岐</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#d97706" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="m24 7 10 10-10 10-10-10Z M14 17H9v20h9m-4-4 4 4-4 4M34 17h5v20h-9m4-4-4 4 4 4"/></g>
+</svg>

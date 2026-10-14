@@ -163,6 +163,10 @@ AIChatBlockとai-client.tsのwaitAIRequestは、通信がabortを無視する場
 
 枠・ポート・ボタンはcanvas、入力欄・回答欄・グラフ・ダイアログはDOMを併用する。新しいDOMは基本的にlayer-diagramへ付け、位置更新とclearBlockでの除去を組にする。
 
+2026-10-14にツール用のSVGアイコン23種類を`public/diagram/images/toolbox/<ブロッククラス名>.svg`へ作成し、ToolItemへ組み込んだ。32×32px、viewBoxは48×48で、白い角丸背景・太い線・機能別の色を使う。ファイル名はindex.tsのgeBlockNameと一致する。[一覧プレビュー](../public/diagram/toolbox-icons.html)で32pxと80pxを見比べられる。元の図形定義は[generate-diagram-icons.mjs](../scripts/generate-diagram-icons.mjs)にあり、`node scripts/generate-diagram-icons.mjs`でSVGと一覧HTMLを再生成する（生成済みファイルを上書きする）。ToolItemはImageでSVGを読み、通常表示とドラッグ中の表示をdrawImageで描く。読込完了・失敗時に再描画し、未読込・画像取得失敗時は「?」を表示する。ToolItemのmargin・borderWidthを0にして32×32の画像とヒット領域をそろえ、Canvas破棄で画像のイベントハンドラーを解除する。
+
+マウスのpointermoveでは、既存ヒット判定でToolItemを検出し、canvasのtitle属性へブロッククラス名を設定してブラウザー標準のツールチップを使う。ToolItem以外・ドラッグ中・押下中・pointerleave・pointercancel・破棄では消す。表示までの待ち時間や外観はブラウザーに従い、タッチではツールチップを設定しない。
+
 - setBoxSizeでサイズを決め、setBlockPortPositionで位置とポート位置をそろえる。
 - setPositionのoverrideはsuperを呼び、DOM位置を追従させる。
 - ボタンはchildrenで返し、setPosition／setPortPositionsで位置をそろえる。
@@ -178,7 +182,7 @@ AIChatBlockとai-client.tsのwaitAIRequestは、通信がabortを無視する場
 ### 現行ツールボックスの注意点
 
 - Editorは型名でAIChatBlockを4番目、SpeechRecognitionBlockを5番目へ移す。新しい型番号の末尾追加でAIの表示順が変わらないようにしている。
-- 各ToolItemは32×32で、長い型名の描画全体がヒット領域になるわけではない。縦配置も画面高に応じたスクロール・折返しを実装していない。項目追加時には小さい画面と文字のクリック位置を実際に確認する。
+- 各ToolItemは32×32のアイコンで、クラス名はツールチップで確認する。縦配置は画面高に応じたスクロール・折返しを実装していない。項目追加時には小さい画面での配置を実際に確認する。
 - 通常のToolItem生成はpointermoveの有無を使い、微小ドラッグの閾値や安全なドロップ領域を網羅していない。
 - 新しいActionBlockをToolItemから生成する分岐と、既存ActionBlockを移動してtopへ自動接続する分岐は別である。近くへ配置すれば自動接続されると仮定しない。
 
