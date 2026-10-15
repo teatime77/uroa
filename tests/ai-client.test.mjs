@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { interactionAnswer, checkAIResponse, waitAIRequest } from '../diagram/lib/ai-client.js';
+import { interactionAnswer, checkAIResponse, waitAIRequest } from '../diagram/lib/ai/ai-client.js';
 
 test('REST parsing selects the final model output, combines text, and omits thoughts', () => {
     assert.equal(interactionAnswer({ status: 'completed', steps: [

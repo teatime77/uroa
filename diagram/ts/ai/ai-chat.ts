@@ -1,9 +1,9 @@
 import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "./block";
-import { PortType, theCanvas } from "./diagram_util";
-import { TextPort } from "./port";
-import { getProcedureSignal, isRunning, stopDiagram, subscribeDiagramStop } from "./runtime";
-import { Button, type Attr, type UI } from "./ui";
+import { FunctionBlock, registerFunctionBlock } from "../block";
+import { PortType, theCanvas } from "../diagram_util";
+import { TextPort } from "../port";
+import { getProcedureSignal, isRunning, stopDiagram, subscribeDiagramStop } from "../runtime";
+import { Button, type Attr, type UI } from "../ui";
 import { AIRequestError, askAI, checkAIConnection, waitAIRequest } from "./ai-client";
 
 /** Application-held credentials live in private memory; optional persistence is browser-managed. */

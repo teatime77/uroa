@@ -19,6 +19,10 @@
 
 ## 2. ソースの役割
 
+2026-10-15に機能別ソース14ファイルを5フォルダーへ整理した。`ai/`はAIチャット・音声認識、`ble-wifi/`はBLE接続・Wi-Fi設定と通信、`hardware/`はサーボ・IMU、`plot/`はグラフ・履歴・`plotly.d.ts`、`camera/`は端末／XIAOの画像取得を担当する。共通のブロック・ポート・型・実行管理は直下に残す。CameraBlockの定義は引き続き`block.ts`にあり、画像取得部分だけを`camera/`へ置く。移動に合わせてimport・テスト・文書のパスを変更し、処理内容・型番号・JSON形式は維持する。
+
+`hardware/`は今後の各種センサー・アクチュエータの機能も収めるための名称で、現在はサーボとIMUを置く。
+
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 
 | ファイル | 役割・最初に見る箇所 |
@@ -34,15 +38,15 @@
 | [data_type.ts](../diagram/ts/data_type.ts) | Struct・Field・DataType、値の検証・複製・freeze、vec3・IMUの登録。UI・BLE・parserへの依存なし |
 | [json-util.ts](../diagram/ts/json-util.ts) | theEditorの保持、saveJsonでの採番・Download |
 | [diagram_util.ts](../diagram/ts/diagram_util.ts) | PortType、共有canvas、UI要素、再描画回数、レイヤー切替、旧sendData |
-| [ble.ts](../diagram/ts/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
-| [robot-wifi.ts](../diagram/ts/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts) | BLEによるWi-Fi設定、Wi-Fi transport、SSID・接続キーの設定画面、接続先とChrome資格情報保存 |
-| [camera-feed.ts](../diagram/ts/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
-| [device-camera.ts](../diagram/ts/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
-| [servo.ts](../diagram/ts/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
-| [imu.ts](../diagram/ts/imu.ts) | IMUの受信購読と構造体出力 |
-| [plot.ts](../diagram/ts/plot.ts)、[plot_data.ts](../diagram/ts/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
-| [ai-chat.ts](../diagram/ts/ai-chat.ts)、[ai-client.ts](../diagram/ts/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
-| [speech-recognition.ts](../diagram/ts/speech-recognition.ts)、[speech-client.ts](../diagram/ts/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
+| [ble.ts](../diagram/ts/ble-wifi/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
+| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | BLEによるWi-Fi設定、Wi-Fi transport、SSID・接続キーの設定画面、接続先とChrome資格情報保存 |
+| [camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
+| [device-camera.ts](../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
+| [servo.ts](../diagram/ts/hardware/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
+| [imu.ts](../diagram/ts/hardware/imu.ts) | IMUの受信購読と構造体出力 |
+| [plot.ts](../diagram/ts/plot/plot.ts)、[plot_data.ts](../diagram/ts/plot/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
+| [ai-chat.ts](../diagram/ts/ai/ai-chat.ts)、[ai-client.ts](../diagram/ts/ai/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
+| [speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts)、[speech-client.ts](../diagram/ts/ai/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
 
 入口HTMLは [public/diagram/index.html](../public/diagram/index.html)。保存図・サンプルは [public/diagram/data/](../public/diagram/data/) に置く。
 
@@ -93,7 +97,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧顔領域・距離の表示と出力。顔表示の画像は接続したCameraBlockを参照 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。顔検出AIは未実装 |
 | ConditionGate／TriggerGate | 条件・入出力ポートや枠を定義 | ConditionGateの値ルーティング、TriggerGateのrunは未実装。配置できることと実行できることは別 |
 
-`JoyStickBlock`はblock.tsの生成関数にあるが、現在の23種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot.ts`は別のものとして扱う。
+`JoyStickBlock`はblock.tsの生成関数にあるが、現在の23種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot/plot.ts`は別のものとして扱う。
 
 ### CameraBlockの画像取得元（2026-10-15）
 

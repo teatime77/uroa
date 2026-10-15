@@ -8,8 +8,8 @@ import { tab, UI, Attr, Button } from "./ui";
 import { NumberPort, Port, TextPort } from "./port";
 import { theEditor } from "./json-util";
 import { isRunning, stopDiagram, subscribeDiagramStop } from "./runtime";
-import { subscribeCamera } from "./camera-feed";
-import { DeviceCameraFeed } from "./device-camera";
+import { subscribeCamera } from "./camera/camera-feed";
+import { DeviceCameraFeed } from "./camera/device-camera";
 
 // export const inputHeight = 21;
 

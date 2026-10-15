@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { recognizeSpeech } from '../diagram/lib/speech-client.js';
+import { recognizeSpeech } from '../diagram/lib/ai/speech-client.js';
 
 class Recognition {
     starts = 0;

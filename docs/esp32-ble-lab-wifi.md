@@ -13,10 +13,10 @@ DevKit V1とXIAOでサーボ・IMU・BLE設定・Wi-Fi通信を共通化する�
 | [main.cpp](../esp32-ble-lab/firmware/src/main.cpp) | 共通指令キュー、I²C・PWM・IMU、停止・接続世代 |
 | [network.cpp](../esp32-ble-lab/firmware/src/network.cpp) | BLE設定、Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
 | [camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp) | XIAOのPSRAMを使う320×240 JPEG。DevKitはカメラなし |
-| [ble.ts](../diagram/ts/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
-| [robot-wifi.ts](../diagram/ts/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、接続先保存 |
-| [robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts) | SSID一覧／手入力、パスワード・接続キー、Chrome保存要求 |
-| [camera-feed.ts](../diagram/ts/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
+| [ble.ts](../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
+| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、接続先保存 |
+| [robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、パスワード・接続キー、Chrome保存要求 |
+| [camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
 
 制御指令・Status・Telemetryは既存の10／12／20バイトを維持する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
 

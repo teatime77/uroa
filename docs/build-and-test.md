@@ -19,6 +19,18 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## diagramの機能別フォルダー整理（2026-10-15）
+
+AI（`ai/`）、BLE／Wi-Fi（`ble-wifi/`）、サーボ／IMU（`hardware/`）、グラフ（`plot/`）、カメラ取得（`camera/`）の5フォルダーへ、型定義を含む14ソースを移した。importとテスト・設計文書の参照先を更新し、移動したソースはmodule importのパス以外が移動前のGit上の内容と一致することを確認した。CameraBlock本体は引き続き`block.ts`に置く。
+
+- `npm.cmd run verify`成功。TypeScript参照ビルド、Vite公開ビルド（197モジュール、92項目コピー、25.48秒）、成果物の静的確認を完了。既存gameの動的／静的import併用の警告2件は残る。
+- `node --test tests/ai-client.test.mjs tests/speech-client.test.mjs tests/plot-data.test.mjs`は18件すべて成功。Nodeの既存package type警告は残る。
+- 移動先を指す文書中のソース参照75件と、差分の空白を確認。直下は10ファイル、機能別サブフォルダーは5個になった。
+
+新規のテストは追加していない。ブラウザー操作・BLE／Wi-Fi実通信・実カメラ・マイク・Android・ESP32実機の確認は行っていない。
+
+同日の後続指示で、各種センサー・アクチュエータをまとめる名前として`hardware/`を採用した。サーボとIMUのソース内容は変えず、フォルダー名・import・文書とテストの参照先を更新した。名称変更後も`npm.cmd run verify`成功（197モジュール、92項目コピー、Vite 20.55秒）。
+
 ## CameraBlockの端末カメラ選択（2026-10-15）
 
 「端末のカメラ／XIAO」の選択と端末映像の開始・停止、設定のみの保存・復元を追加した。実装・操作は[diagram実装ガイド](diagram-implementation.md)を参照する。取得・描画の停止、許可待ちの遅延完了時のTrack解放、旧JSONのXIAO既定値、接続したCameraBlockの画像を使うFaceDetectionBlockをソース上で確認した。
@@ -46,7 +58,7 @@ pio run --project-dir esp32-ble-lab/firmware -e esp32dev
 
 WindowsのPlatformIO IDE付属CLIで上記ビルドが成功し、`firmware/.pio/build/esp32dev/firmware.bin`を生成した（83.47秒）。Espressif32 6.10.0、Arduino ESP32 2.0.17、NimBLE-Arduino 2.3.6、Adafruit PWM Servo Driver Library 3.0.2、Adafruit BusIO 1.17.4を使用。RAMは36,108／327,680 bytes（11.0%）、Flashは621,425／1,310,720 bytes（47.4%）。初回は隔離環境でPlatformIO共通キャッシュの`platforms.lock`への書き込みが拒否されたため、ビルドを隔離環境外で実行した。生成物・依存は`.pio/`内に置かれ、Gitの追跡対象外である。
 
-diagram/ts/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の [validation.md](../esp32-ble-lab/docs/validation.md) は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
+diagram/ts/ble-wifi/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の [validation.md](../esp32-ble-lab/docs/validation.md) は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
 
 ### XIAO ESP32S3 Sense対応時の記録（2026-10-14、Wi-Fi機能追加前）
 

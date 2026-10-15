@@ -102,13 +102,13 @@ async function pageFor(context) {
         await page.evaluate(() => String(window.uroaApp.error?.stack || window.uroaApp.error || '')) + errors.join('\n'));
     await page.evaluate(async () => {
         const { theEditor } = await import('/diagram/ts/json-util.ts');
-        const { diagramBLE, BLEConnectionBlock } = await import('/diagram/ts/ble.ts');
+        const { diagramBLE, BLEConnectionBlock } = await import('/diagram/ts/ble-wifi/ble.ts');
         const { theCanvas } = await import('/diagram/ts/diagram_util.ts');
-        const { IMUBlock } = await import('/diagram/ts/imu.ts');
+        const { IMUBlock } = await import('/diagram/ts/hardware/imu.ts');
         const { StructPort, NumberPort, Port } = await import('/diagram/ts/port.ts');
         const { imuStruct, DataType, Struct, Field, numberType } = await import('/diagram/ts/data_type.ts');
-        const { PlotBlock } = await import('/diagram/ts/plot.ts');
-        const { ServoMotorBlock } = await import('/diagram/ts/servo.ts');
+        const { PlotBlock } = await import('/diagram/ts/plot/plot.ts');
+        const { ServoMotorBlock } = await import('/diagram/ts/hardware/servo.ts');
         const { geBlockName } = await import('/diagram/ts/index.ts');
         const { PortType } = await import('/diagram/ts/diagram_util.ts');
         window.bleFixture = { editor: theEditor, connection: diagramBLE, Block: BLEConnectionBlock, canvas: theCanvas, IMUBlock, StructPort, NumberPort, Port, imuStruct, PortType, DataType, Struct, Field, numberType, PlotBlock, ServoMotorBlock, geBlockName };

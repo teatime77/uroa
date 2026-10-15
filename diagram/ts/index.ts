@@ -6,12 +6,12 @@ import { saveJson, theEditor, initDiagramOpen } from "./json-util";
 import { IfBlock, InfiniteLoop, TTSBlock, SleepBlock, TriggerGate, ActionBlock, makeBlockByTypeName, PlayMovieBlock, PlayGameBlock, PlayWebGPUBlock } from "./procedure";
 import { Block } from "./block"
 import { Port } from "./port";
-import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble";
-import { IMUBlock } from "./imu";
-import { PlotBlock } from "./plot";
-import { ServoMotorBlock } from "./servo";
-import { AIChatBlock } from "./ai-chat";
-import { SpeechRecognitionBlock } from "./speech-recognition";
+import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble-wifi/ble";
+import { IMUBlock } from "./hardware/imu";
+import { PlotBlock } from "./plot/plot";
+import { ServoMotorBlock } from "./hardware/servo";
+import { AIChatBlock } from "./ai/ai-chat";
+import { SpeechRecognitionBlock } from "./ai/speech-recognition";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";

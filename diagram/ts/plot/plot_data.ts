@@ -1,4 +1,4 @@
-import type { DataType } from "./data_type";
+import type { DataType } from "../data_type";
 
 export interface PlotSeries { readonly name: string; readonly path: readonly string[]; readonly color: string; }
 export interface PlotGroup { readonly name: string; readonly series: readonly PlotSeries[]; }

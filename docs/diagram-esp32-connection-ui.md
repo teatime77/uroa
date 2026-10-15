@@ -156,6 +156,6 @@ Wi-Fiの制御接続が成功したらCameraBlockを配置すると画像取得�
 
 ## 参照先と確認範囲
 
-画面の項目・処理は [ble.ts](../diagram/ts/ble.ts)、[robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts)、[robot-wifi.ts](../diagram/ts/robot-wifi.ts) の現行ソースに基づく。通信・保存・認証の詳しい実装は [ESP32のWi-Fi設定・制御・カメラ](esp32-ble-lab-wifi.md)、配線・書き込みは [ESP32 BLE LabのREADME](../esp32-ble-lab/README.md) を参照する。
+画面の項目・処理は [ble.ts](../diagram/ts/ble-wifi/ble.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)、[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) の現行ソースに基づく。通信・保存・認証の詳しい実装は [ESP32のWi-Fi設定・制御・カメラ](esp32-ble-lab-wifi.md)、配線・書き込みは [ESP32 BLE LabのREADME](../esp32-ble-lab/README.md) を参照する。
 
 この会話ではユーザーからWindowsのChromeでのWi-Fi接続・カメラ画像表示と、追加待ち0msで滑らかになったとの報告を受けている。エージェントによる実機テストや、Chrome保存・次回接続・Androidを含む全手順の動作確認とは区別する。今回の作業は文書作成のみ。

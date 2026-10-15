@@ -1,10 +1,10 @@
 import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "./block";
-import { PortType, theCanvas } from "./diagram_util";
-import { TextPort } from "./port";
-import { getProcedureSignal, isRunning, stopDiagram, subscribeDiagramStop } from "./runtime";
+import { FunctionBlock, registerFunctionBlock } from "../block";
+import { PortType, theCanvas } from "../diagram_util";
+import { TextPort } from "../port";
+import { getProcedureSignal, isRunning, stopDiagram, subscribeDiagramStop } from "../runtime";
 import { recognizeSpeech, SpeechRecognitionError, speechRecognitionConstructor, type SpeechRecognizer } from "./speech-client";
-import { Button, type Attr, type UI } from "./ui";
+import { Button, type Attr, type UI } from "../ui";
 
 export class SpeechRecognitionBlock extends FunctionBlock {
     override readonly runOnStart = true;

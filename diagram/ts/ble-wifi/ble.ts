@@ -1,11 +1,11 @@
 import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "./block";
-import { Button, type Attr, type UI } from "./ui";
-import { theCanvas } from "./diagram_util";
-import { imuType, type IMUValue } from "./data_type";
+import { FunctionBlock, registerFunctionBlock } from "../block";
+import { Button, type Attr, type UI } from "../ui";
+import { theCanvas } from "../diagram_util";
+import { imuType, type IMUValue } from "../data_type";
 import { BLEWifiSetup, RobotWifi, rememberRobot, type RobotEndpoint } from "./robot-wifi";
 import { RobotWifiDialog } from "./robot-wifi-dialog";
-import { setCameraProvider } from "./camera-feed";
+import { setCameraProvider } from "../camera/camera-feed";
 
 // Same GATT service and packet format as robot/esp32-ble-lab.
 export const BLE_UUID = {

@@ -1,9 +1,9 @@
 import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "./block";
-import { diagramBLE } from "./ble";
-import { PortType, theCanvas } from "./diagram_util";
-import { NumberPort } from "./port";
-import { Button, type Attr, type UI } from "./ui";
+import { FunctionBlock, registerFunctionBlock } from "../block";
+import { diagramBLE } from "../ble-wifi/ble";
+import { PortType, theCanvas } from "../diagram_util";
+import { NumberPort } from "../port";
+import { Button, type Attr, type UI } from "../ui";
 
 /** Angle input is in degrees; enabling PWM always requires an explicit click. */
 export class ServoMotorBlock extends FunctionBlock {

@@ -55,7 +55,7 @@ async function fixture(context) {
     await page.waitForFunction(() => ['ready', 'failed'].includes(window.uroaApp?.state), undefined, { timeout: 60_000 });
     assert.equal(await page.evaluate(() => window.uroaApp.state), 'ready', errors.join('\n'));
     await page.evaluate(async () => {
-        const { AIChatBlock } = await import('/diagram/ts/ai-chat.ts');
+        const { AIChatBlock } = await import('/diagram/ts/ai/ai-chat.ts');
         const { InputTextBlock, FunctionBlock } = await import('/diagram/ts/block.ts');
         const { TTSBlock, makeBlockByTypeName } = await import('/diagram/ts/procedure.ts');
         const { theEditor } = await import('/diagram/ts/json-util.ts');

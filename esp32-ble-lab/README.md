@@ -18,7 +18,7 @@ ESP32 DevKit V1またはSeeed Studio XIAO ESP32S3 Senseと、PCA9685、MPU-6050�
 | [docs/validation.md](docs/validation.md) | 取り込み元の2026-10-05の検証記録。旧Web画面の結果を含む |
 | [LICENSE](LICENSE) | 取り込み元のMITライセンス |
 
-`.pio/`、`.vscode/`、生成済みバイナリー、旧専用 `web/` は取り込んでいない。ブラウザー側は [ble.ts](../diagram/ts/ble.ts)、[servo.ts](../diagram/ts/servo.ts)、[imu.ts](../diagram/ts/imu.ts)、[plot.ts](../diagram/ts/plot.ts) を使う。実装解説は [esp32-ble-lab-firmware.md](../docs/esp32-ble-lab-firmware.md) を参照する。
+`.pio/`、`.vscode/`、生成済みバイナリー、旧専用 `web/` は取り込んでいない。ブラウザー側は [ble.ts](../diagram/ts/ble-wifi/ble.ts)、[servo.ts](../diagram/ts/hardware/servo.ts)、[imu.ts](../diagram/ts/hardware/imu.ts)、[plot.ts](../diagram/ts/plot/plot.ts) を使う。実装解説は [esp32-ble-lab-firmware.md](../docs/esp32-ble-lab-firmware.md) を参照する。
 
 ## ビルド・書き込み
 

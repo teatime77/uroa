@@ -1,10 +1,10 @@
 import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "./block";
-import { diagramBLE, type BLEConnectionState } from "./ble";
-import { imuStruct, type IMUValue } from "./data_type";
-import { PortType, theCanvas } from "./diagram_util";
-import { StructPort } from "./port";
-import type { Attr } from "./ui";
+import { FunctionBlock, registerFunctionBlock } from "../block";
+import { diagramBLE, type BLEConnectionState } from "../ble-wifi/ble";
+import { imuStruct, type IMUValue } from "../data_type";
+import { PortType, theCanvas } from "../diagram_util";
+import { StructPort } from "../port";
+import type { Attr } from "../ui";
 
 /** Like the distance sensor block, this block pushes one received measurement. */
 export class IMUBlock extends FunctionBlock {

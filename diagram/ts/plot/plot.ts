@@ -1,10 +1,10 @@
 import { Vec2 } from "@i18n";
 import type { Data, Layout } from "plotly.js";
-import { FunctionBlock, registerFunctionBlock } from "./block";
-import { PortType, theCanvas } from "./diagram_util";
-import { Port } from "./port";
+import { FunctionBlock, registerFunctionBlock } from "../block";
+import { PortType, theCanvas } from "../diagram_util";
+import { Port } from "../port";
 import { PlotHistory, type PlotScale } from "./plot_data";
-import type { Attr } from "./ui";
+import type { Attr } from "../ui";
 
 type PlotlyAPI = typeof import("plotly.js");
 let plotlyPromise: Promise<PlotlyAPI> | undefined;

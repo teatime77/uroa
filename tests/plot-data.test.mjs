@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DataType, Struct, Field, imuType, numberType, stringType } from '../diagram/lib/data_type.js';
-import { PlotHistory, getPlotGroups, getStatistics, getThreeSigmaScale } from '../diagram/lib/plot_data.js';
+import { PlotHistory, getPlotGroups, getStatistics, getThreeSigmaScale } from '../diagram/lib/plot/plot_data.js';
 
 test('panels and RGB series are discovered from registered Fields', () => {
     const groups = getPlotGroups(imuType);

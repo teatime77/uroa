@@ -1,4 +1,4 @@
-import { setCameraImage } from "./diagram_util";
+import { setCameraImage } from "../diagram_util";
 
 type Provider = (signal: AbortSignal) => Promise<Blob>;
 let provider: Provider | undefined, controller: AbortController | undefined;

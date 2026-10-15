@@ -31,7 +31,7 @@ flowchart LR
 | [config.h](../esp32-ble-lab/firmware/include/config.h) | ピン、角度範囲、パルス幅、BLE UUID、タイムアウト |
 | [platformio.ini](../esp32-ble-lab/firmware/platformio.ini) | `esp32dev`／`xiao_esp32s3`、Arduino、依存ライブラリー、BLE接続数の設定 |
 | [protocol.md](../esp32-ble-lab/docs/protocol.md) | BLEパケットの仕様 |
-| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
+| [diagram/ts/ble-wifi/ble.ts](../diagram/ts/ble-wifi/ble.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
 | [web/src/protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts)、[web/src/ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts) | 取り込み元の専用Web画面。解説作成時の照合先。今回の移行対象外 |
 | `Arduino.h` | `setup()`、`loop()`、`millis()`、シリアル出力など |
 | `Wire.h` | I²C通信。PCA9685とIMUが同じバスを使う |

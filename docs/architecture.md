@@ -100,15 +100,17 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 ### diagramの実機向け処理
 
+2026-10-15にdiagramの機能別ソース14ファイルを`diagram/ts/ai/`、`ble-wifi/`、`hardware/`、`plot/`、`camera/`へ移した。AIチャット・音声認識、BLE／Wi-Fi接続、サーボ／IMU、グラフ、カメラ取得をそれぞれまとめる。共通のブロック・ポート・型・実行管理は直下に残し、CameraBlock本体も`block.ts`に置く。処理内容・ブロックの保存形式・通信仕様は変更せず、importと参照先を更新した。
+
 ブロック追加のための現行実装・登録手順・実行方式・保存形式・既知の制約は [diagram実装ガイド](diagram-implementation.md) を参照する。構造体の未実装の式評価・型推論は [設計案](diagram-struct-design.md) と区別する。
 
 [canvas.ts](../diagram/ts/canvas.ts)と [ui.ts](../diagram/ts/ui.ts)が編集・描画、[port.ts](../diagram/ts/port.ts)が接続・値の伝播、[json-util.ts](../diagram/ts/json-util.ts)がJSON保存を担当する。入力・計算ブロックと手続きブロックを接続し、Start／Stopで実行する。
 
-2026-10-13に [ai-chat.ts](../diagram/ts/ai-chat.ts) のAIChatBlockを追加した。FunctionBlockで、文字列入力・出力を1つずつ持つ。InputTextBlock → AIChatBlock → TTSBlockへデータポートを配線し、Startで質問を送る。FunctionBlockのrunOnStartは既定falseで、AIChatBlockと同日追加のSpeechRecognitionBlockがtrue。[runtime.ts](../diagram/ts/runtime.ts)はStart時に入力欄の値を反映した後、対象FunctionBlockの前回出力を消し、データ依存順に1回ずつawaitする。全対象関数が成功してからActionBlockのチェーンを実行する。入力編集・コピー・JSON復元では送信しない。AIによるサーボ操作は実装しない。
+2026-10-13に [ai-chat.ts](../diagram/ts/ai/ai-chat.ts) のAIChatBlockを追加した。FunctionBlockで、文字列入力・出力を1つずつ持つ。InputTextBlock → AIChatBlock → TTSBlockへデータポートを配線し、Startで質問を送る。FunctionBlockのrunOnStartは既定falseで、AIChatBlockと同日追加のSpeechRecognitionBlockがtrue。[runtime.ts](../diagram/ts/runtime.ts)はStart時に入力欄の値を反映した後、対象FunctionBlockの前回出力を消し、データ依存順に1回ずつawaitする。全対象関数が成功してからActionBlockのチェーンを実行する。入力編集・コピー・JSON復元では送信しない。AIによるサーボ操作は実装しない。
 
-[speech-recognition.ts](../diagram/ts/speech-recognition.ts)のSpeechRecognitionBlockはFunctionBlockで、入力なし、TextPort出力1つを持つ。[speech-client.ts](../diagram/ts/speech-client.ts)がSpeechRecognition／webkitSpeechRecognitionの機能検出・型定義・イベント待機を担当する。Startでlang=ja-JP、continuous=false、interimResults=falseの単発認識を開始する。確定結果を保持し、endで認識セッションの終了を確認してから出力・完了するため、SpeechRecognitionBlock → AIChatBlock → TTSBlockの順で待てる。結果は読み取り専用textareaに表示する。「認識終了」はstopでそこまでの結果を待ち、全体Stop・削除・Clear・読込・pagehide・破棄はabortとPromiseの即時終了で中断する。世代番号で遅延イベントを抑止する。30秒のタイムアウト・未対応API・権限拒否・無音・空結果・通信失敗では出力をundefinedにして後続へ進まない。JSON・コピーは言語設定だけを引き継ぎ、認識結果・認識オブジェクト・実行状態を含めない。復元や描画では認識しない。認識はブラウザーのサービスに依存し、オフライン・端末内処理を保証しない。[Web Speech API仕様](https://webaudio.github.io/web-speech-api/)。サンプルは [speech-ai-chat.json](../public/diagram/data/speech-ai-chat.json)。配置した全runOnStartブロックが対象なので、最初のデモは音声認識1個で構成する。
+[speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts)のSpeechRecognitionBlockはFunctionBlockで、入力なし、TextPort出力1つを持つ。[speech-client.ts](../diagram/ts/ai/speech-client.ts)がSpeechRecognition／webkitSpeechRecognitionの機能検出・型定義・イベント待機を担当する。Startでlang=ja-JP、continuous=false、interimResults=falseの単発認識を開始する。確定結果を保持し、endで認識セッションの終了を確認してから出力・完了するため、SpeechRecognitionBlock → AIChatBlock → TTSBlockの順で待てる。結果は読み取り専用textareaに表示する。「認識終了」はstopでそこまでの結果を待ち、全体Stop・削除・Clear・読込・pagehide・破棄はabortとPromiseの即時終了で中断する。世代番号で遅延イベントを抑止する。30秒のタイムアウト・未対応API・権限拒否・無音・空結果・通信失敗では出力をundefinedにして後続へ進まない。JSON・コピーは言語設定だけを引き継ぎ、認識結果・認識オブジェクト・実行状態を含めない。復元や描画では認識しない。認識はブラウザーのサービスに依存し、オフライン・端末内処理を保証しない。[Web Speech API仕様](https://webaudio.github.io/web-speech-api/)。サンプルは [speech-ai-chat.json](../public/diagram/data/speech-ai-chat.json)。配置した全runOnStartブロックが対象なので、最初のデモは音声認識1個で構成する。
 
-同日の後続指示により、学習者が自分のAPIキーを入力する教材向けの直接通信へ変更した。AIChatBlock内の「接続」でキー・モデル名のダイアログを開き、入力確定後にGoogleのmodels.getでモデル情報を取得する。「接続確認済み」はモデル情報の取得成功であり、質問生成の利用枠まで保証しない。Startでは [ai-client.ts](../diagram/ts/ai-client.ts)から `https://generativelanguage.googleapis.com/v1beta/interactions` へ直接POSTする。質問はinput、モデル名はmodel、store=falseを指定し、認証はx-goog-api-keyヘッダーへ渡す。APIサーバー・ViteのAPIプロキシ・Google SDK依存は不要。[公式REST仕様](https://ai.google.dev/api/interactions-api)、[モデル情報取得](https://ai.google.dev/api/models)
+同日の後続指示により、学習者が自分のAPIキーを入力する教材向けの直接通信へ変更した。AIChatBlock内の「接続」でキー・モデル名のダイアログを開き、入力確定後にGoogleのmodels.getでモデル情報を取得する。「接続確認済み」はモデル情報の取得成功であり、質問生成の利用枠まで保証しない。Startでは [ai-client.ts](../diagram/ts/ai/ai-client.ts)から `https://generativelanguage.googleapis.com/v1beta/interactions` へ直接POSTする。質問はinput、モデル名はmodel、store=falseを指定し、認証はx-goog-api-keyヘッダーへ渡す。APIサーバー・ViteのAPIプロキシ・Google SDK依存は不要。[公式REST仕様](https://ai.google.dev/api/interactions-api)、[モデル情報取得](https://ai.google.dev/api/models)
 
 アプリが保持するキーは各AIChatBlockのECMAScript privateフィールド #apiKeyに置く。ダイアログのpassword入力を確定・キャンセル・閉じる際に消去する。Startごとの再入力は不要で、「切断」、そのブロックの削除、Clear、図読込、pagehide、破棄でアプリ内の保持を解除する。通常のStopでは保持済みキーを維持し、接続確認・回答待ちのみを中断する。キーをポート・JSON・コピー・localStorage・sessionStorage・URL・ログへ含めず、失敗時にGoogleの生のエラー本文を表示しない。fetchはcredentials=omit、redirect=errorとし、固定のGoogleホストへだけ認証ヘッダーを送る。ブラウザー内の実行権限や開発者ツールからの完全な隠蔽・メモリの物理消去を保証するものではない。モデル名は公開設定としてJSONへ保存し、初期値は旧バックエンドの既定値gemini-3.5-flash-liteに合わせる。別のGEMINI_MODELを使っていた場合はダイアログで同じモデル名を指定する。robot/chatと既存.envは変更しない。
 
@@ -125,11 +127,11 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
 - 現在は `diy_sbc = false` によりキュー初期化・旧センサーの定期取得が無効。
 
-2026-10-12に [ble.ts](../diagram/ts/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、robot/esp32-ble-labと同じサービス・3つのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
+2026-10-12に [ble.ts](../diagram/ts/ble-wifi/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、robot/esp32-ble-labと同じサービス・3つのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
 
 同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
 
-2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）。CH0～15と移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
+2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/hardware/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）。CH0～15と移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
 
 「このCHを停止」はDISABLE、「全サーボ停止」とdiagramの手続きStop・アプリ停止はSTOPを送る。STOPはIMU通知とBLE接続を保持する。チャンネル変更・ブロック削除では以前のCHをDISABLEする。停止・切断・CH変更・削除後に待機中のARM/MOVEを送らないよう、接続世代、CHごとの操作世代、ブロックの操作世代を確認する。連続する角度変更は未送信の古いMOVEを取り消す。停止ACKを確認できなければ切断する。全OFFのStatusやPCA異常で有効状態を解除し、サーボの自動再有効化は行わない。
 
@@ -139,15 +141,15 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 続いて同日に [data_type.ts](../diagram/ts/data_type.ts) へ既存のVariable・Field・Struct・DataTypeを移し、vec3とIMU（gyro: vec3、acc: vec3）を登録した。PortTypeの接続方向とは別にPort.dataTypeを追加した。StructPortは入出力双方で構造体を検証・複製・深いfreezeを行い、1つの値として伝播する。NumberPort・TextPortは値の型を指定し、既知の型同士の不一致を接続時に拒否する。型未指定の既存Portは互換のため維持する。型参照は既存のポートJSONへ任意のdataTypeとして保存・復元し、ライブの計測値は保存しない。CalcBlock・CompareBlockは現段階では数値型で、構造体のフィールド計算は未実装。
 
-[imu.ts](../diagram/ts/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
+[imu.ts](../diagram/ts/hardware/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
 
 BLEの20バイトTelemetryをlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として1回出力し、console.log("IMU", value)へ表示する。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度・姿勢推定は未実装。
 
 Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単一の接続元をたどる。型が不明、接続元が複数、循環参照ならundefinedを返す。参照結果をdataTypeへ保存しないので、解除後に古い型を残さず、JSONには明示型だけを保存する。値の検証・描画・接続検査も有効な型を使う。subscribeConnections(listener)は配線更新後、両端へ{port, peer, connected}を同期通知し、返された関数で購読を解除する。重複接続・未接続の解除は通知しない。disconnectはどちらの端子からでも呼べ、disconnectAllとBlock.clearBlockで全配線を解除する。通知は当該ポートの接続変更に対するもので、ブロックをまたぐ式の型推論・型変更通知は未実装。
 
-[plot.ts](../diagram/ts/plot.ts)のPlotBlockは1つの型未指定入力Portを持ち、接続元のStruct.membersを読み取って数値Fieldをグラフ化する。IMUValue・imuStructへの依存はなく、number、直接の数値Fieldを持つStruct、入れ子のStructを扱う。各構造体の直接の数値Fieldを1つのパネルにし、入れ子はパス名をタイトルとして横に並べる。IMUならgyro・accの2パネル、x/y/zはred/green/blueとなる。文字列Fieldは描画しない。Fieldへの単位情報はまだ追加しない。
+[plot.ts](../diagram/ts/plot/plot.ts)のPlotBlockは1つの型未指定入力Portを持ち、接続元のStruct.membersを読み取って数値Fieldをグラフ化する。IMUValue・imuStructへの依存はなく、number、直接の数値Fieldを持つStruct、入れ子のStructを扱う。各構造体の直接の数値Fieldを1つのパネルにし、入れ子はパス名をタイトルとして横に並べる。IMUならgyro・accの2パネル、x/y/zはred/green/blueとなる。文字列Fieldは描画しない。Fieldへの単位情報はまだ追加しない。
 
-[plot_data.ts](../diagram/ts/plot_data.ts)はFieldの列挙と履歴・統計を担当する。ブラウザー受信時刻を別途保持し、直近30秒、最大6000サンプルを保存する。データ受信時に線を更新し、初回取得と以後1秒ごとに系列ごとの平均・母標準偏差を計算する。各パネルは全系列のμ±3σの下限・上限をまとめ、1/2/5系の目盛りへ外側に丸める。σ=0では最小幅を設ける。3σ外の値は画面外になる場合がある。入力未取得・解除・配線変更で履歴を消し、受信待ちへ戻す。
+[plot_data.ts](../diagram/ts/plot/plot_data.ts)はFieldの列挙と履歴・統計を担当する。ブラウザー受信時刻を別途保持し、直近30秒、最大6000サンプルを保存する。データ受信時に線を更新し、初回取得と以後1秒ごとに系列ごとの平均・母標準偏差を計算する。各パネルは全系列のμ±3σの下限・上限をまとめ、1/2/5系の目盛りへ外側に丸める。σ=0では最小幅を設ける。3σ外の値は画面外になる場合がある。入力未取得・解除・配線変更で履歴を消し、受信待ちへ戻す。
 
 グラフはcanvasの枠内へ位置を合わせたdivにPlotly.jsで描き、移動・画面リサイズへ追従する。見出し・ポート・枠は従来のcanvasで扱う。Plotly.reactは要求をまとめて直列実行し、削除時はタイマー・ResizeObserver・購読・描画予約を解除してpurgeとDOM削除を行う。ライブラリはdiagramのnpm依存plotly.js-gl3d-dist-min 4.1.2を初回配置時に遅延読込する。scatterと将来の3Dに必要な種類を含む配布版だが、今回のPlotBlockは2D時系列表示のみ。Viteの開発・公開ビルド双方でローカル資産として配信する。[公式配布構成](https://github.com/plotly/plotly.js/blob/main/dist/README.md)、[Plotly API](https://plotly.com/javascript/plotlyjs-function-reference/)
 
@@ -155,13 +157,13 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 ### 2026-10-14: ESP32のWi-Fi設定・制御・カメラ
 
-共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/robot-wifi.ts)はBLE設定、Wi-Fi認証、接続先のlocalStorage保存、[robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts)はSSID選択・手入力・Chrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有ID・接続キーを保存する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
+共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)はBLE設定、Wi-Fi認証、接続先のlocalStorage保存、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)はSSID選択・手入力・Chrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有ID・接続キーを保存する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
 
-WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
+WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
 
 ### 2026-10-15: CameraBlockの端末カメラ選択
 
-[block.ts](../diagram/ts/block.ts)のCameraBlockに「端末のカメラ／XIAO」の選択を追加した。端末は[device-camera.ts](../diagram/ts/device-camera.ts)がブロックごとに`getUserMedia()`・video・描画予約を所有し、「開始」の明示操作で取得する。全体Stop・取得元変更・削除・非表示・pagehideで停止し、遅い取得結果のTrackも解放する。XIAOを選んだブロックは従来の[camera-feed.ts](../diagram/ts/camera-feed.ts)によるJPEG取得を共有する。コピー・保存図は取得元設定だけを引き継ぎ、旧設定欠落はXIAO、端末の自動起動は行わない。FaceDetectionBlockの画像参照は接続したCameraBlockの選択元へ追従する。画像ポート出力や画像AIは追加していない。2026-10-15の検証はユーザー指定でビルドまでとし、ブラウザー・Android・実機テストはユーザーが行う。詳細な操作は[diagram実装ガイド](diagram-implementation.md)を参照する。
+[block.ts](../diagram/ts/block.ts)のCameraBlockに「端末のカメラ／XIAO」の選択を追加した。端末は[device-camera.ts](../diagram/ts/camera/device-camera.ts)がブロックごとに`getUserMedia()`・video・描画予約を所有し、「開始」の明示操作で取得する。全体Stop・取得元変更・削除・非表示・pagehideで停止し、遅い取得結果のTrackも解放する。XIAOを選んだブロックは従来の[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)によるJPEG取得を共有する。コピー・保存図は取得元設定だけを引き継ぎ、旧設定欠落はXIAO、端末の自動起動は行わない。FaceDetectionBlockの画像参照は接続したCameraBlockの選択元へ追従する。画像ポート出力や画像AIは追加していない。2026-10-15の検証はユーザー指定でビルドまでとし、ブラウザー・Android・実機テストはユーザーが行う。詳細な操作は[diagram実装ガイド](diagram-implementation.md)を参照する。
 
 ### game・movieのデータと実行
 

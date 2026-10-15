@@ -9,11 +9,11 @@
 | [app/ts/main.ts](../app/ts/main.ts) | DOM準備後のURL判定、5アプリの初期化、diagramの子アプリ接続、pagehide・HMR時の終了 |
 | [app/ts/lifecycle.ts](../app/ts/lifecycle.ts) | 初期化Promiseの共有、状態・エラー、逆順での停止・破棄 |
 | [diagram/ts/index.ts](../diagram/ts/index.ts) | diagramのUI、読込、実機用HTTP処理、BLEのイベント登録と破棄。全アプリを起動する処理は置かない |
-| [diagram/ts/ble.ts](../diagram/ts/ble.ts) | BLE接続ブロックと共有接続・サーボ指令・IMU通知管理。停止時に待機中のサーボ指令を取消。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
-| [diagram/ts/servo.ts](../diagram/ts/servo.ts) | 角度入力からBLEサーボ操作。明示ARM、MOVE、DISABLE/STOP。CH変更・削除で以前のCH停止、削除で購読・DOMを解除 |
-| [diagram/ts/imu.ts](../diagram/ts/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
-| [diagram/ts/plot.ts](../diagram/ts/plot.ts) | 型と配線を参照する汎用グラフ。削除時にPlotly・DOM・統計タイマー・ResizeObserver・購読・描画予約を解除 |
-| [diagram/ts/ai-chat.ts](../diagram/ts/ai-chat.ts) | キー入力とGoogle接続確認、Startで直接AI質問。Stopで待機を取消。切断・Clear・読込・削除・pagehide・破棄で保持キーを解除。削除では回答DOM・ダイアログ・配線と停止の購読を解除 |
+| [diagram/ts/ble-wifi/ble.ts](../diagram/ts/ble-wifi/ble.ts) | BLE接続ブロックと共有接続・サーボ指令・IMU通知管理。停止時に待機中のサーボ指令を取消。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
+| [diagram/ts/hardware/servo.ts](../diagram/ts/hardware/servo.ts) | 角度入力からBLEサーボ操作。明示ARM、MOVE、DISABLE/STOP。CH変更・削除で以前のCH停止、削除で購読・DOMを解除 |
+| [diagram/ts/hardware/imu.ts](../diagram/ts/hardware/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
+| [diagram/ts/plot/plot.ts](../diagram/ts/plot/plot.ts) | 型と配線を参照する汎用グラフ。削除時にPlotly・DOM・統計タイマー・ResizeObserver・購読・描画予約を解除 |
+| [diagram/ts/ai/ai-chat.ts](../diagram/ts/ai/ai-chat.ts) | キー入力とGoogle接続確認、Startで直接AI質問。Stopで待機を取消。切断・Clear・読込・削除・pagehide・破棄で保持キーを解除。削除では回答DOM・ダイアログ・配線と停止の購読を解除 |
 | [diagram/ts/runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、チェーン実行、キャンセル可能な待機、子アプリ停止の接続口 |
 | [diagram/ts/procedure.ts](../diagram/ts/procedure.ts) | 個々のブロック。runtimeを利用し、indexへの逆向きimportを持たない |
 | 各アプリのindex.ts | 個別の初期化と停止・破棄。algebraは初期化の中で数式処理を開始する |

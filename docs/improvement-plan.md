@@ -12,7 +12,7 @@
 
 実機はESP32、PCA9685、SG90、MPU-6050／GY-521で、IMU取得はユーザー確認済み。本人のAndroidタブレットで動作を見せ、携帯電話のアクセスポイント経由でインターネットに接続する。他人への共有・操作やログインはデモ要件に含めない。AndroidのHTTPS公開・AIバックエンド配置が難しい場合はWindows PC＋ローカルViteを使う。公開先・実機サーボ・最終的な完了条件は別途確認する。
 
-最初の実装としてdiagram/ts/ble.tsにBLEConnectionBlockを追加した。canvasボタンから機器選択・接続・切断を行う。接続ブロックだけではサーボ／IMU出力を開始しない。続くIMUBlock・PlotBlockの実装は下記のとおり。2026-10-13にServoMotorBlockをdiagram/ts/servo.tsへ移し、明示ARM、角度入力からのMOVE、CH・移動時間、DISABLE/STOPを追加した。接続・再接続だけではサーボを有効化せず、停止時は待機中の古い指令を取り消す。同日にユーザーはサーボの実機確認・commit・pushを報告した。エージェントの模擬確認とは区別する。
+最初の実装としてdiagram/ts/ble-wifi/ble.tsにBLEConnectionBlockを追加した。canvasボタンから機器選択・接続・切断を行う。接続ブロックだけではサーボ／IMU出力を開始しない。続くIMUBlock・PlotBlockの実装は下記のとおり。2026-10-13にServoMotorBlockをdiagram/ts/hardware/servo.tsへ移し、明示ARM、角度入力からのMOVE、CH・移動時間、DISABLE/STOPを追加した。接続・再接続だけではサーボを有効化せず、停止時は待機中の古い指令を取り消す。同日にユーザーはサーボの実機確認・commit・pushを報告した。エージェントの模擬確認とは区別する。
 
 同日、InputTextBlock → AIChatBlock（FunctionBlock）→ TTSBlockを実装した。uroaの `/api/ask` 限定プロキシから既存robot/chatのExpress・Interactions APIを再利用する。Startで回答全文を待ち、成功時だけTTSへ渡す。送信状態・回答・エラー、中断と遅延応答の抑止、コピー・JSON配線復元に対応し、ライブの回答は保存しない。Googleまでの実通信1問とTTSの音声出力直前まで確認した。音声出力は模擬で、実際に聞こえること、Android、HTTPS公開は後続確認。操作と検証は [build-and-test.md](build-and-test.md) を参照する。
 

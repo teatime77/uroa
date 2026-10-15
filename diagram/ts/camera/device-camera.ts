@@ -1,4 +1,4 @@
-import { theCanvas } from "./diagram_util";
+import { theCanvas } from "../diagram_util";
 
 /** One CameraBlock's device camera. Permission requests may finish after stop(). */
 export class DeviceCameraFeed {
