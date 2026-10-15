@@ -562,6 +562,9 @@ export class InputNumberBlock extends InputBlock {
 }
 
 export class CameraBlock extends FunctionBlock {
+    private frameRevision = 0;
+    private frameState = "";
+    private readonly frameListeners = new Set<() => void>();
     private releaseCamera?: () => void;
     private cameraMessage = "Wi-Fiカメラ未接続";
     private cameraSource: "xiao" | "device" = "xiao";
@@ -585,7 +588,7 @@ export class CameraBlock extends FunctionBlock {
         } });
         this.deviceCamera = new DeviceCameraFeed(message => {
             if (this.removed || this.cameraSource !== "device") return;
-            this.cameraMessage = message; this.refreshControls();
+            this.cameraMessage = message; this.refreshControls(); this.notifyFrameState();
         });
         this.releaseStop = subscribeDiagramStop(() => this.deviceCamera.stop());
         document.addEventListener("visibilitychange", () => {
@@ -604,7 +607,7 @@ export class CameraBlock extends FunctionBlock {
     private subscribeXiao(): void {
         if (this.removed || this.inToolbox || !this.ctx || this.cameraSource !== "xiao" || this.releaseCamera) return;
         this.releaseCamera = subscribeCamera(message => {
-            this.cameraMessage = message; this.refreshControls();
+            this.cameraMessage = message; this.refreshControls(); this.notifyFrameState();
         });
     }
     private selectSource(source: "xiao" | "device"): void {
@@ -612,9 +615,21 @@ export class CameraBlock extends FunctionBlock {
         this.releaseCamera?.(); this.releaseCamera = undefined;
         this.deviceCamera.stop();
         this.cameraSource = source;
+        this.frameRevision++;
         this.cameraMessage = source === "device" ? "「開始」で端末カメラを使います。" : "Wi-Fiカメラ未接続";
         this.subscribeXiao();
         this.refreshControls();
+        this.notifyFrameState();
+    }
+    subscribeFrameState(listener: () => void): () => void {
+        this.frameListeners.add(listener);
+        return () => { this.frameListeners.delete(listener); };
+    }
+    private notifyFrameState(): void {
+        const frame = this.getFrame();
+        const state = `${this.cameraSource}:${frame ? `${frame.width}x${frame.height}` : "none"}`;
+        if (state !== this.frameState) { this.frameState = state; this.frameRevision++; }
+        this.frameListeners.forEach(listener => listener());
     }
     private refreshControls(): void {
         const disabled = this.removed || this.inToolbox;
@@ -648,15 +663,15 @@ export class CameraBlock extends FunctionBlock {
         block.setBlockPortPosition(this.position.copy());
         return block;
     }
-    getFrame(): { image: HTMLImageElement | HTMLVideoElement; width: number; height: number } | undefined {
+    getFrame(): { image: HTMLImageElement | HTMLVideoElement; width: number; height: number; revision: number } | undefined {
         if (this.removed) return;
         if (this.cameraSource === "device") {
             const video = this.deviceCamera.image;
             if (video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth && video.videoHeight) {
-                return { image: video, width: video.videoWidth, height: video.videoHeight };
+                return { image: video, width: video.videoWidth, height: video.videoHeight, revision: this.frameRevision };
             }
         } else if (cameraImg) {
-            return { image: cameraImg, width: cameraImg.naturalWidth || cameraImg.width, height: cameraImg.naturalHeight || cameraImg.height };
+            return { image: cameraImg, width: cameraImg.naturalWidth || cameraImg.width, height: cameraImg.naturalHeight || cameraImg.height, revision: this.frameRevision };
         }
     }
 
@@ -706,6 +721,7 @@ export class CameraBlock extends FunctionBlock {
     clearBlock(): void {
         if (this.removed) return;
         this.removed = true;
+        this.notifyFrameState(); this.frameListeners.clear();
         this.releaseCamera?.(); this.releaseCamera = undefined;
         this.deviceCamera.stop();
         this.releaseStop(); this.events.abort();

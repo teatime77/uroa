@@ -57,13 +57,14 @@ export class DeviceCameraFeed {
             this.show("端末カメラの映像を準備しています…");
             await video.play();
             if (!current()) return;
-            let lastTime = -1;
+            let lastTime = -1, lastWidth = 0, lastHeight = 0;
             const drawFrame = () => {
                 if (!current()) return;
                 if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth && video.videoHeight) {
-                    if (!this.image) {
+                    if (!this.image || lastWidth !== video.videoWidth || lastHeight !== video.videoHeight) {
                         clearTimeout(this.timer); this.timer = undefined;
                         this.image = video;
+                        lastWidth = video.videoWidth; lastHeight = video.videoHeight;
                         this.show("端末カメラを表示中");
                     }
                     if (video.currentTime !== lastTime) {

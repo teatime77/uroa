@@ -82,6 +82,9 @@ try {
         await checkPage(page);
     }
     const assetCount = await checkWebgpuAssets(resolve(root, 'webgpu/public'));
+    for (const asset of ['diagram/data/gemini-object-detection.json', 'diagram/images/toolbox/ObjectDetectionBlock.svg']) {
+        await requireFile(resolve(dist, asset), asset);
+    }
     if (errors.length) {
         console.error(errors.join('\n'));
         process.exitCode = 1;

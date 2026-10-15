@@ -19,6 +19,15 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## Geminiカメラ物体検出（2026-10-15）
+
+ObjectDetectionBlockを追加し、端末／XIAOのCameraBlock画像を1枚固定してGeminiへ送信する処理を実装した。日本語ラベル・矩形表示、ラベル・個数・先頭物体Structの出力、キー入力・接続確認・切断、保存・コピー・取消・遅延応答の抑止を含む。操作・データ形式・通信は[Gemini物体検出ガイド](diagram-gemini-object-detection.md)。
+
+- `npm.cmd run verify`成功。TypeScript参照ビルド、Vite公開ビルド（200モジュール変換、92項目コピー、41.19秒）、成果物の静的確認を完了。既存gameの動的／静的import併用の警告2件は残る。
+- 新しいサンプルJSONとアイコンを`check:dist`の必須資産へ追加した。アイコンを再生成し、24種類へ更新した。
+
+ユーザー指定により、テストは追加・実行せずビルドまで。Googleへの実通信・APIキー・利用可能モデル・認識精度、カメラ・UI・保存復元・取消の実行、Android・XIAO・ESP32の実機は未確認。新しいnpm依存・SDK・MediaPipe・WASM・APIサーバー・デプロイは追加していない。
+
 ## diagramの機能別フォルダー整理（2026-10-15）
 
 AI（`ai/`）、BLE／Wi-Fi（`ble-wifi/`）、サーボ／IMU（`hardware/`）、グラフ（`plot/`）、カメラ取得（`camera/`）の5フォルダーへ、型定義を含む14ソースを移した。importとテスト・設計文書の参照先を更新し、移動したソースはmodule importのパス以外が移動前のGit上の内容と一致することを確認した。CameraBlock本体は引き続き`block.ts`に置く。

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" role="img" aria-labelledby="title">
+  <title id="title">Gemini物体検出</title>
+  <rect x="1" y="1" width="46" height="46" rx="8" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <g fill="none" stroke="#c026d3" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17V8h10m14 0h10v9M7 31v9h10m14 0h10v-9"/><rect x="13" y="16" width="14" height="17" rx="2"/><circle cx="32" cy="25" r="7"/></g>
+</svg>

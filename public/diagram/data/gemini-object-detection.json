@@ -1,0 +1,7 @@
+[
+  { "idx": 0, "typeName": "CameraBlock", "x": 80, "y": 60, "cameraSource": "device",
+    "ports": [{ "idx": 0, "destinations": [1] }] },
+  { "idx": 1, "typeName": "ObjectDetectionBlock", "x": 450, "y": 60, "model": "gemini-3.8-flash",
+    "ports": [{ "idx": 1, "destinations": [] }, { "idx": 2, "destinations": [] },
+      { "idx": 3, "destinations": [] }, { "idx": 4, "destinations": [] }] }
+]

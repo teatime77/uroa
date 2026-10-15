@@ -50,6 +50,8 @@ const icons = [
         '<path d="M7 10h34v25H23l-9 7v-7H7Z"/><path d="m24 15 2.5 5.5L32 23l-5.5 2.5L24 31l-2.5-5.5L16 23l5.5-2.5Z" fill="#fae8ff"/><path d="M35 15v4m-2-2h4"/>'],
     ['SpeechRecognitionBlock', '音声認識', '#c026d3',
         '<rect x="19" y="7" width="10" height="22" rx="5"/><path d="M13 23v2a11 11 0 0 0 22 0v-2M24 36v6m-6 0h12M7 18v11m34-11v11"/>'],
+    ['ObjectDetectionBlock', 'Gemini物体検出', '#c026d3',
+        '<path d="M7 17V8h10m14 0h10v9M7 31v9h10m14 0h10v-9"/><rect x="13" y="16" width="14" height="17" rx="2"/><circle cx="32" cy="25" r="7"/>'],
 ];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -69,6 +71,6 @@ const cards = icons.map(([name, label]) => `<article><div class="samples"><img s
 await writeFile(resolve(root, 'public/diagram/toolbox-icons.html'), `<!DOCTYPE html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>diagram ブロックアイコン一覧</title>
 <style>body{margin:0;padding:24px;background:#eef2f6;color:#17384f;font:15px system-ui,sans-serif}h1{font-size:24px;margin:0 0 8px}header p{margin:0 0 24px}main{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}article{background:white;border:1px solid #d9e2ec;border-radius:12px;padding:16px}.samples{display:flex;align-items:center;justify-content:center;gap:24px;background:#f1f5f9;border-radius:8px;padding:12px}h2{font-size:16px;margin:12px 0 4px}article p{font:12px ui-monospace,monospace;margin:0;overflow-wrap:anywhere}</style></head>
-<body><header><h1>diagram ブロックアイコン</h1><p>全23種類。左がToolItem用の32px、右が拡大表示です。</p></header><main>${cards}</main></body></html>
+<body><header><h1>diagram ブロックアイコン</h1><p>全${icons.length}種類。左がToolItem用の32px、右が拡大表示です。</p></header><main>${cards}</main></body></html>
 `, 'utf8');
 console.log(`Generated ${icons.length} toolbox SVG icons and toolbox-icons.html.`);

@@ -58,12 +58,17 @@ export async function checkAIConnection(apiKey: string, model: string, signal: A
 }
 
 export async function askAI(apiKey: string, model: string, question: string, signal: AbortSignal): Promise<string> {
+    return requestAIInteraction(apiKey, { model, input: question, store: false,
+        system_instruction: "日本語で、優しく親しみやすく答えてください。原則1〜3文の短い返答にしてください。" }, signal);
+}
+
+/** Shared REST transport. Never expose raw API errors or credentials to UI/logs. */
+export async function requestAIInteraction(apiKey: string, body: Record<string, unknown>, signal: AbortSignal): Promise<string> {
     const options = requestOptions(apiKey, signal);
     const response = await fetch(`${apiRoot}/interactions`, {
         ...options, method: "POST",
         headers: { ...options.headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, input: question, store: false,
-            system_instruction: "日本語で、優しく親しみやすく答えてください。原則1〜3文の短い返答にしてください。" }),
+        body: JSON.stringify(body),
     });
     checkAIResponse(response);
     return interactionAnswer(await response.json());
