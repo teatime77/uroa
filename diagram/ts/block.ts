@@ -4,11 +4,12 @@ import { assert, msg, MyError, sum, Vec2 } from "@i18n";
 import { Term, Rational, ConstNum, RefVar, App, parseMath, SyntaxError } from "@parser";
 import { cameraIcon, cameraImg, distanceSensorIcon, notchRadius, PortType, theCanvas } from "./diagram_util";
 import { nest_h1, sendData } from "./diagram_util";
-import { tab, UI, Attr } from "./ui";
+import { tab, UI, Attr, Button } from "./ui";
 import { NumberPort, Port, TextPort } from "./port";
 import { theEditor } from "./json-util";
-import { isRunning, stopDiagram } from "./runtime";
+import { isRunning, stopDiagram, subscribeDiagramStop } from "./runtime";
 import { subscribeCamera } from "./camera-feed";
+import { DeviceCameraFeed } from "./device-camera";
 
 // export const inputHeight = 21;
 
@@ -563,12 +564,100 @@ export class InputNumberBlock extends InputBlock {
 export class CameraBlock extends FunctionBlock {
     private releaseCamera?: () => void;
     private cameraMessage = "Wi-Fiカメラ未接続";
+    private cameraSource: "xiao" | "device" = "xiao";
+    private readonly deviceCamera: DeviceCameraFeed;
+    private readonly deviceButton: Button;
+    private readonly xiaoButton: Button;
+    private readonly captureButton: Button;
+    private readonly events = new AbortController();
+    private readonly releaseStop: () => void;
+    private removed = false;
+
     constructor(data : Attr){
         super(data);
         this.ports = [ new Port(this, PortType.outputPort) ];
-        if (!this.inToolbox) this.releaseCamera = subscribeCamera(message => {
-            this.cameraMessage = message; theCanvas?.requestUpdateCanvas();
+        this.deviceButton = new Button({ text: "端末のカメラ", fontSize: "16px", click: () => this.selectSource("device") });
+        this.xiaoButton = new Button({ text: "XIAO", fontSize: "16px", click: () => this.selectSource("xiao") });
+        this.captureButton = new Button({ text: "開始", fontSize: "16px", click: () => {
+            if (this.removed || this.inToolbox || this.cameraSource !== "device") return;
+            if (this.deviceCamera.active) this.deviceCamera.stop();
+            else this.deviceCamera.start();
+        } });
+        this.deviceCamera = new DeviceCameraFeed(message => {
+            if (this.removed || this.cameraSource !== "device") return;
+            this.cameraMessage = message; this.refreshControls();
         });
+        this.releaseStop = subscribeDiagramStop(() => this.deviceCamera.stop());
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) this.deviceCamera.stop();
+        }, { signal: this.events.signal });
+        window.addEventListener("pagehide", () => this.deviceCamera.stop(), { signal: this.events.signal });
+        this.setBoxSize();
+        this.refreshControls();
+    }
+
+    children(): UI[] { return this.inToolbox ? [] : [this.deviceButton, this.xiaoButton, this.captureButton]; }
+    setContext2D(ctx: CanvasRenderingContext2D): void {
+        super.setContext2D(ctx);
+        this.subscribeXiao();
+    }
+    private subscribeXiao(): void {
+        if (this.removed || this.inToolbox || !this.ctx || this.cameraSource !== "xiao" || this.releaseCamera) return;
+        this.releaseCamera = subscribeCamera(message => {
+            this.cameraMessage = message; this.refreshControls();
+        });
+    }
+    private selectSource(source: "xiao" | "device"): void {
+        if (this.removed || this.inToolbox) return;
+        this.releaseCamera?.(); this.releaseCamera = undefined;
+        this.deviceCamera.stop();
+        this.cameraSource = source;
+        this.cameraMessage = source === "device" ? "「開始」で端末カメラを使います。" : "Wi-Fiカメラ未接続";
+        this.subscribeXiao();
+        this.refreshControls();
+    }
+    private refreshControls(): void {
+        const disabled = this.removed || this.inToolbox;
+        this.deviceButton.disabled = disabled || this.cameraSource === "device";
+        this.xiaoButton.disabled = disabled || this.cameraSource === "xiao";
+        this.captureButton.disabled = disabled || this.cameraSource !== "device";
+        this.captureButton.text = this.deviceCamera?.active ? "停止" : "開始";
+        theCanvas?.requestUpdateCanvas();
+    }
+    setPosition(position: Vec2): void { super.setPosition(position); this.positionControls(); }
+    setPortPositions(): void { super.setPortPositions(); this.positionControls(); }
+    private positionControls(): void {
+        if (!this.deviceButton) return;
+        for (const [button, x, width] of [
+            [this.deviceButton, 12, 118], [this.xiaoButton, 138, 64], [this.captureButton, 210, 96],
+        ] as const) {
+            button.setPosition(this.position.add(new Vec2(x, 24)));
+            button.boxSize = new Vec2(width, 44);
+        }
+    }
+    makeObj(): any { return { ...super.makeObj(), cameraSource: this.cameraSource }; }
+    loadObj(obj: any): void {
+        super.loadObj(obj);
+        this.selectSource(obj.cameraSource === "device" ? "device" : "xiao");
+    }
+    copy(): CameraBlock {
+        const block = new CameraBlock({});
+        block.loadObj(this.makeObj());
+        this.copyUI(block);
+        block.setBoxSize();
+        block.setBlockPortPosition(this.position.copy());
+        return block;
+    }
+    getFrame(): { image: HTMLImageElement | HTMLVideoElement; width: number; height: number } | undefined {
+        if (this.removed) return;
+        if (this.cameraSource === "device") {
+            const video = this.deviceCamera.image;
+            if (video && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth && video.videoHeight) {
+                return { image: video, width: video.videoWidth, height: video.videoHeight };
+            }
+        } else if (cameraImg) {
+            return { image: cameraImg, width: cameraImg.naturalWidth || cameraImg.width, height: cameraImg.naturalHeight || cameraImg.height };
+        }
     }
 
     setBoxSize() : void {
@@ -578,7 +667,7 @@ export class CameraBlock extends FunctionBlock {
         }
         else{
 
-            this.boxSize = new Vec2(320, 240 + 2 * notchRadius);
+            this.boxSize = new Vec2(320, 380);
         }
     }
 
@@ -588,32 +677,38 @@ export class CameraBlock extends FunctionBlock {
 
         const [x1, y1, x2, y2] = this.borderInnerBox();
 
-        let img : HTMLImageElement;
-
         if(this.inToolbox){
-
-            img = cameraIcon;
+            this.drawIcon(cameraIcon);
+            return;
         }
-        else{
-
-            if(cameraImg == undefined){
-                this.ctx.save(); this.ctx.font = "14px sans-serif"; this.ctx.fillStyle = "#555";
-                this.ctx.fillText(this.cameraMessage, x1 + 8, y1 + 24, x2 - x1 - 16); this.ctx.restore();
-                return;
+        this.children().forEach(child => child.draw());
+        this.ctx.save();
+        this.ctx.font = "14px sans-serif"; this.ctx.textBaseline = "top"; this.ctx.fillStyle = "#555";
+        let line = "", row = 0;
+        for (const char of this.cameraMessage) {
+            if (line && this.ctx.measureText(line + char).width > x2 - x1 - 16) {
+                this.ctx.fillText(line, x1 + 8, this.position.y + 78 + row * 18);
+                line = ""; row++;
             }
-            img = cameraImg;
+            line += char;
         }
-        
-        const img_height = (y2 - y1) - 2 * notchRadius;
-        const img_width  = img_height * img.width / img.height;
-
-        const img_x = x1 + 0.5 * ((x2 - x1) - img_width);
-        const img_y = y1;
-
-        this.ctx.drawImage(img, img_x, img_y, img_width, img_height);
+        if (line) this.ctx.fillText(line, x1 + 8, this.position.y + 78 + row * 18);
+        const frame = this.getFrame();
+        if (frame && frame.width > 0 && frame.height > 0) {
+            const top = this.position.y + 132;
+            const height = y2 - notchRadius - 8 - top;
+            const scale = Math.min((x2 - x1 - 16) / frame.width, height / frame.height);
+            const width = frame.width * scale, imageHeight = frame.height * scale;
+            this.ctx.drawImage(frame.image, x1 + (x2 - x1 - width) / 2, top + (height - imageHeight) / 2, width, imageHeight);
+        }
+        this.ctx.restore();
     }
     clearBlock(): void {
+        if (this.removed) return;
+        this.removed = true;
         this.releaseCamera?.(); this.releaseCamera = undefined;
+        this.deviceCamera.stop();
+        this.releaseStop(); this.events.abort();
         super.clearBlock();
     }
 }
@@ -664,18 +759,17 @@ export class FaceDetectionBlock extends FunctionBlock {
         if(camera != undefined){
             const [x1, y1, x2, y2] = this.borderInnerBox();
 
-            if(cameraImg == undefined){
-                return;
-            }
-            const img = cameraImg;
+            const frame = camera.getFrame();
+            if (!frame || frame.width <= 0 || frame.height <= 0) return;
 
-            const img_height = (y2 - y1) - 2 * 2 * notchRadius;
-            const img_width  = img_height * img.width / img.height;
+            const scale = Math.min((x2 - x1) / frame.width, ((y2 - y1) - 2 * 2 * notchRadius) / frame.height);
+            const img_height = frame.height * scale;
+            const img_width = frame.width * scale;
 
             const img_x = x1 + 0.5 * ((x2 - x1) - img_width);
             const img_y = y1 + 2 * notchRadius;
 
-            this.ctx.drawImage(img, img_x, img_y, img_width, img_height);
+            this.ctx.drawImage(frame.image, img_x, img_y, img_width, img_height);
 
 
             if(this.face.length == 4){

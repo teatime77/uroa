@@ -1,6 +1,6 @@
 # diagramの機能とブロック実装ガイド
 
-更新日: 2026-10-13（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識追加を反映した。変更ごとの検証条件・結果は [build-and-test.md](build-and-test.md) を参照する。
+更新日: 2026-10-15（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識・端末カメラ追加を反映した。変更ごとの検証条件・結果は [build-and-test.md](build-and-test.md) を参照する。
 
 ## 1. 着手時に決めること
 
@@ -37,6 +37,7 @@
 | [ble.ts](../diagram/ts/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
 | [robot-wifi.ts](../diagram/ts/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/robot-wifi-dialog.ts) | BLEによるWi-Fi設定、Wi-Fi transport、SSID・接続キーの設定画面、接続先とChrome資格情報保存 |
 | [camera-feed.ts](../diagram/ts/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
+| [device-camera.ts](../diagram/ts/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
 | [servo.ts](../diagram/ts/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
 | [imu.ts](../diagram/ts/imu.ts) | IMUの受信購読と構造体出力 |
 | [plot.ts](../diagram/ts/plot.ts)、[plot_data.ts](../diagram/ts/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
@@ -88,10 +89,19 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | TTSBlock／SleepBlock | 文字列の読み上げ／数値秒の取消可能な待機 | ActionBlock。runの入力は未取得値を許す読み取りではない |
 | IfBlock／InfiniteLoop | 条件値1で内側を実行／内側を繰り返す | NestBlock。IfのconditionPortは型未指定Portで、isTrueは値1を判定する |
 | PlayMovieBlock／PlayGameBlock／PlayWebGPUBlock | 子アプリを実行してdiagramへ戻る | game・webgpuはTextPortで対象を指定。共通入口の停止接続も確認する |
-| CameraBlock／FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧画像・顔領域・距離の表示と出力 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。実ブラウザーのカメラ認識を実装済みと扱わない |
+| CameraBlock | 「端末のカメラ／XIAO」の選択、端末カメラの開始・停止、画像表示 | 既定はXIAO。端末は明示操作・カメラ権限とHTTPS／localhostが必要。画像のポート出力・AI認識は未実装 |
+| FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧顔領域・距離の表示と出力。顔表示の画像は接続したCameraBlockを参照 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。顔検出AIは未実装 |
 | ConditionGate／TriggerGate | 条件・入出力ポートや枠を定義 | ConditionGateの値ルーティング、TriggerGateのrunは未実装。配置できることと実行できることは別 |
 
 `JoyStickBlock`はblock.tsの生成関数にあるが、現在の23種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot.ts`は別のものとして扱う。
+
+### CameraBlockの画像取得元（2026-10-15）
+
+ブロック上部の「端末のカメラ」「XIAO」で取得元を選ぶ。選択中の取得元ボタンは無効表示。端末を選んで「開始」を押すと`getUserMedia()`で映像だけを要求し、背面カメラ・640×480を優先する。実際のカメラと解像度はブラウザーが決める。映像は非表示のvideo要素からcanvasへ縦横比を維持して描き、「停止」または全体StopでMediaStreamTrackと描画予約を解放する。権限拒否・機器なし・使用不可・30秒の開始タイムアウトはブロック内に表示する。[カメラ取得API](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)、[Track停止API](https://developer.mozilla.org/en-US/docs/Web/API/MediaStreamTrack/stop)
+
+各CameraBlockが端末映像を所有し、端末カメラの開始はStartとは独立した明示操作。取得元変更・Clear・図読込・削除・タブ非表示・pagehide・破棄でも停止し、許可待ちが後から成功した場合は取得したTrackを直ちに停止する。タブ復帰で自動再開しない。複数ブロックから同じ端末カメラを使えるかは機器・ブラウザーに依存する。
+
+XIAOは既存Wi-Fi接続を使い、XIAOを選択した配置済みブロック間でJPEG取得を共有する。最後のXIAO購読がなくなれば取得を止める。通常の全体StopでXIAOの画像表示は停止しない。`cameraSource`（`xiao`／`device`）をJSON・コピーへ保存し、設定のない旧JSONは`xiao`として復元する。端末の映像・権限状態は保存せず、復元・コピーで端末カメラを自動起動しない。`getFrame()`は選択元の画像と実寸を返すが、既存の出力ポートから画像を伝播する処理は追加していない。今回の検証はユーザー指定でビルドまで。ブラウザー・Android・カメラ実機テストはユーザーが行う。
 
 ## 5. 値・配線・型の契約
 

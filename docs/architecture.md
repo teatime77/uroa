@@ -159,6 +159,10 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
 
+### 2026-10-15: CameraBlockの端末カメラ選択
+
+[block.ts](../diagram/ts/block.ts)のCameraBlockに「端末のカメラ／XIAO」の選択を追加した。端末は[device-camera.ts](../diagram/ts/device-camera.ts)がブロックごとに`getUserMedia()`・video・描画予約を所有し、「開始」の明示操作で取得する。全体Stop・取得元変更・削除・非表示・pagehideで停止し、遅い取得結果のTrackも解放する。XIAOを選んだブロックは従来の[camera-feed.ts](../diagram/ts/camera-feed.ts)によるJPEG取得を共有する。コピー・保存図は取得元設定だけを引き継ぎ、旧設定欠落はXIAO、端末の自動起動は行わない。FaceDetectionBlockの画像参照は接続したCameraBlockの選択元へ追従する。画像ポート出力や画像AIは追加していない。2026-10-15の検証はユーザー指定でビルドまでとし、ブラウザー・Android・実機テストはユーザーが行う。詳細な操作は[diagram実装ガイド](diagram-implementation.md)を参照する。
+
 ### game・movieのデータと実行
 
 gameのデータは `public/game/data/` にある。`initGame()`が開発／本番設定を読み、初期画面の等角投影マップを構築する。`loadWorld()`が指定ステージを読んでUIを作り、`playGameWorld()`がシーケンサーを起動する。

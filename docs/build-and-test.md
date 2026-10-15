@@ -1,6 +1,6 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-14。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-15。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
 ## コマンド
 
@@ -18,6 +18,16 @@
 | `npm.cmd run test:e2e` | Pythonで既存の5アプリ回帰テストを実行。接続先のサーバーとPython依存は事前準備が必要 |
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
+
+## CameraBlockの端末カメラ選択（2026-10-15）
+
+「端末のカメラ／XIAO」の選択と端末映像の開始・停止、設定のみの保存・復元を追加した。実装・操作は[diagram実装ガイド](diagram-implementation.md)を参照する。取得・描画の停止、許可待ちの遅延完了時のTrack解放、旧JSONのXIAO既定値、接続したCameraBlockの画像を使うFaceDetectionBlockをソース上で確認した。
+
+- 最終ソースで`npm.cmd run build`成功。TypeScript参照ビルドとVite公開ビルドを完了し、197モジュール変換、92項目コピー、Viteは16.40秒。既存gameの動的／静的import併用の警告2件は残る。
+- `npm.cmd run check:dist`成功。ルート・5アプリの入口、ローカルJS／CSS参照、92件のWebGPU資産を静的確認した。
+- `block.ts`の既存CRLFを維持し、`git -c core.whitespace=cr-at-eol diff --check`で差分を確認した。
+
+ユーザー指定によりビルドと静的確認まで。テストファイルは追加・変更せず、回帰テスト・ブラウザー操作・権限ダイアログ・カメラ映像・切り替え・JSON往復・Android・実機の実行テストは行っていない。ESP32ファームウェアは変更せず、Upload・再ビルド・デプロイも行っていない。利用者の確認ではCameraBlockを配置し「端末のカメラ」→「開始」→権限許可、停止・全体Stop・再開・XIAO切り替え・保存読込・非表示後の解放を確認する。PCのlocalhostまたはHTTPSで使用し、Androidの通常のLAN内HTTPアドレスはカメラ利用の条件を満たさない。[getUserMediaの利用条件](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
 
 ## ESP32 BLEファームウェア（2026-10-14）
 

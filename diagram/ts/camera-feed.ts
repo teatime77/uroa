@@ -24,7 +24,7 @@ function start(): void {
                 const blob = await fetchImage(session.signal); session.signal.throwIfAborted();
                 url = URL.createObjectURL(blob); const img = new Image(); img.src = url;
                 await img.decode(); session.signal.throwIfAborted();
-                setCameraImage(img); show("Wi-Fiカメラ：320×240 / 約1秒間隔");
+                setCameraImage(img); show("XIAOカメラ：320×240");
             } catch { if (!session.signal.aborted) { setCameraImage(undefined); show("画像取得に失敗しました。接続・カメラ・ネットワーク権限を確認してください。"); } }
             finally { if (url) URL.revokeObjectURL(url); }
             if (!session.signal.aborted) await new Promise<void>(resolve => {
