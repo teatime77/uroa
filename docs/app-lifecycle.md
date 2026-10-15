@@ -15,6 +15,7 @@
 | [diagram/ts/plot/plot.ts](../diagram/ts/plot/plot.ts) | 型と配線を参照する汎用グラフ。削除時にPlotly・DOM・統計タイマー・ResizeObserver・購読・描画予約を解除 |
 | [diagram/ts/ai/ai-chat.ts](../diagram/ts/ai/ai-chat.ts) | キー入力とGoogle接続確認、Startで直接AI質問。Stopで待機を取消。切断・Clear・読込・削除・pagehide・破棄で保持キーを解除。削除では回答DOM・ダイアログ・配線と停止の購読を解除 |
 | [diagram/ts/runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、チェーン実行、キャンセル可能な待機、子アプリ停止の接続口 |
+| [diagram/ts/ai/camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts) | 物体検出・画像説明の画像取得、キー管理、通信待機、結果DOMと取消を共有。全体Stop・カメラ状態／配線変更・非表示で待機と出力を解除。削除時に購読・DOMを解放し、切断・読込・pagehide・破棄で保持キーも解除 |
 | [diagram/ts/ai/object-detection.ts](../diagram/ts/ai/object-detection.ts) | Gemini物体検出。全体Stop・カメラ状態／配線変更・非表示で通信待機と結果を解除。切断・Clear・図読込・削除・pagehide・破棄で保持キーも解除。削除時にカメラ・配線・停止購読、DOMを解放 |
 | [diagram/ts/procedure.ts](../diagram/ts/procedure.ts) | 個々のブロック。runtimeを利用し、indexへの逆向きimportを持たない |
 | 各アプリのindex.ts | 個別の初期化と停止・破棄。algebraは初期化の中で数式処理を開始する |

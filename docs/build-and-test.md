@@ -19,6 +19,16 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## Gemini画像説明（2026-10-15）
+
+ImageCaptionBlockを追加し、CameraBlockの画像をGeminiへ送って短い日本語の説明文をTextPortへ出力する処理を実装した。手動ボタンとStartに対応し、Start時は説明の取得完了後にTTSへ進める。操作・通信・保存・取消は[画像説明ガイド](diagram-image-caption.md)。
+
+- `npm.cmd run verify`成功。TypeScript参照ビルド、Vite公開ビルド（201モジュール変換、92項目コピー、23.08秒）、成果物の静的確認を完了。既存gameの動的／静的import併用の警告2件は残る。
+- CameraBlock → ImageCaptionBlock → TTSBlockの`gemini-image-caption.json`を追加し、画像説明のサンプル・アイコンを`check:dist`の必須資産へ追加。25アイコンと型名、サンプルのポートID、操作ガイドのローカルリンクを静的確認した。
+- 物体検出の画像固定・接続フォーム・キー管理・通信待機・取消・保存・表示を`camera-ai-block.ts`へ移して共通化した。既存のポート順・型名・型番号23・検出プロンプト・Struct定義は維持。共通化した後片付け・保存・配置等11メソッドは、ボタン用フィールドの改名を除いて移動前の処理と一致することをソース比較した。
+
+ユーザー指定によりテストは追加・実行していない。Googleへの実通信・ブラウザー操作・認識と説明の精度・TTS音声・保存復元・取消の実行確認・Android・XIAO・ESP32は未確認。新しいnpm依存・APIサーバー・デプロイは追加していない。
+
 ## Geminiカメラ物体検出（2026-10-15）
 
 ObjectDetectionBlockを追加し、端末／XIAOのCameraBlock画像を1枚固定してGeminiへ送信する処理を実装した。日本語ラベル・矩形表示、ラベル・個数・先頭物体Structの出力、キー入力・接続確認・切断、保存・コピー・取消・遅延応答の抑止を含む。操作・データ形式・通信は[Gemini物体検出ガイド](diagram-gemini-object-detection.md)。

@@ -52,6 +52,8 @@ const icons = [
         '<rect x="19" y="7" width="10" height="22" rx="5"/><path d="M13 23v2a11 11 0 0 0 22 0v-2M24 36v6m-6 0h12M7 18v11m34-11v11"/>'],
     ['ObjectDetectionBlock', 'Gemini物体検出', '#c026d3',
         '<path d="M7 17V8h10m14 0h10v9M7 31v9h10m14 0h10v-9"/><rect x="13" y="16" width="14" height="17" rx="2"/><circle cx="32" cy="25" r="7"/>'],
+    ['ImageCaptionBlock', 'Gemini画像説明', '#c026d3',
+        '<rect x="6" y="7" width="36" height="25" rx="3"/><circle cx="17" cy="15" r="3"/><path d="m9 29 10-10 8 7 6-5 6 8M11 38h26m-26 5h18"/>'],
 ];
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');

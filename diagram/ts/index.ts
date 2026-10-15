@@ -13,6 +13,7 @@ import { ServoMotorBlock } from "./hardware/servo";
 import { AIChatBlock } from "./ai/ai-chat";
 import { SpeechRecognitionBlock } from "./ai/speech-recognition";
 import { ObjectDetectionBlock } from "./ai/object-detection";
+import { ImageCaptionBlock } from "./ai/image-caption";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
@@ -27,7 +28,7 @@ export function stopDiagram(): void {
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const BlockClassCount = 24;
+export const BlockClassCount = 25;
 
 export function makeBlock(idx : number) : Block {
     switch(idx){
@@ -55,6 +56,7 @@ export function makeBlock(idx : number) : Block {
     case 21: return new AIChatBlock({});
     case 22: return new SpeechRecognitionBlock({});
     case 23: return new ObjectDetectionBlock({});
+    case 24: return new ImageCaptionBlock({});
     default: throw new MyError();
     }
 }
@@ -85,6 +87,7 @@ export function geBlockName(idx : number) : string {
     case 21: return "AIChatBlock";
     case 22: return "SpeechRecognitionBlock";
     case 23: return "ObjectDetectionBlock";
+    case 24: return "ImageCaptionBlock";
     default: throw new MyError();
     }
 }

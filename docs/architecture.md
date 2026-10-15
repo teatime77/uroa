@@ -100,6 +100,8 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 ### diagramの実機向け処理
 
+2026-10-15に[ImageCaptionBlock](../diagram/ts/ai/image-caption.ts)を追加した。CameraBlockの端末／XIAO画像をGeminiへ送り、日本語の説明文をTextPortへ出力する。手動ボタンとStart時の1回実行に対応し、Startでは応答取得後にTTS等のActionへ進む。画像固定・キー管理・取消・保存・表示は物体検出と共通の[CameraAIBlock](../diagram/ts/ai/camera-ai-block.ts)へまとめ、物体検出のポート・保存形式は維持する。操作と検証範囲は[画像説明ガイド](diagram-image-caption.md)。
+
 2026-10-15に[ObjectDetectionBlock](../diagram/ts/ai/object-detection.ts)を追加した。CameraBlockの端末／XIAO画像を1枚固定し、Gemini Interactions APIへ直接送信して日本語ラベル・矩形を表示する。手動1回とStart時の1回実行に対応し、ラベル・個数・先頭物体のStructを出力する。キーは各ブロックで一時保持し、モデル名だけを図へ保存する。画像転送とJSON応答検証は[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts)、REST通信は既存AIチャットと共通の[ai-client.ts](../diagram/ts/ai/ai-client.ts)へ分けた。SDK・モデル・WASMの追加はない。操作・取消・出力形式・検証範囲は[物体検出ガイド](diagram-gemini-object-detection.md)。
 
 2026-10-15にdiagramの機能別ソース14ファイルを`diagram/ts/ai/`、`ble-wifi/`、`hardware/`、`plot/`、`camera/`へ移した。AIチャット・音声認識、BLE／Wi-Fi接続、サーボ／IMU、グラフ、カメラ取得をそれぞれまとめる。共通のブロック・ポート・型・実行管理は直下に残し、CameraBlock本体も`block.ts`に置く。処理内容・ブロックの保存形式・通信仕様は変更せず、importと参照先を更新した。

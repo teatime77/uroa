@@ -47,7 +47,8 @@
 | [plot.ts](../diagram/ts/plot/plot.ts)、[plot_data.ts](../diagram/ts/plot/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
 | [ai-chat.ts](../diagram/ts/ai/ai-chat.ts)、[ai-client.ts](../diagram/ts/ai/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
 | [speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts)、[speech-client.ts](../diagram/ts/ai/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
-| [object-detection.ts](../diagram/ts/ai/object-detection.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts)、[detection-value.ts](../diagram/ts/ai/detection-value.ts) | カメラ画像のGemini物体検出、JSON応答検証、座標変換、ObjectDetectionのStruct登録 |
+| [object-detection.ts](../diagram/ts/ai/object-detection.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts) | カメラ画像のGemini物体検出、JSON応答検証、座標変換。ObjectDetectionのStructはブロックのファイル内で登録 |
+| [image-caption.ts](../diagram/ts/ai/image-caption.ts)、[camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts) | Gemini画像説明のTextPort出力。物体検出との共通基底で画像取得・キー管理・通信待機・取消・保存・表示を共有 |
 
 入口HTMLは [public/diagram/index.html](../public/diagram/index.html)。保存図・サンプルは [public/diagram/data/](../public/diagram/data/) に置く。
 
@@ -58,6 +59,9 @@ classDiagram
     UI <|-- Block
     Block <|-- FunctionBlock
     FunctionBlock <|-- InputBlock
+    FunctionBlock <|-- CameraAIBlock
+    CameraAIBlock <|-- ObjectDetectionBlock
+    CameraAIBlock <|-- ImageCaptionBlock
     Block <|-- ActionBlock
     ActionBlock <|-- NestBlock
 ```
@@ -77,7 +81,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 
 ## 4. 現在のブロックと実装範囲
 
-ツールボックスは現在24種類。以下はソースの実装説明で、実機で動いたという保証ではない。
+ツールボックスは現在25種類。以下はソースの実装説明で、実機で動いたという保証ではない。
 
 | ブロック | 入出力・動作 | 主な制約 |
 |---|---|---|
@@ -96,10 +100,11 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | PlayMovieBlock／PlayGameBlock／PlayWebGPUBlock | 子アプリを実行してdiagramへ戻る | game・webgpuはTextPortで対象を指定。共通入口の停止接続も確認する |
 | CameraBlock | 「端末のカメラ／XIAO」の選択、端末カメラの開始・停止、画像表示 | 既定はXIAO。端末は明示操作・カメラ権限とHTTPS／localhostが必要。画像のポート値伝播は未実装。物体検出はObjectDetectionBlockが画像を参照 |
 | ObjectDetectionBlock | Geminiへ画像を1枚送信し、日本語ラベル・矩形表示、ラベル・個数・先頭物体のStruct出力 | 手動1回／Startで1回。自分のAPIキーを一時保持。モデル名だけ保存。信頼度スコア・連続送信・学習は追加しない。[物体検出ガイド](diagram-gemini-object-detection.md) |
+| ImageCaptionBlock | Geminiへ画像を1枚送信し、日本語の短い説明文をTextPort出力 | 手動の「画像を説明」／Startで1回。Startでは説明取得後にTTSへ進める。モデル名だけ保存。[画像説明ガイド](diagram-image-caption.md) |
 | FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧顔領域・距離の表示と出力。顔表示の画像は接続したCameraBlockを参照 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。顔検出AIは未実装 |
 | ConditionGate／TriggerGate | 条件・入出力ポートや枠を定義 | ConditionGateの値ルーティング、TriggerGateのrunは未実装。配置できることと実行できることは別 |
 
-`JoyStickBlock`はblock.tsの生成関数にあるが、現在の24種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot/plot.ts`は別のものとして扱う。
+`JoyStickBlock`はblock.tsの生成関数にあるが、現在の25種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot/plot.ts`は別のものとして扱う。
 
 ### CameraBlockの画像取得元（2026-10-15）
 
@@ -111,7 +116,7 @@ XIAOは既存Wi-Fi接続を使い、XIAOを選択した配置済みブロック�
 
 ## 5. 値・配線・型の契約
 
-ObjectDetectionBlockはカメラ入力の接続元CameraBlockを参照し、`getFrame()`の画像を固定する。CameraBlockの`revision`と`subscribeFrameState()`で取得元・利用可否・解像度の変更を検出して古い応答を破棄する。画像のDataTypeは追加していない。検出結果の`ObjectDetection`型は[ai/detection-value.ts](../diagram/ts/ai/detection-value.ts)で登録し、ラベルと正規化座標を持つ。操作・保存・キーの扱いは[Gemini物体検出ガイド](diagram-gemini-object-detection.md)を参照する。
+ObjectDetectionBlockとImageCaptionBlockは共通のCameraAIBlockでカメラ入力の接続元CameraBlockを参照し、`getFrame()`の画像を固定する。CameraBlockの`revision`と`subscribeFrameState()`で取得元・利用可否・解像度の変更を検出して古い応答を破棄する。画像のDataTypeは追加していない。検出結果の`ObjectDetection`型は[ai/object-detection.ts](../diagram/ts/ai/object-detection.ts)で登録し、ラベルと正規化座標を持つ。操作・保存・キーの扱いは[Gemini物体検出ガイド](diagram-gemini-object-detection.md)と[画像説明ガイド](diagram-image-caption.md)を参照する。
 
 ### 5.1 ポートの方向と値の型
 
@@ -164,7 +169,7 @@ runProcedures（実行中の再起動を抑止、停止フラグとAbortControll
   → finallyでStartボタンを戻す
 ```
 
-現在runOnStart=trueなのはAIChatBlock、SpeechRecognitionBlock、ObjectDetectionBlock。対象の全ブロックを実行してから全Actionチェーンを開始する方式で、TTSごとに必要な関数だけを遅延実行する方式ではない。未接続の音声認識・物体検出も対象になり、複数の音声認識を配置すれば順に発話を待つ。カメラ未取得・未認証の物体検出はStartを失敗させる。最初の音声AIデモは認識ブロック1個で構成する。単独のTTSBlockもルートとして実行される。runStartFunctionsは走査中の依存循環を検査するが、その前の出力リセットや通常の値伝播まで安全にするものではない。
+現在runOnStart=trueなのはAIChatBlock、SpeechRecognitionBlock、ObjectDetectionBlock、ImageCaptionBlock。対象の全ブロックを実行してから全Actionチェーンを開始する方式で、TTSごとに必要な関数だけを遅延実行する方式ではない。未接続の音声認識・物体検出・画像説明も対象になり、複数の音声認識を配置すれば順に発話を待つ。カメラ未取得・未認証の物体検出／画像説明はStartを失敗させる。最初の音声AIデモは認識ブロック1個で構成する。単独のTTSBlockもルートとして実行される。runStartFunctionsは走査中の依存循環を検査するが、その前の出力リセットや通常の値伝播まで安全にするものではない。
 
 Startで待つ新しいFunctionBlockでは、runOnStart=true、前回出力を消すresetForRun、完了を表すPromiseを返すrunを実装する。runは失敗時に出力をundefinedへ戻して例外を投げる。途中状態は画面へ表示し、完了した値だけを出力する。例外が上へ伝われば以後のActionチェーンへ進まず、Startボタンはfinallyで戻る。
 
@@ -201,7 +206,7 @@ AIChatBlockとai-client.tsのwaitAIRequestは、通信がabortを無視する場
 
 ### 現行ツールボックスの注意点
 
-- Editorは型名でAIChatBlockを4番目、SpeechRecognitionBlockを5番目、ObjectDetectionBlockを6番目へ移す。2026-10-15に物体検出のアイコンを追加し、現在は24種類。新しい型番号の末尾追加でAIの表示順が変わらないようにしている。
+- Editorは型名でAIChatBlockを4番目、SpeechRecognitionBlockを5番目、ObjectDetectionBlockを6番目、ImageCaptionBlockを7番目へ移す。現在のアイコンは25種類。新しい型番号の末尾追加でAIの表示順が変わらないようにしている。
 - 各ToolItemは32×32のアイコンで、クラス名はツールチップで確認する。縦配置は画面高に応じたスクロール・折返しを実装していない。項目追加時には小さい画面での配置を実際に確認する。
 - 通常のToolItem生成はpointermoveの有無を使い、微小ドラッグの閾値や安全なドロップ領域を網羅していない。
 - 新しいActionBlockをToolItemから生成する分岐と、既存ActionBlockを移動してtopへ自動接続する分岐は別である。近くへ配置すれば自動接続されると仮定しない。

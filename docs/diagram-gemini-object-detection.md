@@ -29,9 +29,9 @@ JSON・コピーに含める追加設定はモデル名だけ。キー・画像�
 
 ## 通信と後片付け
 
-- [object-detection.ts](../diagram/ts/ai/object-detection.ts): ブロック、接続フォーム、1枚の画像固定、UI・出力・保存・取消。
+- [object-detection.ts](../diagram/ts/ai/object-detection.ts): 検出ブロック、ポート出力・矩形表示、ObjectDetectionのStruct登録、コピー。
+- [camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts): 画像説明と共通の接続フォーム、1枚の画像固定、UI・保存・取消。
 - [gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts): 画像と指示・JSON Schemaの送信、応答検証、共通の座標への変換。
-- [detection-value.ts](../diagram/ts/ai/detection-value.ts): ObjectDetectionのStruct登録。
 - [ai-client.ts](../diagram/ts/ai/ai-client.ts): AIChatBlockと共通のREST通信・認証ヘッダー・エラー処理・Interactions応答解析・取消可能な時間制限。
 
 追加のSDK・npm依存・サーバー・MediaPipe・WASM・モデルの同梱は不要。ブラウザーから固定の`https://generativelanguage.googleapis.com/v1beta/interactions`へ直接通信する。JPEGは長辺最大1024px、品質0.8、Base64を画像入力として渡す。指示は主要物体を最大20個、日本語名、印刷された物体は「〜の写真」等として実物と区別する内容。画像内の文字を指示として扱わないよう指定する。認識名・矩形の正しさを保証するものではない。
