@@ -39,7 +39,7 @@
 | [json-util.ts](../diagram/ts/json-util.ts) | theEditorの保持、saveJsonでの採番・Download |
 | [diagram_util.ts](../diagram/ts/diagram_util.ts) | PortType、共有canvas、UI要素、再描画回数、レイヤー切替、旧sendData |
 | [ble.ts](../diagram/ts/ble-wifi/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
-| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | BLE接続中の基板へのWi-Fi設定、教材用固定キーのWi-Fi transport、SSID・パスワードの設定画面、Wi-FiパスワードのChrome保存 |
+| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | BLE接続中の基板へのWi-Fi設定、教材用固定キーのWi-Fi transport、SSID履歴・検索・手入力とパスワードの設定画面、Wi-FiパスワードのChrome保存 |
 | [camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
 | [device-camera.ts](../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
 | [servo.ts](../diagram/ts/hardware/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |

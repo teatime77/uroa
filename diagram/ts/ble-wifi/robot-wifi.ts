@@ -7,6 +7,21 @@ export interface ProvisionInfo extends RobotEndpoint { key?: string; state: stri
 export interface WifiNetwork { ssid: string; rssi: number; open: boolean; }
 export interface ConfigCharacteristic { readValue(): Promise<DataView>; writeValueWithResponse(value: Uint8Array): Promise<void>; }
 const encoder = new TextEncoder(), decoder = new TextDecoder();
+const ssidHistoryKey = "uroa-wifi-ssids-v1";
+export function savedWifiSSIDs(): string[] {
+    try {
+        const data: unknown = JSON.parse(localStorage.getItem(ssidHistoryKey) || "[]");
+        if (!Array.isArray(data)) return [];
+        return [...new Set(data.filter((ssid): ssid is string =>
+            typeof ssid === "string" && ssid.length > 0 && encoder.encode(ssid).length <= 32))].slice(0, 20);
+    } catch { return []; }
+}
+export function rememberWifiSSID(ssid: string): void {
+    if (!ssid.length || encoder.encode(ssid).length > 32) return;
+    try {
+        localStorage.setItem(ssidHistoryKey, JSON.stringify([ssid, ...savedWifiSSIDs().filter(value => value !== ssid)].slice(0, 20)));
+    } catch { /* History is optional; manual entry and scanning remain available. */ }
+}
 // Public teaching key; keep in sync with deviceKey in firmware/src/network.cpp.
 const teachingConnectionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 export function packetHex(data: Uint8Array): string { return [...data].map(b => b.toString(16).padStart(2, "0")).join(""); }

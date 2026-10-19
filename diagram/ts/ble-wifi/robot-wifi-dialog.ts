@@ -1,4 +1,4 @@
-import { BLEWifiSetup, endpoint, savePassword, type RobotEndpoint } from "./robot-wifi";
+import { BLEWifiSetup, endpoint, rememberWifiSSID, savedWifiSSIDs, savePassword, type RobotEndpoint } from "./robot-wifi";
 
 /** Dialog owns temporary credentials and cancellation; the diagram JSON never owns them. */
 export class RobotWifiDialog {
@@ -26,14 +26,9 @@ export class RobotWifiDialog {
                 if (!signal.aborted) dialog.querySelectorAll<HTMLButtonElement>("button").forEach(button => button.disabled = false);
             }
         };
-        const completed = async (robot: RobotEndpoint) => {
-            await this.connect(robot, signal);
-            if (signal.aborted) return;
-            this.close();
-        };
         const wifiForm = document.createElement("form"); wifiForm.method = "post"; wifiForm.name = "uroa-wifi-credentials";
         const heading = document.createElement("h4"); heading.textContent = "アクセスポイントを設定する"; wifiForm.appendChild(heading);
-        const networks = document.createElement("select"); networks.setAttribute("aria-label", "周囲のSSID一覧"); networks.style.cssText = "width:100%;font:inherit";
+        const networks = document.createElement("select"); networks.setAttribute("aria-label", "SSID一覧（履歴・検索結果）"); networks.style.cssText = "width:100%;font:inherit";
         const manual = document.createElement("option"); manual.value = ""; manual.textContent = "SSIDを手入力"; networks.appendChild(manual);
         const ssid = document.createElement("input"); ssid.setAttribute("aria-label", "SSID"); ssid.placeholder = "SSID（2.4GHz）"; ssid.required = true; ssid.autocomplete = "off";
         const wifiUser = document.createElement("input"); wifiUser.name = "username"; wifiUser.autocomplete = "username"; wifiUser.readOnly = true; wifiUser.setAttribute("aria-label", "Wi-Fi保存の識別名");
@@ -43,17 +38,30 @@ export class RobotWifiDialog {
         const passwordChanged = () => { password.required = !noPassword.checked; password.disabled = noPassword.checked; if (noPassword.checked) password.value = ""; };
         noPassword.onchange = passwordChanged; passwordChanged();
         [ssid, wifiUser, password].forEach(element => { element.style.cssText = "display:block;box-sizing:border-box;width:100%;font:inherit;margin:8px 0"; element.spellcheck = false; element.autocapitalize = "none"; });
-        ssid.oninput = () => { wifiUser.value = `wifi:${ssid.value}`; password.value = ""; };
+        ssid.oninput = () => { networks.value = ""; wifiUser.value = `wifi:${ssid.value}`; password.value = ""; };
         let choices: { ssid: string; open: boolean }[] = [];
+        const history = savedWifiSSIDs();
+        const refreshNetworks = () => {
+            networks.replaceChildren(manual);
+            const group = (label: string, names: string[]) => {
+                if (!names.length) return;
+                const options = document.createElement("optgroup"); options.label = label;
+                names.forEach(name => { const option = document.createElement("option"); option.value = name; option.textContent = name; options.appendChild(option); });
+                networks.appendChild(options);
+            };
+            group("以前接続したSSID", history);
+            group("周囲のSSID", choices.map(item => item.ssid).filter(name => !history.includes(name)));
+            networks.value = history.includes(ssid.value) || choices.some(item => item.ssid === ssid.value) ? ssid.value : "";
+        };
+        refreshNetworks();
         networks.onchange = () => {
-            const selected = choices.find(x => x.ssid === networks.value); ssid.value = selected?.ssid || "";
+            const selected = choices.find(x => x.ssid === networks.value); ssid.value = networks.value;
             wifiUser.value = `wifi:${ssid.value}`; password.value = ""; noPassword.checked = selected?.open || false; passwordChanged();
         };
         const scan = document.createElement("button"); scan.type = "button"; scan.textContent = "Wi-Fiを検索";
         scan.onclick = () => { void work(async () => {
             status.textContent = "周囲の2.4GHz Wi-Fiを検索しています…";
-            choices = await this.setup.scan(signal); networks.replaceChildren(manual);
-            choices.forEach(item => { const option = document.createElement("option"); option.value = item.ssid; option.textContent = item.ssid; networks.appendChild(option); });
+            choices = await this.setup.scan(signal); refreshNetworks();
             status.textContent = "SSIDを選択するか手入力してください。PC／Androidも同じアクセスポイントへ接続します。";
         }); };
         const configure = document.createElement("button"); configure.type = "submit"; configure.textContent = "Wi-Fiへ接続";
@@ -73,17 +81,20 @@ export class RobotWifiDialog {
                 const networkName = ssid.value, storeWifiPassword = wifiSave.checked;
                 try {
                     const info = await this.setup.configure(networkName, secret, signal);
-                    await completed(endpoint(info));
+                    await this.connect(endpoint(info), signal);
+                    if (signal.aborted) return;
+                    rememberWifiSSID(networkName);
                     if (storeWifiPassword && secret) savePassword(`wifi:${networkName}`, secret);
+                    this.close();
                 } finally { password.value = ""; secret = ""; }
             });
         };
         dialog.appendChild(wifiForm);
         void work(async () => {
             await this.setup.info(signal);
-            status.textContent = "SSIDとパスワードを入力し、「Wi-Fiへ接続」を押してください。";
+            status.textContent = "SSIDを履歴から選択するか入力し、パスワードを指定して「Wi-Fiへ接続」を押してください。";
         });
-        const note = document.createElement("p"); note.textContent = "BLE接続中のESP32へWi-Fi設定を送ります。Wi-Fi接続キーは教材用の固定値を使うため入力不要です。Wi-Fiパスワード・接続キーは図のJSONやlocalStorageへ保存しません。";
+        const note = document.createElement("p"); note.textContent = "BLE接続中のESP32へWi-Fi設定を送ります。接続に成功したSSIDの履歴だけをこのブラウザーに保存します。Wi-Fi接続キーは教材用の固定値を使うため入力不要です。Wi-Fiパスワード・接続キーは図のJSONやlocalStorageへ保存しません。";
         cancel.onclick = () => this.close(); dialog.oncancel = event => { event.preventDefault(); this.close(); };
         dialog.append(note, cancel); (document.getElementById("layer-diagram") || document.body).appendChild(dialog); dialog.showModal();
     }

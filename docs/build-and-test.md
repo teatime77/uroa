@@ -19,6 +19,12 @@
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
 
+## 接続済みSSIDの履歴選択（2026-10-19）
+
+PCからのWi-Fi接続成功というユーザー報告とSSID再入力の手間を減らす依頼を受け、Wi-Fi制御接続まで成功したSSID名をlocalStorageの`uroa-wifi-ssids-v1`へ新しい順に最大20件保存する処理を追加した。既存のSSID一覧に「以前接続したSSID」を表示し、検索後も履歴を維持する。接続失敗・取消では履歴を追加せず、パスワード・接続キー・基板ID・IPは履歴へ含めない。既存データからの自動移行はなく、変更後の接続成功から履歴を作る。操作は[接続画面ガイド](diagram-esp32-connection-ui.md)を参照する。
+
+`npm.cmd run build`（TypeScript参照ビルド、201モジュール、92項目コピー、Vite 41.69秒）と`npm.cmd run check:dist`が成功。既存gameの動的／静的import併用の警告2件は継続。差分の空白を確認した。テストはユーザー指定により追加・実行していない。履歴保存・選択・検索との併用・Chrome自動入力・実通信の動作確認はユーザーが行う。Web側だけの変更で、ファームウェアの変更・ビルド・Uploadは行っていない。
+
 ## 教材用の固定Bluetooth Passkey（2026-10-19）
 
 ユーザーの指示で、`network.cpp`のBLEペアリングコードを再起動ごとの乱数から全基板共通の`123456`へ変更した。既存の`networkPairingPasskey()`・`setSecurityPasskey()`とBLE暗号化・MITM認証の処理を使い、Serial表示は継続する。Wi-Fi設定画面の案内と操作ガイドにも固定値を表示し、Serial Monitorでコードを確認する手順を不要にした。更新したファームウェアの再Uploadが必要。
