@@ -60,6 +60,8 @@ pio device monitor --project-dir esp32-ble-lab/firmware -e xiao_esp32s3
 
 COM4はこの環境の`upload_port`と`monitor_port`へ設定した。USBの再接続やBOOTモードでポートが変わった場合は実際の番号へ変更する。書き込みに失敗する場合はSeeedの[BOOTモード手順](https://wiki.seeedstudio.com/xiao_esp32s3_getting_started/)に従い、ポートを再確認する。USB CDCの設定はEspressif32 6.10.0のボード定義に含まれる。シリアルモニター起動後にRESETを押すと、起動ログを確認しやすい。
 
+2026-10-19、ユーザーのPCでは通常のMonitor起動・RESET・BLE接続でもシリアル出力が出ず、`--dtr 1 --rts 0`を明示したMonitorでペアリングコードの表示を確認した。この組み合わせを`xiao_esp32s3`の`monitor_dtr = 1`・`monitor_rts = 0`へ反映した。設定保存後にMonitorを終了・起動し直す。モニター専用設定のため、ファームウェアの再ビルド・再Uploadは不要。DTRとRTSのどちらが決定要因かは個別に検証していない。
+
 同日のUploadエラー報告を受け、`default_envs`を`xiao_esp32s3`へ変更した。環境未指定のBuild・UploadもXIAO用を選ぶ。`This chip is ESP32-S3 not ESP32. Wrong --chip argument?`は、ESP32-S3へ`esp32dev`のESP32用バイナリーを書き込もうとした場合のボード不一致である。Uploadの冒頭が`Processing xiao_esp32s3`となることを確認する。DevKit V1には引き続き`-e esp32dev`を明示する。
 
 ## diagramでの操作
@@ -72,7 +74,9 @@ uroaルートで `npm.cmd run dev` を起動し、Chromeで `http://localhost:51
 
 ## Wi-Fi機能追加後の確認範囲
 
-Wi-Fi設定は暗号化・認証したBLEでのみ受け付ける。OSのペアリング要求が出た場合、Serial Monitorの6桁のコードを入力する。接続キーをChromeへ保存しておくと、次回は保存済み機器を選びWi-Fiから接続できる。Wi-Fiに切り替えた後もServoMotorBlock・IMUBlockを使い、CameraBlockでJPEGを表示する。今回はユーザー指定でビルドまでとし、Upload・テスト・ブラウザー／実機確認は行っていない。
+2026-10-19の追加変更でBluetooth Passkeyを教材用の全基板共通値`123456`へ固定した。更新したファームウェアを再Uploadした後、OSの「Enter Bluetooth Passkey」などには`123456`を入力する。再起動後も同じ値で、Serial Monitorによるコード確認は不要。BLE暗号化・MITM認証は継続する。動作テスト・Uploadはユーザーが行う。
+
+Wi-Fi設定は暗号化・認証したBLEでのみ受け付ける。OSのペアリング要求が出た場合、固定コード`123456`を入力する。2026-10-17から接続キーは教材用の共通固定値を自動使用し、入力・Chrome保存は不要。同日の追加変更で保存済み機器の選択を廃止した。初回・次回ともBLE接続して「Wi-Fi設定／接続」を開き、SSIDとパスワードを入力して「Wi-Fiへ接続」を押す。固定キー化にはdiagramの更新とファームウェアの再Uploadが必要で、旧NVSの接続キーだけを起動時に削除する。SSID・パスワード・基板IDは保持する。機器選択画面の削除はWeb側だけの変更。Wi-Fiに切り替えた後もServoMotorBlock・IMUBlockを使い、CameraBlockでJPEGを表示する。Upload・テスト・ブラウザー／実機確認はユーザーが行う。
 
 ## 取り込み時の検証記録
 

@@ -162,8 +162,7 @@ class ServerCallbacks : public NimBLEServerCallbacks
         connected = true;
         mustStop = true;
         Serial.println("BLE connected");
-        // A configured passkey bypasses NimBLE 2.3.6's onPassKeyDisplay callback.
-        // Repeat the local display when connecting so a monitor opened after boot sees it.
+        // Show the teaching passkey on every connection, even without a new pairing request.
         Serial.printf("BLE setup pairing code: %06lu\n", static_cast<unsigned long>(networkPairingPasskey()));
     }
     void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int reason) override

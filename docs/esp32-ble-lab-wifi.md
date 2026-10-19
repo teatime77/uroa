@@ -2,6 +2,14 @@
 
 実装日: 2026-10-14。今回はユーザー指定によりソース実装とビルドまで。テスト・Upload・ブラウザー／実機確認は行っていない。以下は実装した操作手順で、実機での成功記録ではない。
 
+2026-10-17更新: 教材用としてWi-Fi接続キーを全基板共通の固定値に変更した。入力欄・識別名・表示切替・Chromeへの接続キー保存要求を削除し、初回・次回とも入力不要とした。diagramとESP32の両方を更新し、ファームウェアを再Uploadする。テストはユーザーが行う。
+
+同日の追加変更で保存済み機器の選択・削除・専用接続画面を廃止した。現在BLE接続しているESP32に対し、SSIDとパスワードを入力して「Wi-Fiへ接続」を押す。次回もBLEから設定画面を開く。追加変更はWeb側だけで、ファームウェアの再変更はない。
+
+2026-10-19のユーザー確認: タブレットからBLE・Wi-Fi接続が成功。PCのSerial Monitorは起動・RESET・BLE接続後も無表示だったが、`--dtr 1 --rts 0`を明示するとペアリングコードが表示された。XIAO環境の`monitor_dtr = 1`・`monitor_rts = 0`へ反映した。Monitorを開き直して使用し、再ビルド・再Uploadは不要。これはユーザーによる通信・シリアル受信の報告であり、エージェントによる実機テストではない。PCからのBLE接続失敗の原因はまだ特定していない。
+
+同日の追加変更: 教材用にBluetooth Passkeyを全基板共通の`123456`へ固定した。更新したファームウェアを再Uploadすると、再起動後も同じコードを使う。OSのペアリング要求にはこの6桁を入力し、Serial Monitorでコードを調べる手順は不要。BLE暗号化・MITM認証の処理は継続する。後続のユーザー報告ではPCからもBLE接続できており、Wi-Fi設定時のPasskey要求まで進んでいる。固定Passkey化の動作テストはユーザーが行う。
+
 現状の入力欄・ボタンの意味、初回／次回の操作、保存・削除の違いは [diagramのESP32 BLE／Wi-Fi接続画面](diagram-esp32-connection-ui.md) を参照する。上記の確認範囲は実装時のエージェントの作業範囲であり、その後のユーザーによるWi-Fi接続・カメラ表示の報告は画面説明の末尾に区別して記録する。
 
 ## ソースと構成
@@ -14,20 +22,20 @@ DevKit V1とXIAOでサーボ・IMU・BLE設定・Wi-Fi通信を共通化する�
 | [network.cpp](../esp32-ble-lab/firmware/src/network.cpp) | BLE設定、Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
 | [camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp) | XIAOのPSRAMを使う320×240 JPEG。DevKitはカメラなし |
 | [ble.ts](../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
-| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、接続先保存 |
-| [robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、パスワード・接続キー、Chrome保存要求 |
+| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知 |
+| [robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
 | [camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
 
 制御指令・Status・Telemetryは既存の10／12／20バイトを維持する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
 
 ## 初回の操作
 
-1. PC／AndroidとXIAOが同じLANで通信できるようにする。XIAOには2.4GHzのSSIDを指定する。PC／Androidは同じルーターの5GHzでも、端末間通信が許可されていればよい。XIAOへ付属アンテナを取り付ける。新しいファームウェアを対象ボード環境でUploadし、Serial Monitorを115200bpsで開く。XIAOは`xiao_esp32s3`（COM4）、DevKitは`esp32dev`。
+1. PC／AndroidとXIAOが同じLANで通信できるようにする。XIAOには2.4GHzのSSIDを指定する。PC／Androidは同じルーターの5GHzでも、端末間通信が許可されていればよい。XIAOへ付属アンテナを取り付ける。新しいファームウェアを対象ボード環境でUploadする。XIAOは`xiao_esp32s3`（COM4）、DevKitは`esp32dev`。Serial Monitorは診断でログが必要な場合に115200bpsで開く。
 2. diagramにBLEConnectionBlockを配置し、「接続」で機器を選ぶ。サーボを有効化せず「Wi-Fi設定／接続」を押す。
-3. OSがBLEペアリングを要求したら、Serial Monitorの`BLE setup pairing code: XXXXXX`に表示される6桁のコードを入力する。BLE開始時と`BLE connected`の直後に表示し、ESP32の再起動ごとに生成し直す。起動ログを見逃しても、Monitorを開いたままdiagramからBLEへ再接続すれば再表示する。Wi-Fi設定Characteristicは暗号化・MITM認証済み接続でのみアクセスできる。このローカル表示はペアリング用で、Wi-Fiパスワード・接続キーをシリアルへ出力しない。
+3. OSがBLEペアリングを要求したら、固定コード`123456`を入力する。Serial Monitorでの確認は不要。BLE開始時と`BLE connected`の直後にも`BLE setup pairing code: 123456`を表示し、再起動後も同じ値を使う。Wi-Fi設定Characteristicは暗号化・MITM認証済み接続でのみアクセスできる。この教材用コードは全基板共通で、基板ごとの秘密情報ではない。Wi-Fiパスワード・接続キーはシリアルへ出力しない。
 4. 「Wi-Fiを検索」でSSIDを選択するか手入力し、パスワードを入力する。オープンネットワークは「パスワードなし」を明示する。
-5. 「XIAOに設定してWi-Fiへ切り替え」を押す。Wi-Fi接続とサーバー開始の成功後、SSID・パスワードをNVSへ保存する。失敗時は以前の保存値を上書きしない。
-6. 基板固有ID、mDNS名、現在のIP、ポート、接続キーをBLEで取得する。diagramはWi-Fi側の認証・INFO ACKを確認してから接続先を保存する。ESP32はBLE接続・広告を停止する。
+5. 「Wi-Fiへ接続」を押す。機器の選択は不要で、BLE接続中の基板へ設定を送る。Wi-Fi接続とサーバー開始の成功後、SSID・パスワードをNVSへ保存する。失敗時は以前の保存値を上書きしない。
+6. 基板固有ID、mDNS名、現在のIP、ポートをBLEで取得し、教材用固定キーに対応したファームウェアか確認する。接続キーの入力は不要。diagramはWi-Fi側の認証・INFO ACKを確認し、ESP32はBLE接続・広告を停止する。
 7. ServoMotorBlockで改めて「90°で有効化」を押す。切り替え前の有効状態は引き継がない。IMUBlockがあれば共有10Hz通知を再開する。
 8. CameraBlockを配置すると、既定の取得元「XIAO」でJPEG取得・表示を開始する。実装時の追加待ち1秒は、後続のユーザー変更により現在0ms。実際の更新間隔は撮影・通信・画像読み込みなどの時間に依存する。XIAOを選択した複数CameraBlockは1台の共通画像を表示する。「端末のカメラ」を選び「開始」を押すとPC／Android自身のカメラへ切り替えられる。端末カメラはESP32への接続不要で、HTTPS／localhostとブラウザーのカメラ許可が必要。選択設定だけを保存し、読込では端末カメラを起動しない。操作・停止条件は[diagram実装ガイド](diagram-implementation.md)を参照する。2026-10-15の追加はビルドまでの確認で、ブラウザー・Android・実機確認はユーザーが行う。顔検出処理は追加していない。
 
@@ -35,25 +43,26 @@ Wi-Fi設定中はサーボ停止・STREAM=0を送信し、BLEハートビート�
 
 ## 保存と次回
 
-ESP32のNVS名前空間`uroa-net`へ基板ID、ランダムな64桁の接続キー、Wi-Fi設定を保存する。SSIDとパスワードは1つのJSON値として置き換える。NVS暗号化・Flash Encryptionは今回追加していない。
+ESP32のNVS名前空間`uroa-net`へ基板IDとWi-Fi設定を保存する。SSIDとパスワードは1つのJSON値として置き換える。接続キーはファームウェアの`deviceKey`とブラウザーの`teachingConnectionKey`に同じ64文字の教材用固定値を定義し、NVSへ保存しない。更新後の起動時に旧NVSの`key`を削除するが、基板ID・SSID・パスワードは保持する。NVS暗号化・Flash Encryptionは今回追加していない。
 
-diagramのlocalStorageキー`uroa-robot-endpoints-v1`へ保存するのは基板ID・表示名・mDNS名・IP・ポート・カメラ対応だけ。Wi-Fiパスワード・接続キー・Gemini APIキーをlocalStorage・図JSON・コピー・ログへ含めない。
+固定キーはソースに公開された全基板共通値で、基板ごとの秘密情報ではない。HMACの処理は引き続き使用するが、固定キーを知る端末間を区別する認証にはならない。BLEペアリングコードも教材用の共通値`123456`に固定し、ルーターのWi-Fiパスワードは従来どおり入力する。
+
+diagramは接続先をlocalStorageへ保存せず、BLEで得た情報を接続中だけ使う。旧版の`uroa-robot-endpoints-v1`は読み書きせず、既存の値も利用しない。Wi-Fiパスワード・接続キー・Gemini APIキーをlocalStorage・図JSON・コピー・ログへ含めない。
 
 | Chromeでの識別名 | パスワード欄 |
 |---|---|
 | `wifi:SSID名` | Wi-Fiパスワード |
-| `robot:基板ID` | ESP32の接続キー |
 | AIChatBlockで入力した識別名 | Gemini APIキー。既存の別フォーム |
 
-Chrome保存はチェック欄で選ぶ。保存要求の承認・拒否・自動入力はChromeの機能であり、保存成功は保証しない。「接続キーの表示／非表示」で初回のキーを手元でも確認できる。画面を閉じると入力欄と待機を解除する。Gemini APIキーはESP32へ送らない。
+ChromeへのWi-Fiパスワード保存はチェック欄で選ぶ。保存要求の承認・拒否・自動入力はChromeの機能であり、保存成功は保証しない。接続キーの入力・Chrome保存要求は行わない。旧版で保存した`robot:基板ID`の項目は不要になり、削除する場合はChrome側で行う。画面を閉じると入力欄と待機を解除する。Gemini APIキーはESP32へ送らない。
 
-次回はESP32がNVSからWi-Fiへ接続し、復旧用BLEも有効にする。diagramの「Wi-Fi設定／接続」で保存済み機器を選び、`robot:基板ID`の接続キーをChromeで自動入力するか手入力し、「保存済みWi-Fiへ接続」を押す。mDNS名を先に試し、失敗時は保存済みIPを試す。基板IDと認証応答を確認する。配置・図JSON復元だけでは接続やサーボ有効化を始めない。
+次回はESP32がNVSからWi-Fiへ接続し、復旧用BLEも有効にする。diagramからBLE接続し、「Wi-Fi設定／接続」でSSIDとパスワードを入力して「Wi-Fiへ接続」を押す。保存済み機器の選択は行わず、教材用固定キーを自動使用する。BLEで取得したmDNS名を先に試し、失敗時は取得した現在のIPを試す。基板IDと認証応答を確認する。配置・図JSON復元だけでは接続やサーボ有効化を始めない。
 
-接続できなければBLEから現在の接続情報を再取得する。ESP32を再起動するとBLEが有効になる。Wi-Fi制御セッション終了・ハートビート期限超過時もBLEを再開する。別端末・別Chromeプロファイル・別オリジン・localStorage消去時はBLEから登録し直す。「このブラウザーから削除」は接続先だけ、「ESP32の保存済みWi-Fi設定を消去」はNVSのWi-Fi設定だけを消し、基板IDと接続キーを維持する。Chromeの保存項目はChrome側で削除する。
+接続できなければBLEから現在の接続情報を再取得する。ESP32を再起動するとBLEが有効になる。Wi-Fi制御セッション終了・ハートビート期限超過時もBLEを再開する。「ESP32の保存済みWi-Fi設定を消去」はNVSのWi-Fi設定だけを消し、基板IDと固定接続キーを維持する。Chromeの保存項目はChrome側で削除する。
 
 ## 通信・停止・ブラウザー制約
 
-BLEサービスのUUIDは既存のまま。設定Write `f3641404`、結果Read `f3641405`を追加する。文字列JSONは先頭1バイトの0（初期化）・1（続き）・2（確定）を使い、各Writeを20バイト以下に分割する。要求は384バイト未満、結果は512バイト以下。`scan`、`list`（ページ）、`configure`、`info`、`forget`を扱う。結果Readは暗号化・認証済みの接続キーを含められる。通常のサーボBLE通信とは別のCharacteristicを使う。
+BLEサービスのUUIDは既存のまま。設定Write `f3641404`、結果Read `f3641405`を追加する。文字列JSONは先頭1バイトの0（初期化）・1（続き）・2（確定）を使い、各Writeを20バイト以下に分割する。要求は384バイト未満、結果は512バイト以下。`scan`、`list`（ページ）、`configure`、`info`、`forget`を扱う。結果Readの`key`には教材用固定キーを返し、diagramが対応ファームウェアかを確認する。設定の読み書きには従来どおり暗号化・MITM認証済みBLE接続が必要。通常のサーボBLE通信とは別のCharacteristicを使う。
 
 HTTPポート80は`/info`、`/claim`、`/command`、`/events`、`/release`、WebSocketは81、JPEGの`/capture`は82。接続キーはWi-Fi上で送らず、Web Crypto／mbedTLSのHMAC-SHA256でchallenge・基板ID・Originを認証する。セッションID、要求番号と署名で指令・画像取得要求を検証し、要求番号の再使用を拒否する。制御応答・IMU通知も署名を検証する。1台につきWi-Fi制御は1セッション。
 

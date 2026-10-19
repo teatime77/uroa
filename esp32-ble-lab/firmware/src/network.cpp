@@ -24,7 +24,9 @@ WebSocketsServer sockets(81);
 httpd_handle_t httpServer = nullptr, cameraServer = nullptr;
 std::atomic<bool> active{false}, ready{false}, shutdownBLE{false}, bleStopped{false};
 std::atomic<uint32_t> generation{0};
-String deviceId, hostname, deviceKey, wifiState = "idle", wifiError;
+// Public teaching key; keep in sync with teachingConnectionKey in robot-wifi.ts.
+const String deviceKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+String deviceId, hostname, wifiState = "idle", wifiError;
 String pendingSSID, pendingPassword, savedSSID, savedPassword;
 String challenge, controlSession;
 int owner = -1; // -1: HTTP controller, nonnegative: WebSocket controller.
@@ -32,7 +34,8 @@ uint32_t counterHigh = 0, scanStarted = 0, wifiStarted = 0;
 uint32_t outputCounter = 0;
 uint64_t counterWindow = 0;
 bool trying = false, persistPending = false, scanRunning = false, services = false;
-uint32_t pairingCode;
+// Public six-digit passkey shared by the teaching boards.
+constexpr uint32_t pairingCode = 123456;
 uint8_t lastIMU[20]{};
 bool haveIMU = false;
 String controlOrigin;
@@ -385,11 +388,11 @@ void networkBegin(NetworkCommand command, NetworkSession session, void (*restart
     Preferences prefs;
     if (!prefs.begin("uroa-net", false)) { Serial.println("Network NVS unavailable"); while (true) delay(1000); }
     deviceId = prefs.getString("id", ""); if (deviceId.isEmpty()) { deviceId = "uroa-" + randomHex(6); prefs.putString("id", deviceId); }
-    deviceKey = prefs.getString("key", ""); if (deviceKey.length() != 64) { deviceKey = randomHex(32); prefs.putString("key", deviceKey); }
+    prefs.remove("key"); // Discard the legacy per-device key; Wi-Fi settings and ID remain intact.
     hostname = deviceId;
     StaticJsonDocument<192> doc; String config = prefs.getString("wifi", "");
     if (!deserializeJson(doc, config)) { savedSSID = doc["ssid"] | ""; savedPassword = doc["password"] | ""; }
-    config = ""; prefs.end(); pairingCode = esp_random() % 1000000;
+    config = ""; prefs.end();
     WiFi.persistent(false); WiFi.mode(WIFI_STA);
     if (!savedSSID.isEmpty()) { WiFi.begin(savedSSID.c_str(), savedPassword.c_str()); trying = true; wifiStarted = millis(); wifiState = "connecting"; }
     xTaskCreate(worker, "uroa-network", 12288, nullptr, 1, nullptr);

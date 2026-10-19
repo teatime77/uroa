@@ -1,0 +1,61 @@
+[
+  {
+    "idx": 0,
+    "typeName": "BLEConnectionBlock",
+    "x": 261.2391444020819,
+    "y": 144.22648805500967,
+    "ports": []
+  },
+  {
+    "idx": 1,
+    "typeName": "CameraBlock",
+    "x": 633.8898490300364,
+    "y": 153.4405832460231,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [
+          1
+        ]
+      }
+    ],
+    "cameraSource": "xiao"
+  },
+  {
+    "idx": 2,
+    "typeName": "ObjectDetectionBlock",
+    "x": 1051.8708991268409,
+    "y": 72.81905416846425,
+    "ports": [
+      {
+        "idx": 1,
+        "destinations": []
+      },
+      {
+        "idx": 2,
+        "destinations": [],
+        "dataType": {
+          "typeName": "string",
+          "dimensions": []
+        }
+      },
+      {
+        "idx": 3,
+        "destinations": [],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      },
+      {
+        "idx": 4,
+        "destinations": [],
+        "dataType": {
+          "typeName": "ObjectDetection",
+          "dimensions": []
+        }
+      }
+    ],
+    "model": "gemini-3.8-flash"
+  }
+]

@@ -7,7 +7,8 @@ export interface ProvisionInfo extends RobotEndpoint { key?: string; state: stri
 export interface WifiNetwork { ssid: string; rssi: number; open: boolean; }
 export interface ConfigCharacteristic { readValue(): Promise<DataView>; writeValueWithResponse(value: Uint8Array): Promise<void>; }
 const encoder = new TextEncoder(), decoder = new TextDecoder();
-const storageKey = "uroa-robot-endpoints-v1";
+// Public teaching key; keep in sync with deviceKey in firmware/src/network.cpp.
+const teachingConnectionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 export function packetHex(data: Uint8Array): string { return [...data].map(b => b.toString(16).padStart(2, "0")).join(""); }
 function decodeHex(value: unknown): Uint8Array<ArrayBuffer> {
     if (typeof value !== "string" || !/^(?:[0-9a-f]{2})+$/.test(value)) throw new Error("機器の応答形式が正しくありません。");
@@ -28,19 +29,6 @@ export function endpoint(value: unknown): RobotEndpoint {
         throw new Error("機器の接続情報が正しくありません。");
     return { id: data.id, name: data.name.slice(0, 64), host: data.host, ip: data.ip!,
         port: data.port!, wsPort: data.wsPort!, cameraPort: data.cameraPort!, camera: data.camera === true };
-}
-export function savedRobots(): RobotEndpoint[] {
-    try {
-        const data: unknown = JSON.parse(localStorage.getItem(storageKey) || "[]");
-        return Array.isArray(data) ? data.slice(0, 20).flatMap(item => { try { return [endpoint(item)]; } catch { return []; } }) : [];
-    } catch { return []; }
-}
-export function rememberRobot(value: RobotEndpoint): void {
-    const clean = endpoint(value), others = savedRobots().filter(x => x.id !== clean.id);
-    try { localStorage.setItem(storageKey, JSON.stringify([clean, ...others].slice(0, 20))); } catch { /* Manual BLE setup remains available. */ }
-}
-export function forgetRobot(id: string): void {
-    try { localStorage.setItem(storageKey, JSON.stringify(savedRobots().filter(x => x.id !== id))); } catch { /* Storage is optional. */ }
 }
 export function savePassword(id: string, password: string): void {
     const Constructor = (window as Window & { PasswordCredential?: new (data: { id: string; password: string }) => Credential }).PasswordCredential;
@@ -89,7 +77,7 @@ export class BLEWifiSetup {
     }
     async info(signal: AbortSignal): Promise<ProvisionInfo> {
         const data = await this.request({ op: "info" }, signal); endpoint(data);
-        if (typeof data.key !== "string" || !/^[a-f0-9]{64}$/.test(data.key)) throw new Error("機器の接続キーを取得できません。");
+        if (data.key !== teachingConnectionKey) throw new Error("教材用の固定接続キーに対応したファームウェアを書き込んでください。");
         return data;
     }
     async scan(signal: AbortSignal): Promise<WifiNetwork[]> {
@@ -162,16 +150,15 @@ export class RobotWifi {
         try {
             const response = await fetch(this.base + path, { method: body === undefined ? "GET" : "POST", headers, body,
                 signal: request.signal, credentials: "omit", redirect: "error", cache: "no-store" });
-            if (!response.ok) throw new Error("Wi-Fi機器から応答を得られません。接続先・接続キー・ネットワークのアクセス許可を確認してください。");
+            if (!response.ok) throw new Error("Wi-Fi機器から応答を得られません。接続先・ファームウェア・ネットワークのアクセス許可を確認してください。");
             const reply = await response.json();
             if (path === "/events" && reply.counter !== String(requestCount)) throw new Error("応答の番号が一致しません。");
             return reply;
         } finally { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); }
     }
-    async connect(target: RobotEndpoint, password: string, outerSignal: AbortSignal): Promise<RobotEndpoint> {
-        if (!/^[a-f0-9]{64}$/.test(password)) throw new Error("初回BLE設定で取得した接続キーを入力してください。");
+    async connect(target: RobotEndpoint, outerSignal: AbortSignal): Promise<RobotEndpoint> {
         outerSignal.throwIfAborted();
-        this.cryptoKey = await crypto.subtle.importKey("raw", encoder.encode(password), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+        this.cryptoKey = await crypto.subtle.importKey("raw", encoder.encode(teachingConnectionKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
         const cancel = () => this.close(); outerSignal.addEventListener("abort", cancel, { once: true });
         try {
             // Try the stable hostname, then the last known DHCP address. Identity is checked in both cases.

@@ -3,7 +3,7 @@ import { FunctionBlock, registerFunctionBlock } from "../block";
 import { Button, type Attr, type UI } from "../ui";
 import { theCanvas } from "../diagram_util";
 import { imuType, type IMUValue } from "../data_type";
-import { BLEWifiSetup, RobotWifi, rememberRobot, type RobotEndpoint } from "./robot-wifi";
+import { BLEWifiSetup, RobotWifi, type RobotEndpoint } from "./robot-wifi";
 import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
 
@@ -276,6 +276,10 @@ export class BLEConnection {
         if (unavailable) { this.publish("unavailable", "", unavailable); return; }
         const generation = ++this.generation;
         let selected: BLEDevice | undefined;
+        let stage = "機器選択";
+        const reportFailure = (name: string, message: string) => {
+            console.error("[BLE] 接続失敗", { stage, name, message });
+        };
         const check = () => {
             if (this.generation !== generation) {
                 // A cancelled native connect can resolve after Clear or pagehide.
@@ -295,30 +299,42 @@ export class BLEConnection {
             this.publish("connecting", selected.name || "名前のない機器");
             // The chooser has no deadline; only GATT initialization is timed out.
             this.connectTimer = setTimeout(() => {
-                if (this.generation === generation) this.close("error", "接続がタイムアウトしました。再接続してください。");
+                if (this.generation === generation) {
+                    reportFailure("TimeoutError", "接続がタイムアウトしました。");
+                    this.close("error", `${stage}でタイムアウトしました。再接続してください。`);
+                }
             }, 15_000);
+            stage = "GATT接続";
             const server = await selected.gatt.connect();
             check();
+            stage = "サービス取得";
             const service = await server.getPrimaryService(BLE_UUID.service);
             this.service = service;
             check();
+            stage = "指令Characteristic取得";
             const tx = await service.getCharacteristic(BLE_UUID.command);
             check();
+            stage = "状態Characteristic取得";
             const status = await service.getCharacteristic(BLE_UUID.status);
             check();
+            stage = "IMU Characteristic取得";
             const rx = await service.getCharacteristic(BLE_UUID.telemetry);
             check();
             this.tx = tx; this.status = status; this.rx = rx;
             status.addEventListener("characteristicvaluechanged", this.statusChanged);
             rx.addEventListener("characteristicvaluechanged", this.sampleChanged);
+            stage = "状態通知登録";
             await status.startNotifications();
             check();
+            stage = "IMU通知登録";
             await rx.startNotifications();
             check();
+            stage = "初期状態取得";
             const initialStatus = await status.readValue();
             check();
             if (initialStatus.byteLength !== 12 || initialStatus.getUint8(0) !== 1) throw new Error("状態データの形式が正しくありません。");
             this.hardwareStatus(initialStatus);
+            stage = "INFO応答確認";
             await this.sendControl(6); // INFO ACK confirms application readiness, not motion completion.
             check();
             clearTimeout(this.connectTimer); this.connectTimer = undefined;
@@ -329,9 +345,11 @@ export class BLEConnection {
             if (this.generation !== generation) return;
             const name = error instanceof Error ? error.name : "";
             if (!selected && name === "NotFoundError") this.close("idle");
-            else this.close("error", name === "NotFoundError"
-                ? "このデモに対応した機器ではありません。"
-                : error instanceof Error ? error.message : "BLE接続に失敗しました。");
+            else {
+                const message = error instanceof Error ? error.message : "BLE接続に失敗しました。";
+                reportFailure(name, message);
+                this.close("error", `${stage}: ${name === "NotFoundError" ? "このデモに対応した機器ではありません。" : message}`);
+            }
         }
     }
 
@@ -346,20 +364,21 @@ export class BLEConnection {
 
     async openWifi(): Promise<void> {
         if (this.wifiDialog || ["selecting", "connecting"].includes(this.state.phase) || this.wifi?.connected) return;
+        if (!this.service || !this.device?.gatt?.connected) {
+            this.state = { ...this.state, message: "先に「接続」でESP32へBLE接続してから、Wi-Fi設定を開いてください。" }; this.notify();
+            return;
+        }
         const generation = this.generation;
         try {
-            let setup: BLEWifiSetup | undefined;
-            if (this.service && this.device?.gatt?.connected) {
-                this.provisioning = true; clearInterval(this.heartbeat);
-                await this.stopServos();
-                await this.sendControl(4, 0); this.requestedRate = 0;
-                const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
-                const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
-                if (generation !== this.generation) return;
-                setup = new BLEWifiSetup(tx as BLECharacteristic & { readValue(): Promise<DataView> }, rx as BLECharacteristic & { readValue(): Promise<DataView> });
-            }
+            this.provisioning = true; clearInterval(this.heartbeat);
+            await this.stopServos();
+            await this.sendControl(4, 0); this.requestedRate = 0;
+            const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
+            const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
+            if (generation !== this.generation) return;
+            const setup = new BLEWifiSetup(tx as BLECharacteristic & { readValue(): Promise<DataView> }, rx as BLECharacteristic & { readValue(): Promise<DataView> });
             const dialog = this.wifiDialog = new RobotWifiDialog(
-                (target, key, signal) => this.connectWifi(target, key, signal),
+                (target, signal) => this.connectWifi(target, signal),
                 () => {
                     if (this.wifiDialog === dialog) this.wifiDialog = undefined;
                     this.provisioning = false;
@@ -373,12 +392,12 @@ export class BLEConnection {
         }
     }
 
-    private async connectWifi(target: RobotEndpoint, key: string, signal: AbortSignal): Promise<void> {
+    private async connectWifi(target: RobotEndpoint, signal: AbortSignal): Promise<void> {
         const oldGeneration = this.generation, wifi = new RobotWifi();
         const originalMessage = this.state.message;
         this.state = { ...this.state, message: "Wi-Fi接続を確認しています…" }; this.notify();
         try {
-            const actual = await wifi.connect(target, key, signal);
+            const actual = await wifi.connect(target, signal);
             signal.throwIfAborted();
             if (this.generation !== oldGeneration) throw new Error("接続を取り消しました。");
             // Remove native disconnection listener before the deliberate BLE handover.
@@ -400,7 +419,7 @@ export class BLEConnection {
             this.state = { phase: "connecting", deviceName: actual.name, transport: "wifi", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
             await this.sendControl(6); signal.throwIfAborted();
             if (generation !== this.generation) throw new Error("接続を取り消しました。");
-            this.publish("connected", actual.name); rememberRobot(actual);
+            this.publish("connected", actual.name);
             this.provisioning = false;
             if (actual.camera) setCameraProvider(cameraSignal => wifi.image(cameraSignal));
             this.updateStream(); this.startHeartbeat(generation);

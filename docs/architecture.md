@@ -161,7 +161,9 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 ### 2026-10-14: ESP32のWi-Fi設定・制御・カメラ
 
-共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)はBLE設定、Wi-Fi認証、接続先のlocalStorage保存、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)はSSID選択・手入力・Chrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有ID・接続キーを保存する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
+2026-10-19の追加変更で、BLEペアリングのBluetooth Passkeyも教材用の全基板共通値`123456`へ固定した。OSのペアリング要求にはこの値を入力する。再起動しても値は変わらず、Serial Monitorでのコード確認は不要。BLE暗号化・MITM認証の処理は継続する。変更にはファームウェアの再Uploadが必要。
+
+共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)はBLE設定・Wi-Fi認証、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)はSSID選択・手入力・Wi-FiパスワードのChrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有IDを保存する。2026-10-17から接続キーはブラウザーとファームウェアに定義する教材用共通固定値を自動使用し、入力・Chrome保存を削除した。旧NVSの接続キーは更新したファームウェアの起動時に削除する。同日の追加変更で保存済み機器の選択画面と接続先のlocalStorage保存を廃止し、初回・次回ともBLE接続中の基板へSSIDとパスワードを送ってWi-Fi接続する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
 
 WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
 

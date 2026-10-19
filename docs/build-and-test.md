@@ -1,6 +1,6 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-15。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-19。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
 ## コマンド
 
@@ -18,6 +18,34 @@
 | `npm.cmd run test:e2e` | Pythonで既存の5アプリ回帰テストを実行。接続先のサーバーとPython依存は事前準備が必要 |
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
+
+## 教材用の固定Bluetooth Passkey（2026-10-19）
+
+ユーザーの指示で、`network.cpp`のBLEペアリングコードを再起動ごとの乱数から全基板共通の`123456`へ変更した。既存の`networkPairingPasskey()`・`setSecurityPasskey()`とBLE暗号化・MITM認証の処理を使い、Serial表示は継続する。Wi-Fi設定画面の案内と操作ガイドにも固定値を表示し、Serial Monitorでコードを確認する手順を不要にした。更新したファームウェアの再Uploadが必要。
+
+- `npm.cmd run build`成功。TypeScript参照ビルドとVite公開ビルド（201モジュール、92項目コピー、44.68秒）を完了。既存gameの動的／静的import併用の警告2件は継続。
+- `npm.cmd run check:dist`成功。5アプリの入口・JS/CSS参照・92件のWebGPU資産を静的確認した。
+- PlatformIOの`esp32dev`・`xiao_esp32s3`がともに成功。今回は依存ライブラリーも含む再ビルドとなった。差分の空白も確認した。
+
+テスト・実機Upload・固定コードでのOSペアリング・再起動後の接続確認はユーザーが行う。固定値は教材用の公開共通値として扱う。
+
+## PCのBLE接続失敗の診断（2026-10-19）
+
+タブレットからはBLE・Wi-Fi接続とシリアル表示に成功し、PCからは「接続失敗」となりESP32の接続ログも出ないとのユーザー報告を受けた。原因は未特定。BLE初期化の例外と15秒タイムアウトに対して、処理段階・エラー名・全文をConsoleへ出す診断を追加した。機器選択キャンセル・全体取消では診断エラーを出さず、資格情報はログへ含めない。操作は[接続画面ガイド](diagram-esp32-connection-ui.md)を参照する。
+
+`npm.cmd run build`（TypeScript参照ビルド、201モジュール、92項目コピー、Vite 31.25秒）と`npm.cmd run check:dist`が成功。既存gameの動的／静的import併用の警告2件は継続。差分の空白を確認した。テストはユーザー指定により追加・実行せず、PC実機での失敗段階・Console表示・原因解消は未確認。今回はWeb側の診断だけを追加し、ESP32ファームウェアの変更・再ビルド・Uploadは行っていない。
+
+## ESP32の教材用固定接続キー（2026-10-17）
+
+Wi-Fi接続キーをブラウザーとファームウェア共通の教材用固定値に変更し、入力・識別名・表示切替・接続キーのChrome保存要求を削除した。ルーターのSSID・パスワード入力、Wi-FiパスワードのChrome保存要求、BLEペアリングは継続する。操作と更新方法は[Wi-Fiガイド](esp32-ble-lab-wifi.md)を参照する。
+
+- `npm.cmd run build`成功。TypeScript参照ビルドとVite公開ビルド（201モジュール、92項目コピー）を確認した。既存gameの動的／静的import併用の警告2件は残る。
+- `npm.cmd run check:dist`成功。5アプリの入口・JS/CSS参照・92件のWebGPU資産を静的確認した。
+- PlatformIOの`esp32dev`・`xiao_esp32s3`がともに成功。初回はユーザーフォルダーのロック・キャッシュへの書込制限で停止し、権限付き再実行でビルドを完了した。
+
+ユーザー指定によりテストは追加・実行していない。Upload・ブラウザー操作・BLE／Wi-Fi通信・旧NVSからの移行・次回接続・Chrome保存・実機の動作確認はユーザーが行う。
+
+同日の追加指示で保存済み機器の選択・削除・専用接続画面と接続先のlocalStorage保存を廃止した。BLE接続中の基板へSSID・パスワードを送る「Wi-Fiへ接続」に統一し、BLE未接続時は先にBLE接続する案内を表示する。追加変更後も`npm.cmd run build`（201モジュール、92項目コピー、Vite 25.33秒）と`npm.cmd run check:dist`が成功し、差分の空白を確認した。既存gameの警告2件は継続。追加変更はWeb側だけで、ファームウェアは変更・再ビルドせず、テストも追加・実行していない。
 
 ## Gemini画像説明（2026-10-15）
 
