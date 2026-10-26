@@ -1,6 +1,6 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-19。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-20。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
 ## コマンド
 
@@ -18,6 +18,14 @@
 | `npm.cmd run test:e2e` | Pythonで既存の5アプリ回帰テストを実行。接続先のサーバーとPython依存は事前準備が必要 |
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
+
+## XIAOのPCA9685・MPU6050接続（2026-10-20）
+
+ユーザー指定のSDA=D4／GPIO5、SCL=D5／GPIO6を現行ソースで再確認した。`xiao_esp32s3`は既にこのピン配置へ切り替わり、PCA9685・MPU6050の初期化、ARM/MOVE/DISABLE/STOP、IMU読み出しとBLE／Wi-Fi通知はDevKitと同じ処理を使う。指定ピンに対応する制御処理を重複して追加する必要はなかった。
+
+起動ログに使用GPIO・100kHz・`Wire.begin()`の結果を追加し、配線表の先頭を両ボード対応へ更新した。インストール済みArduinoライブラリーの`Wire`はI²C0、ESP32-S3 SDKのカメラSCCB設定は`CONFIG_SCCB_HARDWARE_I2C_PORT1`であることをソース・設定で確認した。カメラのGPIO40/39と外部機器のGPIO5/6は別の設定として扱う。I²C機器の検出結果と操作は[配線表](../esp32-ble-lab/docs/wiring.md)を参照する。
+
+PlatformIOで`esp32dev`・`xiao_esp32s3`がともにビルド成功。差分の空白と文書の参照先を確認した。今回はファームウェアと文書の変更のみで、Web側のビルドは実行していない。テスト・Upload・実配線でのサーボ動作・IMU通知・カメラとの同時動作はユーザーが確認する。
 
 ## 接続済みSSIDの履歴選択（2026-10-19）
 

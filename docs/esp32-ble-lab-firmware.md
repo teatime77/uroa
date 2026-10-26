@@ -47,7 +47,7 @@ flowchart LR
 
 | 定数 | 値 | 意味 |
 |---|---|---|
-| `SDA_PIN` / `SCL_PIN` | 21 / 22 | I²CのGPIO |
+| `SDA_PIN` / `SCL_PIN` | DevKit: 21 / 22、XIAO: 5 / 6 | I²CのGPIO。XIAOの基板表記はD4 / D5 |
 | `PCA_ADDRESS` | `0x40` | PCA9685のI²Cアドレス |
 | `SERVO_FREQUENCY` | 50Hz | サーボPWMの周波数 |
 | `MIN_ANGLE` / `MAX_ANGLE` | 6000 / 12000 | 受付範囲60～120°。角度の単位は0.01° |
@@ -55,7 +55,7 @@ flowchart LR
 | `HEARTBEAT_TIMEOUT_MS` | 5000ms | 指令が途切れた場合の停止判定 |
 | `DEVICE_NAME` | `ESP32-BLE-Lab` | BLEのデバイス名 |
 
-2026-10-14にXIAO ESP32S3 Sense用の`xiao_esp32s3`ビルド環境を追加した。この環境では`SDA_PIN` / `SCL_PIN`を5 / 6（基板表記D4 / D5）へ切り替える。表の21 / 22はDevKit V1用の`esp32dev`環境の値。BLEプロトコル・サーボ制御・停止処理は共通で、Senseのカメラ・マイク・SDカードは使用しない。配線とCOM4への書き込みは [README](../esp32-ble-lab/README.md) を参照する。
+2026-10-14にXIAO ESP32S3 Sense用の`xiao_esp32s3`ビルド環境を追加した。この環境では`SDA_PIN` / `SCL_PIN`を5 / 6（基板表記D4 / D5）へ切り替える。BLEプロトコル・サーボ制御・MPU6050読み出し・停止処理はDevKitと共通。後続のWi-Fi追加以降、Senseのカメラは`camera.cpp`で別に初期化し、マイク・SDカードは使用しない。2026-10-20に設定を再確認し、起動時に実際に選択したSDA/SCL・100kHz・I²C開始結果をログへ出す処理を追加した。配線とCOM4への書き込みは [README](../esp32-ble-lab/README.md) を参照する。
 
 例えば90°は`9000`として保持・送信する。0～180°からパルス幅への換算式を使うが、ARM/MOVEが受け付ける範囲は60～120°に制限される。
 
@@ -101,7 +101,7 @@ Arduinoでは`setup()`が起動時に1回呼ばれ、その後`loop()`が繰り�
 `setup()`の処理順は次のとおり。
 
 1. シリアル通信を115200bpsで開始し、200ms待つ。
-2. `SDA_PIN` / `SCL_PIN`でI²Cを開始する（DevKit V1はGPIO21/22、XIAO ESP32S3 SenseはGPIO5/6）。クロックは100kHz、I²Cタイムアウト設定は30ms。
+2. `SDA_PIN` / `SCL_PIN`でI²Cを開始する（DevKit V1はGPIO21/22、XIAO ESP32S3 SenseはGPIO5/6）。クロックは100kHz、I²Cタイムアウト設定は30ms。使用するGPIOと開始結果`OK`／`FAILED`を`I2C config:`ログに表示する。
 3. I²Cアドレス1～126を探索し、応答したアドレスをシリアルへ表示する。
 4. PCA9685を探索し、`pwm.begin()`で初期化する。成功時は全出力をOFFにし、50Hzを設定して再度OFFにする。
 5. `setupIMU()`でMPU-6050を探索・設定する。各デバイスの結果を`OK`または`MISSING`として表示する。

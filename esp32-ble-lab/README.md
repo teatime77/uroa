@@ -47,6 +47,8 @@ pio device monitor --project-dir esp32-ble-lab/firmware -b 115200 -p COM3
 
 2026-10-14に`xiao_esp32s3`環境を追加した。PlatformIOのボードIDは`seeed_xiao_esp32s3`（[公式設定](https://docs.platformio.org/en/latest/boards/espressif32/seeed_xiao_esp32s3.html)）。DevKit V1と同じライブラリー・BLEプロトコル・サーボ範囲・停止処理を使い、I²CピンをD4／GPIO5（SDA）、D5／GPIO6（SCL）へ切り替える。[配線表](docs/wiring.md)に従ってPCA9685と外部GY-521を接続する。Wi-Fi機能追加後はSenseのカメラも使用する。マイク・SDカードは使用しない。
 
+2026-10-20に共通のサーボ・IMU処理とGPIO設定を再確認し、起動時に`I2C config: SDA=GPIO5 SCL=GPIO6 clock=100000 Hz init=OK`のように使用ピンと初期化結果を表示するようにした。`PCA9685=OK MPU6050=OK`を確認してから、DevKitと同じServoMotorBlock・IMUBlock・PlotBlockで操作する。表示例は実機確認済みを意味せず、配線・実機動作はユーザーが確認する。サーボの有効化は引き続き明示操作が必要。
+
 uroaルートで実行する。CLIがPATHにない場合は`pio`を`& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe"`へ置き換える。
 
 ```powershell

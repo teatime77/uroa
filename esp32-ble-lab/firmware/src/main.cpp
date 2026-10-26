@@ -336,10 +336,12 @@ void setup()
 {
     Serial.begin(115200);
     delay(200);
-    Wire.begin(SDA_PIN, SCL_PIN);
+    const bool i2cStarted = Wire.begin(SDA_PIN, SCL_PIN);
     Wire.setClock(100000);
     Wire.setTimeOut(30);
     Serial.println("ESP32 BLE Lab: servo outputs OFF at startup");
+    Serial.printf("I2C config: SDA=GPIO%d SCL=GPIO%d clock=100000 Hz init=%s\n",
+                  SDA_PIN, SCL_PIN, i2cStarted ? "OK" : "FAILED");
     Serial.print("I2C:");
     for (uint8_t a = 1; a < 127; a++)
         if (probe(a))
