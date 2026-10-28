@@ -1,0 +1,12 @@
+[
+  { "idx": 0, "typeName": "BLEConnectionBlock", "x": 70, "y": 50, "ports": [] },
+  {
+    "idx": 1, "typeName": "IMUBlock", "x": 420, "y": 100,
+    "ports": [
+      { "idx": 0, "destinations": [2], "dataType": { "typeName": "IMU", "dimensions": [] } },
+      { "idx": 1, "destinations": [3], "dataType": { "typeName": "Balance", "dimensions": [] } }
+    ]
+  },
+  { "idx": 2, "typeName": "PlotBlock", "x": 70, "y": 510, "ports": [{ "idx": 2, "destinations": [] }] },
+  { "idx": 3, "typeName": "PlotBlock", "x": 800, "y": 510, "ports": [{ "idx": 3, "destinations": [] }] }
+]

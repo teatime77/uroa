@@ -1,5 +1,7 @@
 # ESP32 BLE Lab（uroa）
 
+2026-10-26に共通機能を`esp32/lib/`へ切り出した。このPlatformIOプロジェクトは同じ場所に残し、`lib_deps`のローカル参照で新ライブラリーを使う。旧`networkBegin`等の自由関数APIはWifiNetworkへ置き換えた。通信・NVS形式は維持する。共有ライブラリーと新教材の作成手順は [esp32/README.md](../esp32/README.md) を参照する。
+
 ESP32 DevKit V1またはSeeed Studio XIAO ESP32S3 Senseと、PCA9685、MPU-6050／GY-521をBLEまたはWi-Fiで操作するPlatformIOプロジェクト。ブラウザー側はuroaのdiagramを使う。2026-10-14にBLEによるWi-Fi設定、NVS保存、mDNS、Wi-Fi制御、XIAOのJPEGカメラを追加した。初回・次回の操作、Chrome保存、認証、復旧は [Wi-Fi接続ガイド](../docs/esp32-ble-lab-wifi.md) を参照する。AI APIはファームウェアで使わない。
 
 ## 配置と取り込み元
@@ -8,8 +10,9 @@ ESP32 DevKit V1またはSeeed Studio XIAO ESP32S3 Senseと、PCA9685、MPU-6050�
 
 | パス | 内容 |
 |---|---|
-| [firmware/src/main.cpp](firmware/src/main.cpp) | 共通指令キュー、PWM補間、IMU通知、停止、BLE／Wi-Fi応答 |
-| [firmware/src/network.cpp](firmware/src/network.cpp) | Wi-Fi設定・NVS・mDNS・HTTP／WebSocket・認証 |
+| [firmware/src/main.cpp](firmware/src/main.cpp) | 指令キュー、機器クラス呼び出し、IMU通知周期、停止・期限監視、BLE／Wi-Fiの組み合わせ |
+| [firmware/src/network.cpp](firmware/src/network.cpp) | WifiNetworkへの教材設定・カメラコールバックの受け渡し |
+| [共有C++ライブラリー](../esp32/README.md) | BLE・Wi-Fi設定／認証・通信形式・PCA9685補間・MPU-6050取得のクラス実装 |
 | [firmware/src/camera.cpp](firmware/src/camera.cpp) | XIAO専用の320×240 JPEGカメラ |
 | [firmware/include/config.h](firmware/include/config.h) | ピン、角度範囲、パルス幅、UUID、タイムアウト |
 | [firmware/platformio.ini](firmware/platformio.ini) | `esp32dev`／Arduinoと固定した依存バージョン |

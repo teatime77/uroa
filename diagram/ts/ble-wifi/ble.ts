@@ -6,6 +6,7 @@ import { imuType, type IMUValue } from "../data_type";
 import { BLEWifiSetup, RobotWifi, type RobotEndpoint } from "./robot-wifi";
 import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
+import { parseBalanceSample, type BalanceSample } from "../plot/plot_telemetry";
 
 // Same GATT service and packet format as robot/esp32-ble-lab.
 export const BLE_UUID = {
@@ -59,6 +60,7 @@ export class BLEConnection {
     state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
     private listeners = new Set<(state: BLEConnectionState) => void>();
     private sampleListeners = new Set<(sample: IMUSample) => void>();
+    private balanceListeners = new Set<(sample: BalanceSample) => void>();
     private requestedRate = 0;
     private device?: BLEDevice;
     private tx?: BLECharacteristic;
@@ -167,9 +169,15 @@ export class BLEConnection {
         };
     }
 
+    subscribeBalanceSamples(listener: (sample: BalanceSample) => void): () => void {
+        this.balanceListeners.add(listener);
+        this.updateStream();
+        return () => { this.balanceListeners.delete(listener); this.updateStream(); };
+    }
+
     private updateStream(): void {
         if (this.state.phase !== "connected" || this.provisioning) return;
-        const rate = this.sampleListeners.size && this.state.imuAvailable ? 10 : 0;
+        const rate = (this.sampleListeners.size || this.balanceListeners.size) && this.state.imuAvailable ? 10 : 0;
         if (rate === this.requestedRate) return;
         this.requestedRate = rate;
         const generation = this.generation;
@@ -206,6 +214,15 @@ export class BLEConnection {
         try {
             const value = (event.target as BLECharacteristic).value;
             if (!value) throw new Error("IMUデータがありません。");
+            if (value.byteLength === 20 && value.getUint8(0) === 2) {
+                if (value.getUint8(1) !== 1) return; // 未対応のプロットschemaはIMUとして解釈しない。
+                const balance = parseBalanceSample(value);
+                for (const listener of this.balanceListeners) {
+                    try { listener(balance); }
+                    catch (error) { console.error("Balance sample handler failed", error); }
+                }
+                return;
+            }
             sample = parseIMUSample(value);
         } catch (error) {
             this.close("error", error instanceof Error ? error.message : "IMUデータを受信できませんでした。");

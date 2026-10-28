@@ -1,4 +1,24 @@
-# ESP32 BLE Labのmain.cpp解説
+# ESP32 BLE Labの構成とmain.cpp解説
+
+## 2026-10-26: 共有ライブラリーへのクラス化
+
+現在は共通機能を [esp32/lib](../esp32/lib/) へ切り出し、既存のPlatformIOプロジェクトから参照する。下記の2026-10-13／14の解説は、切り出し前のコードを説明する履歴として残す。旧自由関数・グローバル変数の名前が現在の配置と同じであるとは限らない。
+
+| 現在の配置 | 担当 |
+|---|---|
+| [main.cpp](../esp32-ble-lab/firmware/src/main.cpp) | 教材の初期化、16件の指令キュー、優先STOP、接続世代の検査、指令と機器クラスの対応、5秒期限監視、IMU通知周期 |
+| [network.cpp](../esp32-ble-lab/firmware/src/network.cpp) | WifiNetworkの教材設定とカメラコールバックを接続 |
+| [BleTransport](../esp32/lib/ble/README.md) | BLEサービス・広告・接続世代・受信、Status/Telemetry、認証済み設定JSONの分割転送 |
+| [WifiNetwork](../esp32/lib/wifi/README.md) | Wi-Fi検索・接続、NVS、mDNS、HTTP/WebSocket、HMAC・制御権、BLE停止／再開の調停 |
+| [Protocol](../esp32/lib/protocol/README.md) | Command検査、little endianの読み書き、Status/Telemetryの組み立て |
+| [Pca9685Servos](../esp32/lib/servo/README.md) | 16CHのARM/MOVE/DISABLE、20ms間隔の補間、全停止・I²C出力異常 |
+| [Mpu6050](../esp32/lib/imu/README.md) | 0x68/0x69探索・設定、生データ取得、異常後の無効化 |
+
+各クラスは教材のconfig.hを参照せず、設定・TwoWire・コールバックを受け取る。通信のコールバックではI²Cを操作せず、制御ループで機器を更新する。出力異常の自発Statusと指令へのACK、STOPでIMU通知を維持する扱い、再接続時に自動ARMしない扱いを維持する。通信形式・UUID・NVS形式は変更しない。
+
+カメラの基板固有処理は従来のcamera.cppに残す。通信インスタンスは基板ごとに1つをファームウェアの稼働中ずっと保持する。Wi-Fiのタスク・サーバーを破棄するAPIは今回追加しない。利用方法は [ESP32教材ガイド](../esp32/README.md)、ビルドと未確認範囲は [build-and-test.md](build-and-test.md) を参照する。
+
+## 旧構成の記録
 
 作成日: 2026-10-13、配置更新日: 2026-10-14（日本時間）。対象は [esp32-ble-lab/firmware/src/main.cpp](../esp32-ble-lab/firmware/src/main.cpp)。2026-10-14にrobotの作業ツリーを、`main.cpp`の未コミット変更も含めてuroaへ取り込んだ。ソースの内容は変更していない。2026-10-13の解説作成ではソース・設定・関連仕様を照合し、ビルドや実機動作の再確認は行っていない。取り込み後のビルド結果・確認範囲は [build-and-test.md](build-and-test.md) に記録する。
 

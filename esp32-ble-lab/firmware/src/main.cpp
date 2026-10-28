@@ -1,467 +1,175 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <NimBLEDevice.h>
-#include <Adafruit_PWMServoDriver.h>
+#include <uroa_ble.h>
+#include <uroa_imu.h>
+#include <uroa_protocol.h>
+#include <uroa_servo.h>
 #include <atomic>
 #include "config.h"
 #include "network.h"
 
-enum Op : uint8_t
-{
-    ARM = 1,
-    MOVE = 2,
-    STOP = 3,
-    STREAM = 4,
-    PING = 5,
-    INFO = 6,
-    DISABLE = 7
-};
-enum Code : uint8_t
-{
-    CODE_OK = 0,
-    CODE_FORMAT = 1,
-    CODE_RANGE = 2,
-    CODE_NOT_ARMED = 3,
-    CODE_HARDWARE = 4,
-    CODE_BUSY = 5,
-    CODE_IO_ERROR = 6
-};
-struct Command
-{
-    uint8_t bytes[10];
-};
-struct Servo
-{
-    bool armed = false, moving = false;
-    uint16_t current = 9000, start = 9000, target = 9000, duration = 0;
-    uint32_t started = 0;
-};
-Servo servos[16];
-Adafruit_PWMServoDriver pwm(PCA_ADDRESS);
-QueueHandle_t commands;
-std::atomic<bool> connected{false}, mustStop{false};
-std::atomic<uint16_t> urgentSeq{0};
-std::atomic<bool> urgentStop{false};
-std::atomic<uint32_t> session{0};
-struct Queued
-{
-    Command command;
+namespace {
+using uroa::Protocol;
+using uroa::Pca9685Servos;
+uroa::BleTransport bluetooth;
+uroa::Mpu6050 imu(Wire);
+Pca9685Servos::Config servoConfig() {
+    Pca9685Servos::Config config;
+    config.address = PCA_ADDRESS; config.frequency = SERVO_FREQUENCY;
+    config.minAngle = MIN_ANGLE; config.maxAngle = MAX_ANGLE;
+    config.minPulseUs = MIN_PULSE_US; config.maxPulseUs = MAX_PULSE_US;
+    return config;
+}
+Pca9685Servos servos(Wire, servoConfig());
+struct Queued {
+    Protocol::Command command;
     uint32_t session;
     bool wifi = false;
 };
-NimBLECharacteristic *telemetryChar, *statusChar;
-bool pcaOK = false, pcaInitialized = false, imuOK = false;
-uint8_t imuAddress = 0x68;
+QueueHandle_t commands;
+std::atomic<bool> mustStop{false}, urgentStop{false};
+std::atomic<uint16_t> urgentSeq{0};
 uint16_t streamHz = 0, sampleSeq = 0;
-uint32_t lastCommand = 0, lastSample = 0, lastMotion = 0;
+uint32_t lastCommand = 0, lastSample = 0;
 
-uint16_t get16(const uint8_t *b) { return uint16_t(b[0]) | uint16_t(b[1]) << 8; }
-void put16(uint8_t *b, uint16_t v)
-{
-    b[0] = v;
-    b[1] = v >> 8;
+uint8_t stateFlags() {
+    return (servos.available() ? 1 : 0) | (imu.available() ? 2 : 0) |
+        (servos.anyArmed() ? 4 : 0) | (streamHz ? 8 : 0);
 }
-void put32(uint8_t *b, uint32_t v)
-{
-    for (int i = 0; i < 4; i++)
-        b[i] = v >> (8 * i);
+void status(uint8_t code, uint16_t sequence, uint8_t channel = 255) {
+    uint8_t packet[12];
+    const auto *state = servos.state(channel);
+    Protocol::status(packet, code, sequence, stateFlags(), channel,
+        state ? state->current : 0, state ? state->target : 0,
+        servos.remaining(channel, millis()));
+    if (!network.bleUnavailable()) bluetooth.publishStatus(packet, sizeof packet);
+    network.publish(packet, sizeof packet);
 }
-bool probe(uint8_t address)
-{
-    Wire.beginTransmission(address);
-    return Wire.endTransmission() == 0;
-}
-bool writeRegister(uint8_t reg, uint8_t value)
-{
-    Wire.beginTransmission(imuAddress);
-    Wire.write(reg);
-    Wire.write(value);
-    return Wire.endTransmission() == 0;
-}
-bool readRegisters(uint8_t reg, uint8_t *data, uint8_t count)
-{
-    Wire.beginTransmission(imuAddress);
-    Wire.write(reg);
-    if (Wire.endTransmission(false) != 0)
-        return false;
-    if (Wire.requestFrom(imuAddress, count) != count)
-        return false;
-    for (uint8_t i = 0; i < count; i++)
-        data[i] = Wire.read();
-    return true;
-}
-bool setupIMU()
-{
-    if (!probe(0x68))
-    {
-        if (!probe(0x69))
-            return false;
-        imuAddress = 0x69;
+// 通信コールバックはデータをコピーするだけ。I2C操作・応答はloop()へ集約する。
+void receive(const uint8_t *data, size_t length, uint32_t generation, bool wifi) {
+    if (!wifi && network.connected()) return;
+    if (wifi && length != 10) return;
+    if (Protocol::urgentStop(data, length)) {
+        urgentSeq = Protocol::read16(data + 2); urgentStop = true; return;
     }
-    uint8_t who = 0;
-    if (!readRegisters(0x75, &who, 1) || who != 0x68)
-        return false;
-    // PLL clock, DLPF ~44 Hz, 100 Hz internal sampling, +/-2g, +/-250 deg/s.
-    return writeRegister(0x6B, 0x01) && writeRegister(0x1A, 0x03) &&
-           writeRegister(0x19, 9) && writeRegister(0x1B, 0) && writeRegister(0x1C, 0);
-}
-bool anyArmed()
-{
-    for (auto &s : servos)
-        if (s.armed)
-            return true;
-    return false;
-}
-void allOff()
-{
-    for (uint8_t ch = 0; ch < 16; ch++)
-    {
-        servos[ch].armed = false;
-        servos[ch].moving = false;
-        if (pcaInitialized && pwm.setPWM(ch, 0, 4096) != 0)
-            pcaOK = false;
-    }
-}
-uint8_t flags() { return (pcaOK ? 1 : 0) | (imuOK ? 2 : 0) | (anyArmed() ? 4 : 0) | (streamHz ? 8 : 0); }
-void status(uint8_t code, uint16_t seq, uint8_t ch = 255)
-{
-    uint8_t b[12] = {1, code, 0, 0, flags(), ch};
-    put16(b + 2, seq);
-    if (ch < 16)
-    {
-        Servo &s = servos[ch];
-        put16(b + 6, s.current);
-        put16(b + 8, s.target);
-        uint32_t elapsed = millis() - s.started;
-        put16(b + 10, s.moving && elapsed < s.duration ? s.duration - elapsed : 0);
-    }
-    if (!networkBLEStopping() && statusChar) {
-        statusChar->setValue(b, sizeof b);
-        if (connected) statusChar->notify();
-    }
-    networkPublish(b, sizeof b);
-}
-bool output(uint8_t ch, uint16_t angle)
-{
-    float us = MIN_PULSE_US + (MAX_PULSE_US - MIN_PULSE_US) * (angle / 18000.0f);
-    uint16_t ticks = lroundf(us * SERVO_FREQUENCY * 4096.0f / 1000000.0f);
-    if (pwm.setPWM(ch, 0, ticks) != 0)
-    {
-        pcaOK = false;
-        allOff();
-        status(CODE_IO_ERROR, 0, ch);
-        return false;
-    }
-    return true;
-}
-class ServerCallbacks : public NimBLEServerCallbacks
-{
-    void onConnect(NimBLEServer *, NimBLEConnInfo &) override
-    {
-        ++session;
-        connected = true;
+    Queued queued{};
+    queued.command = Protocol::command(data, length);
+    queued.session = generation; queued.wifi = wifi;
+    if (xQueueSend(commands, &queued, 0) != pdTRUE) {
         mustStop = true;
-        Serial.println("BLE connected");
-        // Show the teaching passkey on every connection, even without a new pairing request.
-        Serial.printf("BLE setup pairing code: %06lu\n", static_cast<unsigned long>(networkPairingPasskey()));
+        if (wifi) network.stopControl();
     }
-    void onDisconnect(NimBLEServer *, NimBLEConnInfo &, int reason) override
-    {
-        connected = false;
-        if (networkBLEStopping()) return;
-        ++session;
-        mustStop = true;
-        Serial.printf("BLE disconnected: reason=%d\n", reason);
-        if (NimBLEDevice::startAdvertising())
-            Serial.println("BLE advertising restarted");
-        else
-            Serial.println("BLE advertising restart FAILED");
+}
+uint8_t resultCode(Pca9685Servos::Result result) {
+    switch (result) {
+    case Pca9685Servos::Result::Ok: return Protocol::CODE_OK;
+    case Pca9685Servos::Result::Range: return Protocol::CODE_RANGE;
+    case Pca9685Servos::Result::Unavailable: return Protocol::CODE_HARDWARE;
+    case Pca9685Servos::Result::NotArmed: return Protocol::CODE_NOT_ARMED;
+    default: return Protocol::CODE_IO_ERROR;
     }
-};
-class CommandCallbacks : public NimBLECharacteristicCallbacks
-{
-    void onWrite(NimBLECharacteristic *c, NimBLEConnInfo &) override
-    {
-        if (networkConnected()) return;
-        auto value = c->getValue();
-        // Keep I2C and notifications in loop(), never in the BLE callback.
-        if (value.size() == 10 && uint8_t(value[0]) == 1 && uint8_t(value[1]) == STOP)
-        {
-            urgentSeq = uint8_t(value[2]) | (uint16_t(uint8_t(value[3])) << 8);
-            urgentStop = true;
-            return;
-        }
-        Queued q{};
-        q.session = session.load();
-        if (value.size() == 10)
-            memcpy(q.command.bytes, value.data(), 10);
-        // Wrong-length requests are represented by version 0 and rejected by loop.
-        if (xQueueSend(commands, &q, 0) != pdTRUE)
-            mustStop = true;
-    }
-};
-void handle(const Command &command)
-{
-    const uint8_t *b = command.bytes;
-    uint16_t seq = get16(b + 2), v = get16(b + 6), ms = get16(b + 8);
-    uint8_t op = b[1], ch = b[4];
-    if (b[0] != 1 || b[5] != 0)
-    {
-        status(CODE_FORMAT, seq);
-        return;
-    }
-    if (op < ARM || op > DISABLE)
-    {
-        status(CODE_FORMAT, seq);
-        return;
-    }
+}
+void handle(const Protocol::Command &command) {
+    const auto *b = command.bytes;
+    const uint16_t sequence = Protocol::read16(b + 2);
+    const uint16_t value = Protocol::read16(b + 6), duration = Protocol::read16(b + 8);
+    const uint8_t op = b[1], channel = b[4];
+    if (!Protocol::valid(command)) { status(Protocol::CODE_FORMAT, sequence); return; }
     lastCommand = millis();
-    if (op == PING || op == INFO)
-    {
-        status(CODE_OK, seq, ch);
-        return;
+    if (op == Protocol::PING || op == Protocol::INFO) { status(Protocol::CODE_OK, sequence, channel); return; }
+    if (op == Protocol::STREAM) {
+        if (value != 0 && value != 5 && value != 10 && value != 20) { status(Protocol::CODE_RANGE, sequence); return; }
+        if (value && !imu.available()) { status(Protocol::CODE_HARDWARE, sequence); return; }
+        streamHz = value; lastSample = millis(); status(Protocol::CODE_OK, sequence); return;
     }
-    if (op == STREAM)
-    {
-        if (v != 0 && v != 5 && v != 10 && v != 20)
-        {
-            status(CODE_RANGE, seq);
-            return;
-        }
-        if (v && !imuOK)
-        {
-            status(CODE_HARDWARE, seq);
-            return;
-        }
-        streamHz = v;
-        lastSample = millis();
-        status(CODE_OK, seq);
-        return;
-    }
-    if (op == STOP)
-    {
-        allOff();
-        status(CODE_OK, seq);
-        return;
-    }
-    if (ch >= 16)
-    {
-        status(CODE_RANGE, seq);
-        return;
-    }
-    if (op == DISABLE)
-    {
-        servos[ch].armed = false;
-        servos[ch].moving = false;
-        if (pcaOK && pwm.setPWM(ch, 0, 4096) != 0)
-        {
-            pcaOK = false;
-            allOff();
-            status(CODE_IO_ERROR, seq, ch);
-            return;
-        }
-        status(CODE_OK, seq, ch);
-        return;
-    }
-    if (!pcaOK)
-    {
-        status(CODE_HARDWARE, seq, ch);
-        return;
-    }
-    if (v < MIN_ANGLE || v > MAX_ANGLE || ms > 10000)
-    {
-        status(CODE_RANGE, seq, ch);
-        return;
-    }
-    Servo &s = servos[ch];
-    if (op == ARM)
-    {
-        s.armed = true;
-        s.moving = false;
-        s.current = s.start = s.target = v;
-        if (output(ch, v))
-            status(CODE_OK, seq, ch);
-        else
-            status(CODE_IO_ERROR, seq, ch);
-        return;
-    }
-    if (!s.armed)
-    {
-        status(CODE_NOT_ARMED, seq, ch);
-        return;
-    }
-    s.start = s.current;
-    s.target = v;
-    s.duration = ms;
-    s.started = millis();
-    s.moving = ms > 0;
-    if (ms == 0)
-    {
-        s.current = v;
-        if (!output(ch, v))
-        {
-            status(CODE_IO_ERROR, seq, ch);
-            return;
-        }
-    }
-    status(CODE_OK, seq, ch);
+    if (op == Protocol::STOP) { servos.allOff(); status(Protocol::CODE_OK, sequence); return; }
+    if (channel >= 16) { status(Protocol::CODE_RANGE, sequence); return; }
+    Pca9685Servos::Result result;
+    if (op == Protocol::DISABLE) result = servos.disable(channel);
+    else if (op == Protocol::ARM) result = servos.arm(channel, value, duration);
+    else result = servos.move(channel, value, duration, millis());
+    // 出力失敗の自発通知と、その指令への受付結果を従来どおり別々に返す。
+    if (result == Pca9685Servos::Result::IoError && op != Protocol::DISABLE)
+        status(Protocol::CODE_IO_ERROR, 0, channel);
+    status(resultCode(result), sequence, channel);
 }
-void startBLE()
-{
-    NimBLEDevice::init(DEVICE_NAME);
-    NimBLEDevice::setSecurityAuth(true, true, true);
-    NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
-    NimBLEDevice::setSecurityPasskey(networkPairingPasskey());
-    // Deliberate local display for the OS pairing prompt; never expose Wi-Fi credentials or device keys.
-    Serial.printf("BLE setup pairing code: %06lu\n", static_cast<unsigned long>(networkPairingPasskey()));
-    auto server = NimBLEDevice::createServer();
-    server->setCallbacks(new ServerCallbacks());
-    auto service = server->createService(SERVICE_UUID);
-    auto cmd = service->createCharacteristic(COMMAND_UUID, NIMBLE_PROPERTY::WRITE, 10);
-    static CommandCallbacks commandCallbacks;
-    cmd->setCallbacks(&commandCallbacks);
-    telemetryChar = service->createCharacteristic(TELEMETRY_UUID, NIMBLE_PROPERTY::NOTIFY, 20);
-    statusChar = service->createCharacteristic(STATUS_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, 12);
-    networkRegisterBLE(service);
-    status(CODE_OK, 0);
-    service->start();
-    auto adv = NimBLEDevice::getAdvertising();
-    adv->enableScanResponse(true);
-    if (!adv->addServiceUUID(SERVICE_UUID) || !adv->setName(DEVICE_NAME) || !adv->start())
-        Serial.println("BLE advertising setup FAILED");
-    else Serial.printf("BLE advertising: %s\n", DEVICE_NAME);
 }
 
-void setup()
-{
-    Serial.begin(115200);
-    delay(200);
+void setup() {
+    Serial.begin(115200); delay(200);
     const bool i2cStarted = Wire.begin(SDA_PIN, SCL_PIN);
-    Wire.setClock(100000);
-    Wire.setTimeOut(30);
+    Wire.setClock(100000); Wire.setTimeOut(30);
     Serial.println("ESP32 BLE Lab: servo outputs OFF at startup");
     Serial.printf("I2C config: SDA=GPIO%d SCL=GPIO%d clock=100000 Hz init=%s\n",
-                  SDA_PIN, SCL_PIN, i2cStarted ? "OK" : "FAILED");
+        SDA_PIN, SCL_PIN, i2cStarted ? "OK" : "FAILED");
     Serial.print("I2C:");
-    for (uint8_t a = 1; a < 127; a++)
-        if (probe(a))
-            Serial.printf(" 0x%02X", a);
+    for (uint8_t address = 1; address < 127; ++address) {
+        Wire.beginTransmission(address);
+        if (Wire.endTransmission() == 0) Serial.printf(" 0x%02X", address);
+    }
     Serial.println();
-    pcaOK = probe(PCA_ADDRESS) && pwm.begin();
-    pcaInitialized = pcaOK;
-    if (pcaOK)
-    {
-        allOff();
-        pwm.setPWMFreq(SERVO_FREQUENCY);
-        allOff();
-    }
-    imuOK = setupIMU();
-    Serial.printf("PCA9685=%s MPU6050=%s (0x%02X)\n", pcaOK ? "OK" : "MISSING", imuOK ? "OK" : "MISSING", imuAddress);
+    servos.begin(); imu.begin();
+    Serial.printf("PCA9685=%s MPU6050=%s (0x%02X)\n",
+        servos.available() ? "OK" : "MISSING", imu.available() ? "OK" : "MISSING", imu.address());
     commands = xQueueCreate(16, sizeof(Queued));
-    if (!commands)
-    {
-        Serial.println("Queue allocation failed");
-        while (true)
-            delay(1000);
-    }
-    networkBegin(
-        [](const uint8_t *data, size_t length, uint32_t gen) {
-            if (length != 10) return;
-            if (data[0] == 1 && data[1] == STOP) {
-                urgentSeq = get16(data + 2); urgentStop = true; return;
-            }
-            Queued q{}; memcpy(q.command.bytes, data, 10); q.wifi = true; q.session = gen;
-            if (xQueueSend(commands, &q, 0) != pdTRUE) { mustStop = true; networkStopControl(); }
-        },
-        [](bool, uint32_t) { mustStop = true; }, startBLE);
-    startBLE();
+    if (!commands) { Serial.println("Queue allocation failed"); while (true) delay(1000); }
+
+    uroa::WifiNetwork::Callbacks wifiCallbacks;
+    wifiCallbacks.command = [](const uint8_t *data, size_t length, uint32_t generation) { receive(data, length, generation, true); };
+    wifiCallbacks.session = [](bool, uint32_t) { mustStop = true; };
+    wifiCallbacks.startBLE = [] { bluetooth.start(); };
+    wifiCallbacks.stopBLE = [] { bluetooth.stop(); };
+    beginNetwork(wifiCallbacks);
+
+    uroa::BleTransport::Config bleConfig;
+    bleConfig.name = DEVICE_NAME; bleConfig.serviceUuid = SERVICE_UUID;
+    bleConfig.commandUuid = COMMAND_UUID; bleConfig.telemetryUuid = TELEMETRY_UUID;
+    bleConfig.statusUuid = STATUS_UUID; bleConfig.configUuid = CONFIG_UUID; bleConfig.resultUuid = RESULT_UUID;
+    bleConfig.passkey = PAIRING_CODE;
+    uroa::BleTransport::Callbacks bleCallbacks;
+    bleCallbacks.command = [](const uint8_t *data, size_t length, uint32_t generation) { receive(data, length, generation, false); };
+    bleCallbacks.session = [](bool, uint32_t) { mustStop = true; };
+    bleCallbacks.configure = [](const String &input) { return network.configure(input); };
+    bleCallbacks.started = [] { status(Protocol::CODE_OK, 0); };
+    bluetooth.begin(bleConfig, bleCallbacks);
     Serial.printf("BLE address: %s\n", NimBLEDevice::getAddress().toString().c_str());
 }
-void loop()
-{
+void loop() {
     uint32_t now = millis();
-    if (mustStop.exchange(false))
-    {
-        allOff();
-        streamHz = 0;
-        lastCommand = now;
-        xQueueReset(commands);
-        status(CODE_OK, 0);
+    if (mustStop.exchange(false)) {
+        servos.allOff(); streamHz = 0; lastCommand = now;
+        xQueueReset(commands); status(Protocol::CODE_OK, 0);
     }
-    if (urgentStop.exchange(false))
-    {
-        allOff();
-        xQueueReset(commands);
-        lastCommand = now;
-        status(CODE_OK, urgentSeq);
+    if (urgentStop.exchange(false)) {
+        servos.allOff(); xQueueReset(commands); lastCommand = now;
+        status(Protocol::CODE_OK, urgentSeq);
     }
-    Queued q;
-    // Bound work per iteration so motion and watchdog are not starved.
-    for (int n = 0; n < 4 && xQueueReceive(commands, &q, 0) == pdTRUE; n++)
-        if ((q.wifi && networkConnected() && q.session == networkGeneration()) ||
-            (!q.wifi && !networkConnected() && connected && q.session == session.load()))
-            handle(q.command);
+    Queued queued;
+    // 1周4件までに制限し、補間と期限監視の処理時間を残す。
+    for (int n = 0; n < 4 && xQueueReceive(commands, &queued, 0) == pdTRUE; ++n)
+        if ((queued.wifi && network.connected() && queued.session == network.generation()) ||
+            (!queued.wifi && !network.connected() && bluetooth.connected() && queued.session == bluetooth.generation()))
+            handle(queued.command);
     now = millis();
-    if ((connected || networkConnected()) && now - lastCommand > HEARTBEAT_TIMEOUT_MS)
-    {
-        bool active = anyArmed() || streamHz;
-        if (active)
-        {
-            allOff();
-            streamHz = 0;
-            status(CODE_NOT_ARMED, 0);
+    if ((bluetooth.connected() || network.connected()) && now - lastCommand > HEARTBEAT_TIMEOUT_MS) {
+        if (servos.anyArmed() || streamHz) {
+            servos.allOff(); streamHz = 0; status(Protocol::CODE_NOT_ARMED, 0);
         }
-        networkStopControl();
+        network.stopControl();
     }
-    if (now - lastMotion >= 20)
-    {
-        lastMotion = now;
-        for (uint8_t ch = 0; ch < 16; ch++)
-        {
-            Servo &s = servos[ch];
-            if (!s.armed || !s.moving)
-                continue;
-            uint32_t elapsed = now - s.started;
-            if (elapsed >= s.duration)
-            {
-                s.current = s.target;
-                s.moving = false;
-            }
-            else
-                s.current = int32_t(s.start) + (int32_t(s.target) - s.start) * int32_t(elapsed) / s.duration;
-            if (!output(ch, s.current))
-                break;
-        }
-    }
-    if ((connected || networkConnected()) && imuOK && streamHz && now - lastSample >= 1000 / streamHz)
-    {
+    const int failedChannel = servos.tick(now);
+    if (failedChannel >= 0) status(Protocol::CODE_IO_ERROR, 0, failedChannel);
+    if ((bluetooth.connected() || network.connected()) && imu.available() && streamHz && now - lastSample >= 1000 / streamHz) {
         lastSample = now;
         uint8_t raw[14];
-        if (!readRegisters(0x3B, raw, 14))
-        {
-            imuOK = false;
-            streamHz = 0;
-            status(CODE_IO_ERROR, 0);
-        }
-        else
-        {
-            uint8_t b[20] = {1, flags()};
-            put16(b + 2, ++sampleSeq);
-            put32(b + 4, now);
-            for (int i = 0; i < 3; i++)
-            {
-                b[8 + 2 * i] = raw[2 * i + 1];
-                b[9 + 2 * i] = raw[2 * i];
-            }
-            for (int i = 0; i < 3; i++)
-            {
-                b[14 + 2 * i] = raw[9 + 2 * i];
-                b[15 + 2 * i] = raw[8 + 2 * i];
-            }
-            if (connected && !networkBLEStopping()) { telemetryChar->setValue(b, sizeof b); telemetryChar->notify(); }
-            networkPublish(b, sizeof b);
+        if (!imu.readRaw(raw)) { streamHz = 0; status(Protocol::CODE_IO_ERROR, 0); }
+        else {
+            uint8_t packet[20];
+            Protocol::telemetry(packet, stateFlags(), ++sampleSeq, now, raw);
+            if (!network.bleUnavailable()) bluetooth.publishTelemetry(packet, sizeof packet);
+            network.publish(packet, sizeof packet);
         }
     }
-    networkTick();
+    network.tick();
     delay(2);
 }

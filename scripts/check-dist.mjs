@@ -83,7 +83,8 @@ try {
     }
     const assetCount = await checkWebgpuAssets(resolve(root, 'webgpu/public'));
     for (const asset of ['diagram/data/gemini-object-detection.json', 'diagram/images/toolbox/ObjectDetectionBlock.svg',
-        'diagram/data/gemini-image-caption.json', 'diagram/images/toolbox/ImageCaptionBlock.svg']) {
+        'diagram/data/gemini-image-caption.json', 'diagram/images/toolbox/ImageCaptionBlock.svg',
+        'diagram/data/inverted-pendulum.json']) {
         await requireFile(resolve(dist, asset), asset);
     }
     if (errors.length) {

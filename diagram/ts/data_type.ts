@@ -3,6 +3,7 @@ export type StructValue = { readonly [field: string]: DataValue };
 export type DataValue = number | string | StructValue;
 export interface Vec3Value extends StructValue { readonly x: number; readonly y: number; readonly z: number; }
 export interface IMUValue extends StructValue { readonly gyro: Vec3Value; readonly acc: Vec3Value; }
+export interface BalanceValue extends StructValue { readonly attitude: StructValue; readonly command: StructValue; }
 
 const structs = new Map<string, Struct>();
 
@@ -113,3 +114,7 @@ export const vec3Struct = new Struct("vec3", ["x", "y", "z"].map(name => new Fie
 export const vec3Type = new DataType("vec3");
 export const imuStruct = new Struct("IMU", [new Field("gyro", vec3Type), new Field("acc", vec3Type)]);
 export const imuType = new DataType("IMU");
+export const balanceAttitudeStruct = new Struct("BalanceAttitude", ["angle", "target", "rate", "error"].map(name => new Field(name, numberType)));
+export const wheelCommandStruct = new Struct("WheelCommandPercent", ["left", "right"].map(name => new Field(name, numberType)));
+export const balanceStruct = new Struct("Balance", [new Field("attitude", new DataType(balanceAttitudeStruct.name)), new Field("command", new DataType(wheelCommandStruct.name))]);
+export const balanceType = new DataType(balanceStruct.name);

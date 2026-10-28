@@ -16,7 +16,9 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
 - ESP32 BLEファームウェア: `esp32-ble-lab/firmware/`。PlatformIOで独立してビルドし、npmの`verify`には含めない。操作・配線・BLE仕様は [esp32-ble-lab/README.md](esp32-ble-lab/README.md) を参照する。
-- ESP32のWi-Fi設定・NVS・mDNS・Wi-Fi制御・XIAOカメラは `esp32-ble-lab/firmware/src/network.cpp`・`camera.cpp` と `diagram/ts/ble-wifi/robot-wifi.ts`・`diagram/ts/ble-wifi/robot-wifi-dialog.ts`・`diagram/ts/camera/camera-feed.ts`。操作・保存・認証・制約は [docs/esp32-ble-lab-wifi.md](docs/esp32-ble-lab-wifi.md)。2026-10-14の追加確認はユーザー指定でビルドまで。実通信・ブラウザー・実機の確認済みとは扱わない。
+- ESP32教材の共有C++ソース: `esp32/lib/`。BLE・Wi-Fi・通信形式・サーボ・IMUをクラス化し、既存LabのPlatformIOから参照する。ここでの`lib/`は編集対象のソース。公開API・呼出元タスク・教材追加手順は [esp32/README.md](esp32/README.md) と各ライブラリーのREADMEを参照する。新教材の配置先は`esp32/app/`。
+- 倒立ロボット: `esp32/app/inverted-pendulum/`。SuperminiのSDA=GPIO8・SCL=GPIO9、GY-521、PCA9685の左CH0・右CH1、FS90R×2。起動時の静止姿勢を校正して100Hzで自動制御し、BLEで観測・停止する。`esp32/lib/plot/`のPlotTelemetryが6系列を20byte通知へ変換する。IMUBlockの2番目balance出力からPlotBlockへ接続し、速度は実測ではなく%指令。配線・初回調整・停止と再始動は [教材README](esp32/app/inverted-pendulum/README.md)。実車の倒立成立は未確認。
+- ESP32のWi-Fi設定・NVS・mDNS・Wi-Fi制御は `esp32/lib/wifi/src/uroa_wifi.cpp`、BLEの設定窓口は `esp32/lib/ble/src/uroa_ble.cpp`。教材側の接続設定・XIAOカメラは `esp32-ble-lab/firmware/src/network.cpp`・`camera.cpp`。Web側は `diagram/ts/ble-wifi/robot-wifi.ts`・`diagram/ts/ble-wifi/robot-wifi-dialog.ts`・`diagram/ts/camera/camera-feed.ts`。操作・保存・認証・制約は [docs/esp32-ble-lab-wifi.md](docs/esp32-ble-lab-wifi.md)。2026-10-14の追加確認はユーザー指定でビルドまで。実通信・ブラウザー・実機の確認済みとは扱わない。
 - 旧13サブモジュールはすべてuroaの通常フォルダーとして管理する。変更・コミットはuroaで行う。履歴統合・検証結果は [docs/monorepo-migration.md](docs/monorepo-migration.md)、algebraの先行移行は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
 - `dist/`、各モジュールの `lib/`、`node_modules/` は主な編集対象のソースではない。`tmp/zip/`には過去の展開コピーがある。
 
@@ -28,7 +30,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 
 - `diagram/ts/ai/speech-recognition.ts`のSpeechRecognitionBlockはStartで単発の音声認識を待ち、セッション終了後に確定文字列をTextPortへ出力する。認識終了は結果を待つstop、全体Stopはabort。30秒タイムアウト、言語設定のみ保存し、復元で認識を始めない。ブラウザーの認識サービスに依存し、実音声・Androidの確認と模擬確認を区別する。
 
-- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockでrobotのESP32へ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは明示的な90°有効化後、数値入力の角度（60～120°）をBLEのMOVEで送る。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockがgyro・accの構造体を1つのStructPortから出力してconsoleへ表示し、配置されたIMUBlockが10HzのSTREAMを共有する。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
+- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockでrobotのESP32へ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは明示的な90°有効化後、数値入力の角度（60～120°）をBLEのMOVEで送る。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockが先頭StructPortからgyro・acc、2番目balanceから倒立教材の姿勢・速度指令を出力し、配置されたIMUBlockが10HzのSTREAMを共有する。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
 - `diagram/ts/index.ts`の `diy_sbc = false` により旧HTTPセンサーの定期取得は無効。旧カメラ・センサーのHTTP `POST /send_data`は残るが、ServoMotorBlockはBLEを使う。BLEのIMU通知受信は独立している。
 - plotには実装ソースがない。lessonの `@let` は未実装。mediaのCanvas動画録画・音声合成部分はコメントアウトされている。
 - planeの旧図形JSON保存・復元とmovie内のスライド・クイズ機能は廃止済み。図形の追加時は操作記録による生成・再生を確認する。diagram・FirebaseのJSON保存、独立した `lesson/ts/` は別機能として残る。
@@ -36,6 +38,8 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - ソースにある機能を、ブラウザーや実機で動作確認済みと表現しない。
 
 ## 変更と検証
+
+新規作成・変更するコードは [コーディング規約](docs/coding-style.md) に従う。C++はDoxygen形式のコメントを付ける。条件分岐とループの本体は必ず`{}`で囲み、`{`の後で改行して内側をスペース4個でインデントする。1行1文・1行1変数宣言とする。
 
 ビルド構成・コマンドは設計文書に記載。変更した機能に応じた確認を行う。文書だけの変更ではリンク・記述・差分を確認する。
 

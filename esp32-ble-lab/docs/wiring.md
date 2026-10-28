@@ -1,5 +1,7 @@
 # 配線表
 
+ESP32-S3 SuperminiのGPIO8/9とFS90R×2を使う場合は、独立した[2輪倒立ロボット教材](../../esp32/app/inverted-pendulum/README.md)を参照する。角度サーボ用の既存Labとは設定と起動動作が異なる。
+
 `ESP32-PCA9685-IMU.fzz`のSDA/SCL・3.3V・GNDの構成を、DevKit V1とXIAO ESP32S3／Senseの両方へ対応させた配線表です。2026-10-20、XIAOのSDA=D4（GPIO5）、SCL=D5（GPIO6）の設定をソースで再確認しました。PCA9685とMPU6050／GY-521は同じI²Cバスへ並列に接続します。
 
 | DevKit V1の接続元 | XIAO ESP32S3／Senseの接続元 | 接続先 | 備考 |

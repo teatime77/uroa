@@ -1,6 +1,47 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-20。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-27。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## BalanceとIMUの連続BLE通知の修正（2026-10-27）
+
+実機の診断版1のログで、`mode=4 pca=1 imu=1 target=0.00 motor=0.00`と、Balance/IMU両方の通知API受付数の増加をユーザーが確認した。異常停止は確認できたが、最初の異常箇所は版1から特定できない。教材内に診断版2を追加し、最初のFaultの箇所・検出時の値・校正受理数をスナップショット経由で5秒ごとに表示する。校正の各条件と読み取り・PWM・制御周期を区別し、停止後の更新で異常原因を上書きしない。校正条件・停止条件・制御ゲイン・BLE形式は変更していない。`supermini_esp32s3`のビルド、controllerのclang-format dry-run、差分の空白確認が成功。版2の実機確認とBalanceグラフの受信確認は未実施。
+
+ユーザーが実機でIMUのプロットを確認し、Balanceは受信待ち、モーターは動かないと報告した。NimBLE-Arduino 2.3.6の実装を確認したところ、無引数`notify()`は`ble_gatts_chr_updated()`で更新フラグを立て、後でCharacteristicの値を読み取る。同じCharacteristicへBalance、IMUの順に連続して`setValue()`すると、先のBalanceが後のIMUへ置き換わり得ることをコードで確認した。
+
+共有BLEのStatus/Telemetry両方を`notify(data, length)`へ変更し、各通知の内容をその場で送信バッファーへコピーする。StatusのRead用に`setValue()`は維持した。倒立教材の`supermini_esp32s3`、既存Labの`esp32dev`・`xiao_esp32s3`がビルド成功。clang-formatのdry-runと差分の空白も確認した。変更後のUploadと実BLEでのBalance受信は未確認。モーター停止理由はユーザーの起動ログ・modeを待っており、この通知修正で制御の停止条件は変えていない。
+
+起動ログがモニター開始前に流れて見えない場合に備え、倒立教材へ`fw=inverted-pendulum-diag-20261027-1`を含む定期診断を追加した。状態・接続世代の変更時と5秒ごとにmode、PCA/IMUの利用可否、STREAM設定、Balanceのエンコード可否、Balance/IMU別の送信API受付数と試行数を表示する。共有BLEの`publishTelemetry()`は通知APIの結果をboolで返すようにした。送信APIの受付を実受信とは扱わない。
+
+診断追加後も`supermini_esp32s3`・`esp32dev`・`xiao_esp32s3`の3環境でビルド成功。制御ゲイン・校正条件・停止条件は変更していない。VS CodeのPlatformIO Project Tasksからの操作と診断項目を教材READMEへ追記した。診断版のUploadと実BLEでの確認はユーザー側で行う。
+
+## ESP32のC++コメントと書式の統一（2026-10-27）
+
+`esp32/`のC++ソース・ヘッダー18ファイルを確認し、規約適用済みの倒立教材`main.cpp`を保持して、残り17ファイルへDoxygenコメントと書式を適用した。複数変数の宣言36か所を分割し、210か所の条件分岐・ループ・switchについてブロックを静的確認した。コメント・空白・ブロック用の括弧・宣言分割を除くトークン比較は一致し、動作・設定値・通信形式の変更は行っていない。
+
+`esp32/.clang-format`を追加し、整形対象の17ファイルはclang-formatのdry-runを通過した。規約とREADMEのローカルリンク、差分の空白も確認した。PlatformIOの倒立教材`supermini_esp32s3`、既存Labの`esp32dev`と`xiao_esp32s3`の3環境でビルド成功。Upload・実通信・実機テストは行っていない。
+
+## FS90R 2輪倒立教材とプロット通知（2026-10-27）
+
+[教材](../esp32/app/inverted-pendulum/README.md)と[PlotTelemetry](../esp32/lib/plot/README.md)、diagramのBalance型・受信パーサー・IMUBlockの第2出力・[サンプル図](../public/diagram/data/inverted-pendulum.json)を追加した。既存Labのファームウェアと共有BLE／IMU／protocolの実装はこの変更で編集していない。
+
+- PlatformIOの`supermini_esp32s3`ビルド成功。ESP32-S3の汎用定義に4MB Flash・DIO・USB CDCを指定、PSRAM不使用。RAM 29,876 bytes、アプリFlash 525,085 bytes。PlatformIOの既存キャッシュへの書込制限後、権限付きでビルドを完了した。
+- `npm.cmd run verify`成功。TypeScript、公開ビルド（202モジュール）、5アプリの入口と92件のWebGPU資産、新サンプルの存在を静的確認。既存gameの動的／静的import警告2件は継続。
+- `node --test tests/plot-telemetry.test.mjs tests/plot-data.test.mjs tests/data-type.test.mjs`は12件成功。固定バイナリ、符号・系列順・DataViewのoffset、形式拒否、入れ子の型・freeze、プロット履歴を確認。C++制御器の数値挙動を実行検証した結果ではない。
+- `tests/ble-browser.test.mjs`からBalance通知・複数IMU購読・IMU異常・JSON復元の4件を選び、Chromeの模擬BLEで成功。IMUとBalanceの別グラフ、共有10Hz STREAM、角度ARM/MOVEの非送信、旧1ポートJSONの復元、切断時の値／履歴消去、Clearの後片付けを確認した。スクリーンショット`tmp/inverted-pendulum.png`で配置も確認。
+
+通常のブラウザー実行はCDNのdagre取得失敗、そのローカル代替後もmovieの外部Firebase読込失敗で初期化が止まった。成功した4件は`UROA_TEST_DIAGRAM_ONLY=1`でテスト時の起動対象をdiagramだけに限定し、game・webgpu・movieの初期化を外したもの。製品の起動コードは変更していない。アプリ全体の起動、公開previewの操作、実BLE・ESP32へのUpload、実機のIMU／PCA出力、FS90Rの中立・回転方向・停止、倒立成立とゲイン調整、Androidは未確認。
+
+再実行例（別ターミナルで`npm.cmd run dev -- --host 127.0.0.1 --port 5183 --strictPort`を起動）:
+
+```powershell
+$env:UROA_TEST_BASE_URL = 'http://127.0.0.1:5183/'
+$env:UROA_PLAYWRIGHT_MODULE = '.\tmp\p0\tools\node_modules\playwright-core\index.mjs'
+$env:UROA_BROWSER_EXECUTABLE = 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+$env:UROA_TEST_DIAGRAM_ONLY = '1'
+node --test --test-name-pattern='Balance telemetry|multiple IMU|IMU absence|IMU type restores' tests/ble-browser.test.mjs
+```
+
+外部依存も含む通常起動を確認する場合は`UROA_TEST_DIAGRAM_ONLY`を削除する。テスト用に正規版のローカルCDNファイルがある場合は`UROA_TEST_DAGRE_SCRIPT`と`UROA_TEST_GRAPHLIB_SCRIPT`へパスを渡せるが、Firebaseの代替は行わない。
 
 ## コマンド
 
@@ -18,6 +59,27 @@
 | `npm.cmd run test:e2e` | Pythonで既存の5アプリ回帰テストを実行。接続先のサーバーとPython依存は事前準備が必要 |
 
 `verify` はビルドと成果物の静的確認であり、ブラウザー操作は含まない。大規模Playwrightテストは明示的に実行する。Viteのpreviewはローカル確認用であり、本番配信サーバーではない。[Vite公式説明](https://vite.dev/guide/static-deploy.html)
+
+## ESP32共有C++ライブラリーへのクラス化（2026-10-26）
+
+`main.cpp`と`network.cpp`からBLE・Wi-Fi・通信形式・PCA9685・MPU-6050を [esp32/lib](../esp32/README.md) の5クラスへ切り出した。既存Labの場所は維持し、PlatformIOの`lib_deps`で共有ソースを参照する。外部依存のバージョンは各`library.json`へ集約した。新教材の作成手順は [app/README.md](../esp32/app/README.md)。
+
+```powershell
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev -e xiao_esp32s3
+```
+
+切り出し前・切り出し後とも上記の両環境でビルド成功し、各`.pio/build/<環境>/firmware.bin`を生成した。最終構成の静的使用量は次のとおり。
+
+| 環境 | RAM | Flash |
+|---|---|---|
+| `esp32dev` | 58,968 / 327,680 bytes（18.0%） | 1,154,633 / 1,310,720 bytes（88.1%） |
+| `xiao_esp32s3` | 59,304 / 327,680 bytes（18.1%） | 1,054,305 / 3,342,336 bytes（31.5%） |
+
+Wi-Fiの主要25関数は、クラスへの所属・設定参照・コールバック・接続世代の名前を対応付けたうえで、処理本体のトークンが旧コードと一致することを静的に照合した。機器クラスの呼び出し・パケット配置・STOP優先処理は差分を確認した。設定UUID・教材用固定値・opcode/応答番号の一致、library.jsonのJSON、教材ヘッダーへの逆依存がないこと、追加した文書リンクと差分の空白も確認した。これらは実通信のテストではない。
+
+ソースコメントと各ライブラリーのREADMEに、設定、呼び出すタスク、単位、失敗時の扱いを記載した。カメラ処理は既存のcamera.cppへ委譲し、カメラコールバックがない新教材の/captureは503を返す。通信クラスは稼働中に保持する設計で、Wi-Fiタスク／サーバーの終了・破棄APIは追加していない。
+
+初回のビルドは隔離環境でPlatformIOのユーザーキャッシュへのアクセスが拒否されたため、キャッシュへアクセスできる環境で再実行した。ブラウザー側のソースは変更しておらず、npmのverify・Web回帰テストは実行していない。テストファイルの追加・変更、Upload、BLE/Wi-Fi/mDNSの実通信、ペアリング、切り替え、サーボ・IMU・カメラ、Androidの実機確認は行っていない。
 
 ## XIAOのPCA9685・MPU6050接続（2026-10-20）
 

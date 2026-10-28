@@ -67,6 +67,8 @@ flowchart TD
 | `media` | マイク録音、録音の再生・ダウンロード | [media.ts](../media/ts/media.ts) |
 | `plot` | README・設定ファイルはあるが、調査時点では実装ソースがない | [README.md](../plot/README.md)、[package.json](../plot/package.json) |
 | `esp32-ble-lab/firmware` | ESP32 DevKit V1／XIAO ESP32S3 Sense上のBLEサーバー、PCA9685サーボ制御、MPU-6050計測。PlatformIOで独立してビルド | [main.cpp](../esp32-ble-lab/firmware/src/main.cpp)、[config.h](../esp32-ble-lab/firmware/include/config.h)、[platformio.ini](../esp32-ble-lab/firmware/platformio.ini) |
+| `esp32/lib` | 教材共有のC++ソース。BLE・Wi-Fi・通信形式・PCA9685・MPU-6050のクラス。2026-10-26から既存Labで利用 | [ESP32教材ガイド](../esp32/README.md)、[教材追加手順](../esp32/app/README.md) |
+| `esp32/lib/plot`・`esp32/app/inverted-pendulum` | 6系列のBLEプロット通知と、Supermini／FS90R×2の100Hz倒立制御。起動校正で目標姿勢を固定し、自律制御・BLE観測・停止を分離。実車の倒立成立は未確認 | [PlotTelemetry](../esp32/lib/plot/README.md)、[倒立教材](../esp32/app/inverted-pendulum/README.md) |
 
 ### 数学・図形処理の主要な境界
 
@@ -147,7 +149,9 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 [imu.ts](../diagram/ts/hardware/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
 
-BLEの20バイトTelemetryをlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として1回出力し、console.log("IMU", value)へ表示する。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度・姿勢推定は未実装。
+BLEの20バイトTelemetry version=1をlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として先頭ポートへ1回出力する（現行console.logはコメントアウト）。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度は出力しない。
+
+2026-10-27に[PlotTelemetry](../esp32/lib/plot/README.md)の20byte通知version=2/schema=1を追加した。[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts)が角度・目標・角速度・誤差・左右速度指令を`Balance`構造体へ変換し、IMUBlockの2番目のbalanceポートへ出す。姿勢推定は倒立教材のESP32側で行い、速度は実測値ではなく%指令。IMUとbalanceの購読で10Hz STREAMを共有し、両ポートの購読・値は削除・切断で解放する。既存JSONの先頭IMUポートは維持し、従来Labのbalance出力は未取得のまま。[inverted-pendulum.json](../public/diagram/data/inverted-pendulum.json)はIMUとbalanceを2個のPlotBlockへ接続する。
 
 Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単一の接続元をたどる。型が不明、接続元が複数、循環参照ならundefinedを返す。参照結果をdataTypeへ保存しないので、解除後に古い型を残さず、JSONには明示型だけを保存する。値の検証・描画・接続検査も有効な型を使う。subscribeConnections(listener)は配線更新後、両端へ{port, peer, connected}を同期通知し、返された関数で購読を解除する。重複接続・未接続の解除は通知しない。disconnectはどちらの端子からでも呼べ、disconnectAllとBlock.clearBlockで全配線を解除する。通知は当該ポートの接続変更に対するもので、ブロックをまたぐ式の型推論・型変更通知は未実装。
 

@@ -21,4 +21,9 @@ constexpr char SERVICE_UUID[] = "f3641400-00b0-4240-ba50-05ca45bf8abc";
 constexpr char COMMAND_UUID[] = "f3641401-00b0-4240-ba50-05ca45bf8abc";
 constexpr char TELEMETRY_UUID[] = "f3641402-00b0-4240-ba50-05ca45bf8abc";
 constexpr char STATUS_UUID[] = "f3641403-00b0-4240-ba50-05ca45bf8abc";
+constexpr char CONFIG_UUID[] = "f3641404-00b0-4240-ba50-05ca45bf8abc";
+constexpr char RESULT_UUID[] = "f3641405-00b0-4240-ba50-05ca45bf8abc";
+constexpr uint32_t PAIRING_CODE = 123456;
+// 公開の教材用共通値。robot-wifi.tsのteachingConnectionKeyと揃える。
+constexpr char TEACHING_CONNECTION_KEY[] = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

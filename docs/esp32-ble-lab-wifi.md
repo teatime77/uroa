@@ -20,8 +20,10 @@ DevKit V1とXIAOでサーボ・IMU・BLE設定・Wi-Fi通信を共通化する�
 
 | ソース | 役割 |
 |---|---|
-| [main.cpp](../esp32-ble-lab/firmware/src/main.cpp) | 共通指令キュー、I²C・PWM・IMU、停止・接続世代 |
-| [network.cpp](../esp32-ble-lab/firmware/src/network.cpp) | BLE設定、Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
+| [main.cpp](../esp32-ble-lab/firmware/src/main.cpp) | 共通指令キュー、機器クラス呼び出し、停止・接続世代・期限監視 |
+| [network.cpp](../esp32-ble-lab/firmware/src/network.cpp) | WifiNetworkの教材設定・カメラコールバックを接続 |
+| [uroa_wifi.cpp](../esp32/lib/wifi/src/uroa_wifi.cpp) | WifiNetwork: Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
+| [uroa_ble.cpp](../esp32/lib/ble/src/uroa_ble.cpp) | BleTransport: BLEサービス・通知と、認証済みWi-Fi設定JSONの分割転送 |
 | [camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp) | XIAOのPSRAMを使う320×240 JPEG。DevKitはカメラなし |
 | [ble.ts](../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
 | [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、SSID名だけの接続履歴保存 |
@@ -45,7 +47,7 @@ Wi-Fi設定中はサーボ停止・STREAM=0を送信し、BLEハートビート�
 
 ## 保存と次回
 
-ESP32のNVS名前空間`uroa-net`へ基板IDとWi-Fi設定を保存する。SSIDとパスワードは1つのJSON値として置き換える。接続キーはファームウェアの`deviceKey`とブラウザーの`teachingConnectionKey`に同じ64文字の教材用固定値を定義し、NVSへ保存しない。更新後の起動時に旧NVSの`key`を削除するが、基板ID・SSID・パスワードは保持する。NVS暗号化・Flash Encryptionは今回追加していない。
+ESP32のNVS名前空間`uroa-net`へ基板IDとWi-Fi設定を保存する。SSIDとパスワードは1つのJSON値として置き換える。接続キーはファームウェアの`config.h`の`TEACHING_CONNECTION_KEY`とブラウザーの`teachingConnectionKey`に同じ64文字の教材用固定値を定義し、WifiNetworkのConfigへ渡す。NVSへ保存しない。更新後の起動時に旧NVSの`key`を削除するが、基板ID・SSID・パスワードは保持する。NVS暗号化・Flash Encryptionは今回追加していない。
 
 固定キーはソースに公開された全基板共通値で、基板ごとの秘密情報ではない。HMACの処理は引き続き使用するが、固定キーを知る端末間を区別する認証にはならない。BLEペアリングコードも教材用の共通値`123456`に固定し、ルーターのWi-Fiパスワードは従来どおり入力する。
 

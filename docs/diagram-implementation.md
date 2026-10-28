@@ -91,7 +91,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | CalcBlock／CompareBlock | 数値入力、数値の式評価。比較結果は0/1 | calcは明示的な呼出し。構造体の式評価・一般的な自動計算スケジューラーは未実装 |
 | BLEConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
 | ServoMotorBlock | 角度のNumberPort入力。ARM、MOVE、DISABLE、STOP | 有効化は明示操作。角度60～120°、CH0～15、時間0～10000ms。値は実測角度ではない |
-| IMUBlock | gyro・accのvec3を1つのStructPortから出力 | 配置したブロックで10Hz STREAMを共有。姿勢推定ではない。現行console.logはコメントアウトされている |
+| IMUBlock | 先頭imuはgyro・accのvec3、2番目balanceは姿勢・左右速度指令%のStructPort | 配置したブロックで10Hz STREAMを共有。balanceはESP32の倒立教材が送るversion=2/schema=1。従来JSONの先頭ポートを維持。両出力とも切断・計測停止で消去。現行console.logはコメントアウト |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
 | SpeechRecognitionBlock | 入力なし、TextPort出力。Startで単発の発話とセッション終了を待つ | ja-JPが既定。Web Speech API／webkit接頭辞を機能検出。30秒タイムアウト、権限・無音・空結果・通信失敗で後続を止める。実音声・Androidは別途確認 |

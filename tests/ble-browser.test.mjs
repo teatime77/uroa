@@ -17,6 +17,22 @@ after(async () => { await browser?.close(); });
 async function pageFor(context) {
     const page = await browser.newPage({ viewport: { width: 1200, height: 900 }, hasTouch: true });
     context.after(() => page.close());
+    // Optional exact CDN mirrors for offline test runners; use the original versioned scripts.
+    for (const [url, path] of [
+        ['https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js', process.env.UROA_TEST_DAGRE_SCRIPT],
+        ['https://cdn.jsdelivr.net/npm/graphlib@2.1.8/dist/graphlib.min.js', process.env.UROA_TEST_GRAPHLIB_SCRIPT],
+    ]) if (path) await page.route(url, route => route.fulfill({ path: resolve(path), contentType: 'application/javascript' }));
+    if (process.env.UROA_TEST_DIAGRAM_ONLY === '1') {
+        // Isolate diagram/BLE tests from game, GPU and movie's live Firebase initialization.
+        // This mode does not validate the complete application's startup integration.
+        await page.route('**/app/ts/main.ts', async route => {
+            const response = await route.fetch();
+            const original = await response.text();
+            const list = '[modules.diagram, modules.game, modules.webgpu, modules.movie]';
+            assert.ok(original.includes(list), 'App startup module list changed');
+            await route.fulfill({ response, body: original.replace(list, '[modules.diagram]') });
+        });
+    }
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
@@ -87,6 +103,13 @@ async function pageFor(context) {
             }
             telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
         };
+        mock.emitBalance = () => {
+            telemetry.value = new DataView(new ArrayBuffer(20));
+            telemetry.value.setUint8(0, 2); telemetry.value.setUint8(1, 1);
+            telemetry.value.setUint16(2, 9, true); telemetry.value.setUint32(4, 1234, true);
+            [125, 100, -250, 25, -3000, -3000].forEach((raw, i) => telemetry.value.setInt16(8 + i * 2, raw, true));
+            telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
+        };
         Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
             requestDevice(options) {
                 mock.requests++; mock.options = options; mock.userGesture = navigator.userActivation.isActive;
@@ -134,7 +157,7 @@ async function placeBlock(page) {
     await page.mouse.move(445, 185, { steps: 8 });
     await page.mouse.up();
     assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.length), before + 1);
-    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).boxSize.y), 190);
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).boxSize.y), 246);
 }
 
 async function buttonCenter(page) {
@@ -560,7 +583,7 @@ async function placeIMU(page, x = 850, y = 185) {
     await page.mouse.move(origin.x, origin.y); await page.mouse.down();
     await page.mouse.move(x, y, { steps: 8 }); await page.mouse.up();
     assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).constructor.name), 'IMUBlock');
-    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).ports.length), 1);
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).ports.length), 2);
 }
 
 test('IMU streams a converted immutable struct through one port and logs it once', async context => {
@@ -747,6 +770,46 @@ test('PlotBlock accepts other structs, rewires, saves/restores and releases DOM 
     await page.getByRole('button', {name: 'Clear', exact: true}).click();
     assert.equal(await page.locator('.diagram-plot').count(), 0);
     await page.waitForTimeout(200);
+    assert.equal(await page.locator('.diagram-plot').count(), 0);
+});
+
+test('Balance telemetry shares STREAM, plots commands, restores legacy IMU and clears live values', async context => {
+    const page = await pageFor(context);
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    // The old one-port diagram must gain an empty second port without moving its IMU wire.
+    await page.evaluate(async () => {
+        const blocks = await (await fetch('/diagram/data/ble-imu-pca9685.json')).json();
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([JSON.stringify(blocks.slice(0, 3))], 'legacy.json', { type: 'application/json' }));
+        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
+    });
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 3);
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[1].outputPort.destinations.length), 1);
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[1].balancePort.value), undefined);
+    // Load the complete two-plot sample, using the same drop path as the user.
+    await page.evaluate(async () => {
+        const blocks = await (await fetch('/diagram/data/inverted-pendulum.json')).json();
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([JSON.stringify(blocks)], 'balance.json', { type: 'application/json' }));
+        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
+    });
+    await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 4);
+    await connectFirstBlock(page);
+    await page.waitForFunction(() => window.bleMock.rate === 10);
+    await page.evaluate(() => { window.bleMock.emitTelemetry(); window.bleMock.emitBalance(); });
+    await page.waitForFunction(() => window.bleFixture.editor.blocks[3].plotElement.data?.[0]?.y.length === 1);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks[3].plotElement.data.map(t => t.y[0])), [1.25, 1, -2.5, 0.25, -30, -30]);
+    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks[2].plotElement.data.map(t => t.y[0])), [1, -2, 0, 9.80665, -4.903325, 0]);
+    assert.equal(await page.evaluate(() => window.bleMock.controls.filter(c => c.opcode === 4 && c.value === 10).length), 1);
+    assert.equal(await page.evaluate(() => window.bleMock.controls.some(c => c.opcode === 1 || c.opcode === 2)), false);
+    const saved = await page.evaluate(() => window.bleFixture.editor.blocks.map(b => b.makeObj()));
+    assert.equal(saved[1].ports[1].dataType.typeName, 'Balance');
+    assert.equal(JSON.stringify(saved).includes('attitude'), false);
+    await page.screenshot({ path: 'tmp/inverted-pendulum.png' });
+    await page.evaluate(() => window.bleFixture.connection.disconnect());
+    await page.waitForFunction(() => window.bleFixture.editor.blocks[1].balancePort.value === undefined);
+    await page.waitForFunction(() => window.bleFixture.editor.blocks[3].plotElement.data[0].y.length === 0);
+    await page.getByRole('button', { name: 'Clear', exact: true }).click();
     assert.equal(await page.locator('.diagram-plot').count(), 0);
 });
 
