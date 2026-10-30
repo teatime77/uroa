@@ -1,6 +1,6 @@
 # ESP32のWi-Fi設定・制御・カメラ
 
-2026-10-30更新: 現行ファームウェアは別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)。uroa内の旧`esp32/`と`esp32-ble-lab/`は廃止対象。ファイル名は既存リンクのため維持し、以下の操作・構成の参照先は現行リポジトリーへ更新する。仕様・配線・ビルド・送受信タイミングの入口は[ESP32連携ガイド](esp32-integration.md)を参照する。
+2026-10-30更新: 現行ファームウェアは別リポジトリーの[diagram-control](../../../esp32/app/diagram-control/README.md)。uroa内の旧`esp32/`と`esp32-ble-lab/`は廃止対象。ファイル名は既存リンクのため維持し、以下の操作・構成の参照先は現行リポジトリーへ更新する。仕様・配線・ビルド・送受信タイミングの入口は[ESP32連携ガイド](esp32-integration.md)を参照する。
 
 ## 実装時の経緯と確認範囲
 
@@ -26,15 +26,15 @@
 
 | ソース | 役割 |
 |---|---|
-| [main.cpp](../../esp32/app/diagram-control/src/main.cpp) | 共通指令キュー、機器クラス呼び出し、停止・接続世代・期限監視 |
-| [network.cpp](../../esp32/app/diagram-control/src/network.cpp) | WifiNetworkの教材設定・カメラコールバックを接続 |
-| [uroa_wifi.cpp](../../esp32/lib/wifi/src/uroa_wifi.cpp) | WifiNetwork: Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
-| [uroa_ble.cpp](../../esp32/lib/ble/src/uroa_ble.cpp) | BleTransport: BLEサービス・通知と、認証済みWi-Fi設定JSONの分割転送 |
-| [camera.cpp](../../esp32/app/diagram-control/src/camera.cpp) | SenseのPSRAMを使う320×240 JPEG。DevKitとSuperMiniはカメラなし |
-| [ble.ts](../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
-| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、SSID名だけの接続履歴保存 |
-| [robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
-| [camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
+| [main.cpp](../../../esp32/app/diagram-control/src/main.cpp) | 共通指令キュー、機器クラス呼び出し、停止・接続世代・期限監視 |
+| [network.cpp](../../../esp32/app/diagram-control/src/network.cpp) | WifiNetworkの教材設定・カメラコールバックを接続 |
+| [uroa_wifi.cpp](../../../esp32/lib/wifi/src/uroa_wifi.cpp) | WifiNetwork: Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
+| [uroa_ble.cpp](../../../esp32/lib/ble/src/uroa_ble.cpp) | BleTransport: BLEサービス・通知と、認証済みWi-Fi設定JSONの分割転送 |
+| [camera.cpp](../../../esp32/app/diagram-control/src/camera.cpp) | SenseのPSRAMを使う320×240 JPEG。DevKitとSuperMiniはカメラなし |
+| [ble.ts](../../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
+| [robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、SSID名だけの接続履歴保存 |
+| [robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
+| [camera-feed.ts](../../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
 
 制御指令・Status・Telemetryは既存の10／12／20バイトを維持する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
 
@@ -95,4 +95,4 @@ npm.cmd run build
 & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir ../esp32/app/diagram-control -e esp32dev -e xiao_esp32s3 -e supermini_esp32s3
 ```
 
-ブラウザー側の結果は[uroaのbuild-and-test.md](build-and-test.md)、ファームウェア側の結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記録する。2026-10-30の参照先整理では文書のみを変更し、ビルド・Upload・通信・実機確認を再実行していない。OSペアリング・Chrome保存／自動入力・Wi-Fi・mDNS・切り替え・サーボ停止・IMU・カメラ・Android・公開HTTPSの過去の報告は実施時点を区別する。
+ブラウザー側の結果は[uroaのbuild-and-test.md](../build-and-test.md)、ファームウェア側の結果は[ESP32の検証記録](../../../esp32/docs/build-and-test.md)に記録する。2026-10-30の参照先整理では文書のみを変更し、ビルド・Upload・通信・実機確認を再実行していない。OSペアリング・Chrome保存／自動入力・Wi-Fi・mDNS・切り替え・サーボ停止・IMU・カメラ・Android・公開HTTPSの過去の報告は実施時点を区別する。

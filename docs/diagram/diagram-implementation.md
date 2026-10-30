@@ -1,10 +1,10 @@
 # diagramの機能とブロック実装ガイド
 
-更新日: 2026-10-30（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識・端末カメラ追加を反映した。2026-10-30にESP32側の参照先と旧倒立アプリの廃止範囲を更新した。変更ごとの検証条件・結果は [build-and-test.md](build-and-test.md) を参照する。
+更新日: 2026-10-30（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識・端末カメラ追加を反映した。2026-10-30にESP32側の参照先と旧倒立アプリの廃止範囲を更新した。変更ごとの検証条件・結果は [build-and-test.md](../build-and-test.md) を参照する。
 
 ## 1. 着手時に決めること
 
-最初に [AGENTS.md](../AGENTS.md)、対象ソース、Git状態を確認し、既存の変更を保持する。ESP32側の変更では別リポジトリーの[esp32/AGENTS.md](../../esp32/AGENTS.md)、robot側の変更では[robot/AGENTS.md](../../robot/AGENTS.md)も読む。現行ファームウェア・通信仕様・送受信タイミングは[ESP32連携ガイド](esp32-integration.md)を参照する。uroa内の旧ESP32フォルダーは廃止対象で、作業先にしない。全体の優先順位は [improvement-plan.md](improvement-plan.md)、アプリ間の関係は [architecture.md](architecture.md)、構造体の後続設計は [diagram-struct-design.md](diagram-struct-design.md) にある。
+最初に [AGENTS.md](../../AGENTS.md)、対象ソース、Git状態を確認し、既存の変更を保持する。ESP32側の変更では別リポジトリーの[esp32/AGENTS.md](../../../esp32/AGENTS.md)、robot側の変更では[robot/AGENTS.md](../../../robot/AGENTS.md)も読む。現行ファームウェア・通信仕様・送受信タイミングは[ESP32連携ガイド](esp32-integration.md)を参照する。uroa内の旧ESP32フォルダーは廃止対象で、作業先にしない。全体の優先順位は [improvement-plan.md](../improvement-plan.md)、アプリ間の関係は [architecture.md](../architecture.md)、構造体の後続設計は [diagram-struct-design.md](diagram-struct-design.md) にある。
 
 新しいブロックについて、次の項目を先に決める。
 
@@ -27,30 +27,30 @@
 
 | ファイル | 役割・最初に見る箇所 |
 |---|---|
-| [app/ts/main.ts](../app/ts/main.ts) | URLで起動先を選び、diagram → game → webgpu → movieを初期化。子アプリ停止を接続し、pagehide・HMRで片付ける |
-| [index.ts](../diagram/ts/index.ts) | Main、initDiagram、Start/Stop、ツールの型番号・生成、JSON読込、disposeDiagram |
-| [canvas.ts](../diagram/ts/canvas.ts) | Canvasのpointer操作・再描画、ToolItem、Editor、ActionBlockのルート抽出・配置 |
-| [ui.ts](../diagram/ts/ui.ts) | UIの位置・余白・枠・描画コンテキスト、children、Label、canvas上のButton |
-| [block.ts](../diagram/ts/block.ts) | Block、FunctionBlock、InputBlock、入力・旧センサー・数値計算、FunctionBlockのfactory登録 |
-| [procedure.ts](../diagram/ts/procedure.ts) | ActionBlock、NestBlock、TTS・Sleep・If・InfiniteLoop・子アプリ実行、型名によるブロック生成 |
-| [runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、Start時の依存順実行、Actionチェーン、取消可能な待機、停止購読 |
-| [port.ts](../diagram/ts/port.ts) | 配線、値の伝播、接続変更通知、NumberPort・TextPort・StructPort |
-| [data_type.ts](../diagram/ts/data_type.ts) | Struct・Field・DataType、値の検証・複製・freeze、vec3・IMUの登録。UI・BLE・parserへの依存なし |
-| [json-util.ts](../diagram/ts/json-util.ts) | theEditorの保持、saveJsonでの採番・Download |
-| [diagram_util.ts](../diagram/ts/diagram_util.ts) | PortType、共有canvas、UI要素、再描画回数、レイヤー切替、旧sendData |
-| [ble.ts](../diagram/ts/ble-wifi/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
-| [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | BLE接続中の基板へのWi-Fi設定、教材用固定キーのWi-Fi transport、SSID履歴・検索・手入力とパスワードの設定画面、Wi-FiパスワードのChrome保存 |
-| [camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
-| [device-camera.ts](../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
-| [servo.ts](../diagram/ts/hardware/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
-| [imu.ts](../diagram/ts/hardware/imu.ts) | IMUの受信購読と構造体出力 |
-| [plot.ts](../diagram/ts/plot/plot.ts)、[plot_data.ts](../diagram/ts/plot/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
-| [ai-chat.ts](../diagram/ts/ai/ai-chat.ts)、[ai-client.ts](../diagram/ts/ai/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
-| [speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts)、[speech-client.ts](../diagram/ts/ai/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
-| [object-detection.ts](../diagram/ts/ai/object-detection.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts) | カメラ画像のGemini物体検出、JSON応答検証、座標変換。ObjectDetectionのStructはブロックのファイル内で登録 |
-| [image-caption.ts](../diagram/ts/ai/image-caption.ts)、[camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts) | Gemini画像説明のTextPort出力。物体検出との共通基底で画像取得・キー管理・通信待機・取消・保存・表示を共有 |
+| [app/ts/main.ts](../../app/ts/main.ts) | URLで起動先を選び、diagram → game → webgpu → movieを初期化。子アプリ停止を接続し、pagehide・HMRで片付ける |
+| [index.ts](../../diagram/ts/index.ts) | Main、initDiagram、Start/Stop、ツールの型番号・生成、JSON読込、disposeDiagram |
+| [canvas.ts](../../diagram/ts/canvas.ts) | Canvasのpointer操作・再描画、ToolItem、Editor、ActionBlockのルート抽出・配置 |
+| [ui.ts](../../diagram/ts/ui.ts) | UIの位置・余白・枠・描画コンテキスト、children、Label、canvas上のButton |
+| [block.ts](../../diagram/ts/block.ts) | Block、FunctionBlock、InputBlock、入力・旧センサー・数値計算、FunctionBlockのfactory登録 |
+| [procedure.ts](../../diagram/ts/procedure.ts) | ActionBlock、NestBlock、TTS・Sleep・If・InfiniteLoop・子アプリ実行、型名によるブロック生成 |
+| [runtime.ts](../../diagram/ts/runtime.ts) | 実行中・停止フラグ、Start時の依存順実行、Actionチェーン、取消可能な待機、停止購読 |
+| [port.ts](../../diagram/ts/port.ts) | 配線、値の伝播、接続変更通知、NumberPort・TextPort・StructPort |
+| [data_type.ts](../../diagram/ts/data_type.ts) | Struct・Field・DataType、値の検証・複製・freeze、vec3・IMUの登録。UI・BLE・parserへの依存なし |
+| [json-util.ts](../../diagram/ts/json-util.ts) | theEditorの保持、saveJsonでの採番・Download |
+| [diagram_util.ts](../../diagram/ts/diagram_util.ts) | PortType、共有canvas、UI要素、再描画回数、レイヤー切替、旧sendData |
+| [ble.ts](../../diagram/ts/ble-wifi/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
+| [robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts)、[robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | BLE接続中の基板へのWi-Fi設定、教材用固定キーのWi-Fi transport、SSID履歴・検索・手入力とパスワードの設定画面、Wi-FiパスワードのChrome保存 |
+| [camera-feed.ts](../../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
+| [device-camera.ts](../../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
+| [servo.ts](../../diagram/ts/hardware/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
+| [imu.ts](../../diagram/ts/hardware/imu.ts) | IMUの受信購読と構造体出力 |
+| [plot.ts](../../diagram/ts/plot/plot.ts)、[plot_data.ts](../../diagram/ts/plot/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
+| [ai-chat.ts](../../diagram/ts/ai/ai-chat.ts)、[ai-client.ts](../../diagram/ts/ai/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
+| [speech-recognition.ts](../../diagram/ts/ai/speech-recognition.ts)、[speech-client.ts](../../diagram/ts/ai/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
+| [object-detection.ts](../../diagram/ts/ai/object-detection.ts)、[gemini-vision-client.ts](../../diagram/ts/ai/gemini-vision-client.ts) | カメラ画像のGemini物体検出、JSON応答検証、座標変換。ObjectDetectionのStructはブロックのファイル内で登録 |
+| [image-caption.ts](../../diagram/ts/ai/image-caption.ts)、[camera-ai-block.ts](../../diagram/ts/ai/camera-ai-block.ts) | Gemini画像説明のTextPort出力。物体検出との共通基底で画像取得・キー管理・通信待機・取消・保存・表示を共有 |
 
-入口HTMLは [public/diagram/index.html](../public/diagram/index.html)。保存図・サンプルは [public/diagram/data/](../public/diagram/data/) に置く。
+入口HTMLは [public/diagram/index.html](../../public/diagram/index.html)。保存図・サンプルは [public/diagram/data/](../../public/diagram/data) に置く。
 
 ## 3. 継承と実行方式
 
@@ -118,7 +118,7 @@ XIAOは既存Wi-Fi接続を使い、XIAOを選択した配置済みブロック�
 
 ## 5. 値・配線・型の契約
 
-ObjectDetectionBlockとImageCaptionBlockは共通のCameraAIBlockでカメラ入力の接続元CameraBlockを参照し、`getFrame()`の画像を固定する。CameraBlockの`revision`と`subscribeFrameState()`で取得元・利用可否・解像度の変更を検出して古い応答を破棄する。画像のDataTypeは追加していない。検出結果の`ObjectDetection`型は[ai/object-detection.ts](../diagram/ts/ai/object-detection.ts)で登録し、ラベルと正規化座標を持つ。操作・保存・キーの扱いは[Gemini物体検出ガイド](diagram-gemini-object-detection.md)と[画像説明ガイド](diagram-image-caption.md)を参照する。
+ObjectDetectionBlockとImageCaptionBlockは共通のCameraAIBlockでカメラ入力の接続元CameraBlockを参照し、`getFrame()`の画像を固定する。CameraBlockの`revision`と`subscribeFrameState()`で取得元・利用可否・解像度の変更を検出して古い応答を破棄する。画像のDataTypeは追加していない。検出結果の`ObjectDetection`型は[ai/object-detection.ts](../../diagram/ts/ai/object-detection.ts)で登録し、ラベルと正規化座標を持つ。操作・保存・キーの扱いは[Gemini物体検出ガイド](diagram-gemini-object-detection.md)と[画像説明ガイド](diagram-image-caption.md)を参照する。
 
 ### 5.1 ポートの方向と値の型
 
@@ -190,7 +190,7 @@ AIChatBlockとai-client.tsのwaitAIRequestは、通信がabortを無視する場
 
 枠・ポート・ボタンはcanvas、入力欄・回答欄・グラフ・ダイアログはDOMを併用する。新しいDOMは基本的にlayer-diagramへ付け、位置更新とclearBlockでの除去を組にする。
 
-2026-10-14にツール用のSVGアイコン23種類を`public/diagram/images/toolbox/<ブロッククラス名>.svg`へ作成し、ToolItemへ組み込んだ。32×32px、viewBoxは48×48で、白い角丸背景・太い線・機能別の色を使う。ファイル名はindex.tsのgeBlockNameと一致する。[一覧プレビュー](../public/diagram/toolbox-icons.html)で32pxと80pxを見比べられる。元の図形定義は[generate-diagram-icons.mjs](../scripts/generate-diagram-icons.mjs)にあり、`node scripts/generate-diagram-icons.mjs`でSVGと一覧HTMLを再生成する（生成済みファイルを上書きする）。ToolItemはImageでSVGを読み、通常表示とドラッグ中の表示をdrawImageで描く。読込完了・失敗時に再描画し、未読込・画像取得失敗時は「?」を表示する。ToolItemのmargin・borderWidthを0にして32×32の画像とヒット領域をそろえ、Canvas破棄で画像のイベントハンドラーを解除する。
+2026-10-14にツール用のSVGアイコン23種類を`public/diagram/images/toolbox/<ブロッククラス名>.svg`へ作成し、ToolItemへ組み込んだ。32×32px、viewBoxは48×48で、白い角丸背景・太い線・機能別の色を使う。ファイル名はindex.tsのgeBlockNameと一致する。[一覧プレビュー](../../public/diagram/toolbox-icons.html)で32pxと80pxを見比べられる。元の図形定義は[generate-diagram-icons.mjs](../../scripts/generate-diagram-icons.mjs)にあり、`node scripts/generate-diagram-icons.mjs`でSVGと一覧HTMLを再生成する（生成済みファイルを上書きする）。ToolItemはImageでSVGを読み、通常表示とドラッグ中の表示をdrawImageで描く。読込完了・失敗時に再描画し、未読込・画像取得失敗時は「?」を表示する。ToolItemのmargin・borderWidthを0にして32×32の画像とヒット領域をそろえ、Canvas破棄で画像のイベントハンドラーを解除する。
 
 マウスのpointermoveでは、既存ヒット判定でToolItemを検出し、canvasのtitle属性へブロッククラス名を設定してブラウザー標準のツールチップを使う。ToolItem以外・ドラッグ中・押下中・pointerleave・pointercancel・破棄では消す。表示までの待ち時間や外観はブラウザーに従い、タッチではツールチップを設定しない。
 
@@ -286,9 +286,9 @@ registerFunctionBlock(UpperTextBlock.name, () => new UpperTextBlock({}));
 
 diagramの保存形式は**ブロックオブジェクトの配列**。plane/movieのversion 3操作形式とは別である。
 
-2026-10-14にOpenボタンを追加した。[json-util.ts](../diagram/ts/json-util.ts)が`/diagram/data-list.json`を取得してファイル名をボタンで表示し、選択した`/diagram/data/<ファイル名>`を取得する。index.tsのloadJsonAndDrawを経由し、ドラッグ＆ドロップと同じ復元・再描画・DOM配置を行う。読込成功でダイアログを閉じ、一覧取得中・読込中・空一覧・エラーを表示する。閉じる・Escape・Clear・pagehide・破棄で通信を中断し、遅れた取得結果は読込へ進めない。JSON復元自体の事前検証は既存loadJsonの範囲であり、未対応形式の扱いは下記の制約を引き継ぐ。
+2026-10-14にOpenボタンを追加した。[json-util.ts](../../diagram/ts/json-util.ts)が`/diagram/data-list.json`を取得してファイル名をボタンで表示し、選択した`/diagram/data/<ファイル名>`を取得する。index.tsのloadJsonAndDrawを経由し、ドラッグ＆ドロップと同じ復元・再描画・DOM配置を行う。読込成功でダイアログを閉じ、一覧取得中・読込中・空一覧・エラーを表示する。閉じる・Escape・Clear・pagehide・破棄で通信を中断し、遅れた取得結果は読込へ進めない。JSON復元自体の事前検証は既存loadJsonの範囲であり、未対応形式の扱いは下記の制約を引き継ぐ。
 
-一覧は[vite.config.ts](../vite.config.ts)のdiagramDataListPluginが`public/diagram/data`直下の通常ファイルから拡張子.jsonの名前を並べて生成する。開発時は同じURLへのGET／HEADに応答し、ビルド時は`dist/diagram/data-list.json`へ出力する。JSONを追加・編集する場所は`public/diagram/data`で、公開一覧とJSONの更新には再ビルド・再デプロイが必要。Firebase Hostingのディレクトリ一覧機能やAPIサーバーは使わない。
+一覧は[vite.config.ts](../../vite.config.ts)のdiagramDataListPluginが`public/diagram/data`直下の通常ファイルから拡張子.jsonの名前を並べて生成する。開発時は同じURLへのGET／HEADに応答し、ビルド時は`dist/diagram/data-list.json`へ出力する。JSONを追加・編集する場所は`public/diagram/data`で、公開一覧とJSONの更新には再ビルド・再デプロイが必要。Firebase Hostingのディレクトリ一覧機能やAPIサーバーは使わない。
 
 | 保存項目 | 現行の内容 |
 |---|---|
@@ -322,7 +322,7 @@ copyUIは派生設定をコピーしない。独自設定があるブロック�
 | DOM・ダイアログ・Plotly | 入力欄を消し、close・purge・remove。遅延ロードのcallbackでremovedを確認 |
 | 認証情報・ライブ値 | 参照を解除し、出力をundefinedへ戻す。JSONやコピーへ渡さない |
 
-disposeDiagramは全体Stop、BLE切断、Editor.Clear、イベント・定期タスク・canvasの破棄を行う。アプリ全体の停止と破棄、bfcacheからの復帰、同一documentでの再初期化の制約は [app-lifecycle.md](app-lifecycle.md) に従う。
+disposeDiagramは全体Stop、BLE切断、Editor.Clear、イベント・定期タスク・canvasの破棄を行う。アプリ全体の停止と破棄、bfcacheからの復帰、同一documentでの再初期化の制約は [app-lifecycle.md](../app-lifecycle.md) に従う。
 
 BLEではdiagramBLEが共有接続と指令を管理する。新しい実機ブロックが別の接続を勝手に作らず、接続・計測の所有者が増減したときの規則を確認する。ARM/MOVE等のACKは受付で、実際の角度・完了の証明ではない。Stopのサーボ停止と、IMU計測の停止・BLE切断は同じ操作ではない。
 
@@ -334,19 +334,19 @@ APIキー入力フォームはユーザー名とpassword欄を持ち、autocompl
 
 ## 11. 検証と完了条件
 
-文書だけの変更はリンク・記述・差分を確認する。実装変更のコマンドと実行環境は [build-and-test.md](build-and-test.md) を参照する。PowerShellではnpm.cmdを使う。
+文書だけの変更はリンク・記述・差分を確認する。実装変更のコマンドと実行環境は [build-and-test.md](../build-and-test.md) を参照する。PowerShellではnpm.cmdを使う。
 
 | 変更対象 | 主な確認・参照テスト |
 |---|---|
 | 型・公開成果物 | npm.cmd run verify。ブラウザー操作・外部通信の確認は含まない |
-| Struct・数値グラフ計算 | [data-type.test.mjs](../tests/data-type.test.mjs)、[plot-data.test.mjs](../tests/plot-data.test.mjs) |
-| Google応答・キー・取消 | [ai-client.test.mjs](../tests/ai-client.test.mjs)、[ai-chat-browser.test.mjs](../tests/ai-chat-browser.test.mjs) |
-| 音声認識の終了待ち・取消・AI連携・保存 | [speech-client.test.mjs](../tests/speech-client.test.mjs)、[speech-browser.test.mjs](../tests/speech-browser.test.mjs)。認識・AI・音声出力は模擬 |
-| 明示指定した実Google通信 | [ai-chat-integration.test.mjs](../tests/ai-chat-integration.test.mjs)。キーを出力せず、音声出力は模擬 |
-| ツール・Button・BLE・サーボ・IMU・Plot | [ble-browser.test.mjs](../tests/ble-browser.test.mjs)。BLEは模擬 |
-| 公開版のPlotly・配線 | [plot-preview.test.mjs](../tests/plot-preview.test.mjs) |
-| 初期化・Stop・破棄 | [lifecycle.test.mjs](../tests/lifecycle.test.mjs)、[test_lifecycle.py](../tests/test_lifecycle.py) |
-| 既存5アプリの回帰 | [test.py](../tests/test.py) |
+| Struct・数値グラフ計算 | [data-type.test.mjs](../../tests/data-type.test.mjs)、[plot-data.test.mjs](../../tests/plot-data.test.mjs) |
+| Google応答・キー・取消 | [ai-client.test.mjs](../../tests/ai-client.test.mjs)、[ai-chat-browser.test.mjs](../../tests/ai-chat-browser.test.mjs) |
+| 音声認識の終了待ち・取消・AI連携・保存 | [speech-client.test.mjs](../../tests/speech-client.test.mjs)、[speech-browser.test.mjs](../../tests/speech-browser.test.mjs)。認識・AI・音声出力は模擬 |
+| 明示指定した実Google通信 | [ai-chat-integration.test.mjs](../../tests/ai-chat-integration.test.mjs)。キーを出力せず、音声出力は模擬 |
+| ツール・Button・BLE・サーボ・IMU・Plot | [ble-browser.test.mjs](../../tests/ble-browser.test.mjs)。BLEは模擬 |
+| 公開版のPlotly・配線 | [plot-preview.test.mjs](../../tests/plot-preview.test.mjs) |
+| 初期化・Stop・破棄 | [lifecycle.test.mjs](../../tests/lifecycle.test.mjs)、[test_lifecycle.py](../../tests/test_lifecycle.py) |
+| 既存5アプリの回帰 | [test.py](../../tests/test.py) |
 
 生成済みlibを読むNodeテストは、先にbuild:allを行う。開発ソースを直接importするブラウザーテストはVite開発サーバーへ接続する。HMRの更新付きimportと直接importで状態が分かれる場合があるため、ソース変更後に専用サーバーを再起動する。CDN到達性・テスト用ブラウザー・メモリ条件による初期化失敗と、機能の不具合を切り分ける。既存のIMUログ待ちテストはコメントアウト済みのconsole.logとの不一致があるので、成功扱いにしない。
 

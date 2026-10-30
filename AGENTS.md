@@ -11,21 +11,21 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - 共通機能: `i18n/ts/`、`parser/ts/`、`layout/ts/`。
 - 数学・教材: `algebra/ts/`、`plane/ts/`、`game/ts/`、`movie/ts/`、`lesson/ts/`。
 - 共通入口: `app/ts/main.ts`。URLによるアプリ選択と初期化順序を管理する。起動・停止・破棄の状態管理は `app/ts/lifecycle.ts`。
-- ブロック編集: `diagram/ts/`。`index.ts`はdiagramのUI初期化、`runtime.ts`はブロック実行・停止・キャンセル可能な待機を担当する。ブロック追加時は [docs/diagram-implementation.md](docs/diagram-implementation.md) の機能・登録・ポート・実行・保存・後片付けの説明を参照する。
+- ブロック編集: `diagram/ts/`。`index.ts`はdiagramのUI初期化、`runtime.ts`はブロック実行・停止・キャンセル可能な待機を担当する。diagram・ESP32関連の文書は`docs/diagram/`に置く。ブロック追加時は [docs/diagram/diagram-implementation.md](docs/diagram/diagram-implementation.md) の機能・登録・ポート・実行・保存・後片付けの説明を参照する。
 - diagramの機能別ソース: `diagram/ts/ai/`はAIチャット・音声認識・Gemini物体検出・画像説明、`ble-wifi/`はBLE接続・Wi-Fi設定と通信、`hardware/`は各種センサー・アクチュエータ（現在はサーボ・IMU）、`plot/`はグラフ・履歴・Plotly型定義、`camera/`は端末／XIAOの画像取得。CameraBlock本体は`block.ts`、共通型は`data_type.ts`に置く。
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
-- ESP32ファームウェアの現行ソースは別リポジトリーの`D:\usr\prj\esp32`。教材は[app/diagram-control](../esp32/app/diagram-control/README.md)、共有C++ソースは[lib](../esp32/README.md)。ESP32側を変更する場合は[同リポジトリーのAGENTS.md](../esp32/AGENTS.md)を読む。PlatformIOで独立してビルドし、npmの`verify`には含めない。仕様・配線・送受信タイミング・ビルドの参照先は[連携ガイド](docs/esp32-integration.md)にまとめる。
+- ESP32ファームウェアの現行ソースは別リポジトリーの`D:\usr\prj\esp32`。教材は[app/diagram-control](../esp32/app/diagram-control/README.md)、共有C++ソースは[lib](../esp32/README.md)。ESP32側を変更する場合は[同リポジトリーのAGENTS.md](../esp32/AGENTS.md)を読む。PlatformIOで独立してビルドし、npmの`verify`には含めない。仕様・配線・送受信タイミング・ビルドの参照先は[連携ガイド](docs/diagram/esp32-integration.md)にまとめる。
 - uroa内の`esp32/`と`esp32-ble-lab/`は2026-10-30に削除方針が決まった旧構成。現行の作業先・仕様の根拠にしない。旧倒立アプリは運用対象外で、別リポジトリーへ移行していない。ブラウザーに残るBalance受信・サンプル・模擬テストは互換機能で、diagram-controlはBalance通知を送らない。
-- ESP32のWi-Fi設定・NVS・mDNS・通信は別リポジトリーの`lib/wifi/`・`lib/ble/`、教材設定・XIAOカメラは`app/diagram-control/src/network.cpp`・`camera.cpp`。Web側は`diagram/ts/ble-wifi/robot-wifi.ts`・`robot-wifi-dialog.ts`・`diagram/ts/camera/camera-feed.ts`。操作・保存・認証・制約は[Wi-Fiガイド](docs/esp32-ble-lab-wifi.md)。過去のビルド・実機報告を現行ファームウェアの再検証結果として扱わない。
+- ESP32のWi-Fi設定・NVS・mDNS・通信は別リポジトリーの`lib/wifi/`・`lib/ble/`、教材設定・XIAOカメラは`app/diagram-control/src/network.cpp`・`camera.cpp`。Web側は`diagram/ts/ble-wifi/robot-wifi.ts`・`robot-wifi-dialog.ts`・`diagram/ts/camera/camera-feed.ts`。操作・保存・認証・制約は[Wi-Fiガイド](docs/diagram/esp32-ble-lab-wifi.md)。過去のビルド・実機報告を現行ファームウェアの再検証結果として扱わない。
 - 旧13サブモジュールはすべてuroaの通常フォルダーとして管理する。変更・コミットはuroaで行う。履歴統合・検証結果は [docs/monorepo-migration.md](docs/monorepo-migration.md)、algebraの先行移行は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
 - `dist/`、各モジュールの `lib/`、`node_modules/` は主な編集対象のソースではない。`tmp/zip/`には過去の展開コピーがある。
 
 ## 現在の境界
 
-- `diagram/ts/ai/image-caption.ts`のImageCaptionBlockはCameraBlockの画像をGeminiへ送り、日本語の短い説明文をTextPortへ出力する。手動実行とStart時の完了待ちに対応し、TTSへ接続できる。物体検出と画像取得・キー管理・取消を`camera-ai-block.ts`で共通化する。操作・保存・後片付けは [docs/diagram-image-caption.md](docs/diagram-image-caption.md)。2026-10-15の確認はユーザー指定でビルドまで。
+- `diagram/ts/ai/image-caption.ts`のImageCaptionBlockはCameraBlockの画像をGeminiへ送り、日本語の短い説明文をTextPortへ出力する。手動実行とStart時の完了待ちに対応し、TTSへ接続できる。物体検出と画像取得・キー管理・取消を`camera-ai-block.ts`で共通化する。操作・保存・後片付けは [docs/diagram/diagram-image-caption.md](docs/diagram/diagram-image-caption.md)。2026-10-15の確認はユーザー指定でビルドまで。
 
-- `diagram/ts/ai/object-detection.ts`のObjectDetectionBlockはCameraBlockの端末／XIAO画像を固定し、学習者のキーでGeminiへ送って日本語ラベル・矩形を表示する。手動1回／Startの1回実行、ラベル・個数・先頭物体のStruct出力。キー・画像・結果は図へ保存しない。操作・通信・取消・制約は [docs/diagram-gemini-object-detection.md](docs/diagram-gemini-object-detection.md)。2026-10-15はユーザー指定でビルドまで。実通信・ブラウザー・実機の検出は未確認。
+- `diagram/ts/ai/object-detection.ts`のObjectDetectionBlockはCameraBlockの端末／XIAO画像を固定し、学習者のキーでGeminiへ送って日本語ラベル・矩形を表示する。手動1回／Startの1回実行、ラベル・個数・先頭物体のStruct出力。キー・画像・結果は図へ保存しない。操作・通信・取消・制約は [docs/diagram/diagram-gemini-object-detection.md](docs/diagram/diagram-gemini-object-detection.md)。2026-10-15はユーザー指定でビルドまで。実通信・ブラウザー・実機の検出は未確認。
 
 - `diagram/ts/ai/speech-recognition.ts`のSpeechRecognitionBlockはStartで単発の音声認識を待ち、セッション終了後に確定文字列をTextPortへ出力する。認識終了は結果を待つstop、全体Stopはabort。30秒タイムアウト、言語設定のみ保存し、復元で認識を始めない。ブラウザーの認識サービスに依存し、実音声・Androidの確認と模擬確認を区別する。
 

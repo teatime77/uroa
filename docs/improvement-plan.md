@@ -2,7 +2,7 @@
 
 作成日: 2026-10-10、更新日: 2026-10-30（日本時間）。P0の機能索引と初回確認、公開用入口・algebra保存・型診断の修正、単一リポジトリ化を実施した。ユーザー作成の回帰テストは `tests/test.py` へ移動し、共通ビルド・成果物確認コマンドを追加した。初回の実行条件は [current-state.md](current-state.md)、現在のコマンドと確認範囲は [build-and-test.md](build-and-test.md) を参照する。
 
-現行構成は[architecture.md](architecture.md)、ESP32の現行開発先は[連携ガイド](esp32-integration.md)、robotの既存機能は[robotの設計文書](../../robot/docs/architecture.md)を参照する。2026-10-30にuroa内の旧ESP32フォルダーの削除方針が決まり、ESP32の開発・ビルドは別リポジトリーへ統一する。以下の日付付きの計画・実施記録は当時の判断と検証範囲を示す。
+現行構成は[architecture.md](architecture.md)、ESP32の現行開発先は[連携ガイド](diagram/esp32-integration.md)、robotの既存機能は[robotの設計文書](../../robot/docs/architecture.md)を参照する。2026-10-30にuroa内の旧ESP32フォルダーの削除方針が決まり、ESP32の開発・ビルドは別リポジトリーへ統一する。以下の日付付きの計画・実施記録は当時の判断と検証範囲を示す。
 
 ## 現在の優先順位と長期目標（2026-10-12）
 
@@ -18,7 +18,7 @@
 
 後続指示による現行実装は、AIChatBlock内の接続ボタンからキー・モデル名を入力し、Googleのモデル情報を取得して接続を確認する。キーをprivateフィールドに保持し、Startごとに再利用する。切断・削除・Clear・読込・pagehide・破棄で解除する。質問はInteractions APIのRESTへ直接送信し、Viteの `/api/ask` プロキシは解除した。ブラウザーでGoogle接続確認・実質問1問・TTSの音声出力直前まで成功した。従来のExpress方式の確認結果は初期実装の記録として扱う。
 
-ユーザーはBLE接続を確認してcommit・pushしたと報告した。続いて、IMUなどの複数値を1本の接続線で渡す構造体入出力を必須と指定した。既存Structを使い、IMUはgyro: vec3とacc: vec3を持つ。CalcBlockの式によるフィールド参照・構造体計算も必要で、if文・whileループは不要。汎用構造体と計算は10月16日に間に合わなくてもよいが、今後のIMU・Port・グラフ修正を6数値ポートに固定せず、この方針に沿わせる。[構造体ポートと式評価の設計案](diagram-struct-design.md)に現行ソースの制約と未実装の提案を記録する。
+ユーザーはBLE接続を確認してcommit・pushしたと報告した。続いて、IMUなどの複数値を1本の接続線で渡す構造体入出力を必須と指定した。既存Structを使い、IMUはgyro: vec3とacc: vec3を持つ。CalcBlockの式によるフィールド参照・構造体計算も必要で、if文・whileループは不要。汎用構造体と計算は10月16日に間に合わなくてもよいが、今後のIMU・Port・グラフ修正を6数値ポートに固定せず、この方針に沿わせる。[構造体ポートと式評価の設計案](diagram/diagram-struct-design.md)に現行ソースの制約と未実装の提案を記録する。
 
 構造体の初回実装としてdata_type.ts・StructPort・IMUBlockを追加した。IMUBlockの配置／BLE接続で10Hzの通知を受け、gyro・accを1つのポートから出力してconsoleへ表示する。ユーザーはIMUの動作確認とcommit・pushを報告した。続いてPortの有効型取得・配線通知と、汎用PlotBlockを追加した。Structの数値Fieldを読み、IMUならgyro・accを横並び、x/y/zをRGBで表示する。直近30秒の平均・σを1秒ごとに再計算して3σの縦軸範囲を決める。単位・CalcBlockの構造体評価・式の型推論・3D表示は後続作業。検証は模擬と実機を区別して記録する。
 
@@ -260,7 +260,7 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 
 最初に既存機能の対応表を作り、移行先と検証結果を記録する。現在の機能を一つずつ取り込み、その後に新しい連携を追加する。
 
-履歴: 2026-10-14にBLEファームウェアをuroa内の`esp32-ble-lab/firmware/`へ取り込み、2026-10-26に共通処理を`esp32/lib/`へ切り出した。当時のソース照合・ビルド結果は[build-and-test.md](build-and-test.md)、旧実装の説明は[履歴資料](esp32-ble-lab-firmware.md)に残す。現行は別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)と共有libを使う。uroa内の旧2フォルダーと倒立アプリは廃止対象で、倒立アプリを移行済みとは扱わない。旧専用Web画面、chat、DCモーター復旧確認の取り込みも完了したとは扱わない。
+履歴: 2026-10-14にBLEファームウェアをuroa内の`esp32-ble-lab/firmware/`へ取り込み、2026-10-26に共通処理を`esp32/lib/`へ切り出した。当時のソース照合・ビルド結果は[build-and-test.md](build-and-test.md)、旧実装の説明は[履歴資料](diagram/esp32-ble-lab-firmware.md)に残す。現行は別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)と共有libを使う。uroa内の旧2フォルダーと倒立アプリは廃止対象で、倒立アプリを移行済みとは扱わない。旧専用Web画面、chat、DCモーター復旧確認の取り込みも完了したとは扱わない。
 
 | 既存のまとまり | uroaでの役割 | 確認内容 |
 |---|---|---|
@@ -270,7 +270,7 @@ AppLifecycleで初期化Promise、成功・失敗・中断・破棄を管理す�
 | BLEファームウェア | 現行は別リポジトリーのapp/diagram-control。uroa内の取り込みコピーは廃止対象 | 当時のSHA256一致・ビルド結果は履歴として保持。現行のビルド・実機確認はESP32側の検証記録で区別する |
 | DCモーター復旧確認 | 診断用画面案内と独立したESP32プロジェクト | シリアル指令、エンコーダー、IMU、2秒経過と手動停止 |
 
-2026-10-14の後続指示で、BLEによるWi-Fi設定、NVS保存、mDNS、Wi-Fi制御とXIAOカメラを実装した。操作・構成・秘密情報の保存境界は [Wi-Fiガイド](esp32-ble-lab-wifi.md) を参照する。当時は保存済み機器をmDNS名・IPの順で認証していた。その後、保存済み機器の選択を廃止し、現在はBLE接続中の基板へSSID・パスワードを設定する。ユーザー指定により今回の作業はビルドの正常終了まで。ブラウザー・実機・ペアリング・Chrome保存／自動入力・停止・切り替えの動作確認はユーザーが行う。
+2026-10-14の後続指示で、BLEによるWi-Fi設定、NVS保存、mDNS、Wi-Fi制御とXIAOカメラを実装した。操作・構成・秘密情報の保存境界は [Wi-Fiガイド](diagram/esp32-ble-lab-wifi.md) を参照する。当時は保存済み機器をmDNS名・IPの順で認証していた。その後、保存済み機器の選択を廃止し、現在はBLE接続中の基板へSSID・パスワードを設定する。ユーザー指定により今回の作業はビルドの正常終了まで。ブラウザー・実機・ペアリング・Chrome保存／自動入力・停止・切り替えの動作確認はユーザーが行う。
 
 ### 統合の進め方
 

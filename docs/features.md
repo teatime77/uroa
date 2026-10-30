@@ -42,7 +42,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 
 ## ブロック編集・実行・実機向け指令
 
-ブロックを追加する場合は [diagram実装ガイド](diagram-implementation.md) の継承・登録・配線・実行・保存・後片付けの説明を参照する。
+ブロックを追加する場合は [diagram実装ガイド](diagram/diagram-implementation.md) の継承・登録・配線・実行・保存・後片付けの説明を参照する。
 
 | ID | やりたいこと | 最初に見るソース・入口 | 関連資産・確認の観点 |
 |---|---|---|---|
@@ -50,9 +50,9 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | DIAGRAM-02 | 入力・計算・比較ブロックを追加する | [block.ts](../diagram/ts/block.ts): 入力、CalcBlock、CompareBlock | ポートの値・型、生成関数、保存項目 |
 | DIAGRAM-03 | 条件・繰り返し・待機・読み上げを変える | [procedure.ts](../diagram/ts/procedure.ts): IfBlock、InfiniteLoop、SleepBlock、TTSBlock | [runtime.ts](../diagram/ts/runtime.ts): runBlockChain、runProcedures、stopDiagram、waitProcedure。index.tsはStart/StopのUI |
 | DIAGRAM-04 | ブロック図を保存・読込する | [json-util.ts](../diagram/ts/json-util.ts): saveJson、[index.ts](../diagram/ts/index.ts): loadJsonとdrop処理 | [diagram.json](../public/diagram/data/diagram.json)。ファイルdrop、Download、Clear、ポート参照の復元 |
-| DIAGRAM-14 | カメラ画像を日本語で説明する | [image-caption.ts](../diagram/ts/ai/image-caption.ts)、[camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts) | CameraBlock → 画像説明 → TTSの構成。手動1回／Startで説明文をTextPort出力。モデル名だけ保存。操作・通信・取消は[画像説明ガイド](diagram-image-caption.md)、サンプルは[gemini-image-caption.json](../public/diagram/data/gemini-image-caption.json)。テストはユーザーが実施 |
-| DIAGRAM-13 | カメラ画像をGeminiで物体検出する | [object-detection.ts](../diagram/ts/ai/object-detection.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts) | CameraBlockを1本接続し、キー入力・接続確認後に1回検出／Start。日本語ラベル・矩形表示、ラベル・個数・先頭物体Structの出力。モデル名だけ保存。操作・制約は[物体検出ガイド](diagram-gemini-object-detection.md)。ユーザー指定でビルドまで |
-| DIAGRAM-12 | 端末カメラ／XIAOの画像を表示する | [block.ts](../diagram/ts/block.ts): CameraBlock、[device-camera.ts](../diagram/ts/camera/device-camera.ts)、[camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | ブロック上で取得元を選択。端末は「開始」で権限要求、背面優先、停止・非表示・削除で解放。設定だけ保存し復元で端末を起動しない。XIAOは従来のWi-Fi共有取得。画像ポート出力は未実装。Gemini物体検出はDIAGRAM-13。操作は[実装ガイド](diagram-implementation.md)。2026-10-15のカメラ追加の確認はビルドまで |
+| DIAGRAM-14 | カメラ画像を日本語で説明する | [image-caption.ts](../diagram/ts/ai/image-caption.ts)、[camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts) | CameraBlock → 画像説明 → TTSの構成。手動1回／Startで説明文をTextPort出力。モデル名だけ保存。操作・通信・取消は[画像説明ガイド](diagram/diagram-image-caption.md)、サンプルは[gemini-image-caption.json](../public/diagram/data/gemini-image-caption.json)。テストはユーザーが実施 |
+| DIAGRAM-13 | カメラ画像をGeminiで物体検出する | [object-detection.ts](../diagram/ts/ai/object-detection.ts)、[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts) | CameraBlockを1本接続し、キー入力・接続確認後に1回検出／Start。日本語ラベル・矩形表示、ラベル・個数・先頭物体Structの出力。モデル名だけ保存。操作・制約は[物体検出ガイド](diagram/diagram-gemini-object-detection.md)。ユーザー指定でビルドまで |
+| DIAGRAM-12 | 端末カメラ／XIAOの画像を表示する | [block.ts](../diagram/ts/block.ts): CameraBlock、[device-camera.ts](../diagram/ts/camera/device-camera.ts)、[camera-feed.ts](../diagram/ts/camera/camera-feed.ts) | ブロック上で取得元を選択。端末は「開始」で権限要求、背面優先、停止・非表示・削除で解放。設定だけ保存し復元で端末を起動しない。XIAOは従来のWi-Fi共有取得。画像ポート出力は未実装。Gemini物体検出はDIAGRAM-13。操作は[実装ガイド](diagram/diagram-implementation.md)。2026-10-15のカメラ追加の確認はビルドまで |
 | DIAGRAM-10 | AIへ質問し、回答全文を読み上げる | [ai-chat.ts](../diagram/ts/ai/ai-chat.ts): AIChatBlock、[ai-client.ts](../diagram/ts/ai/ai-client.ts): Google REST、[runtime.ts](../diagram/ts/runtime.ts): runStartFunctions | ブロック内でキー入力・接続確認・切断。キーを一時保持し、StartでGoogle Interactions APIへ直接送信。回答・エラー表示、待機取消、キーとライブ回答を除くJSON保存・復元。サンプルは [ai-chat.json](../public/diagram/data/ai-chat.json) |
 | DIAGRAM-11 | 音声を認識して文字列で出力する | [speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts): SpeechRecognitionBlock、[speech-client.ts](../diagram/ts/ai/speech-client.ts): recognizeSpeech | Startで日本語の単発認識、セッション終了後にTextPortへ出力。「認識終了」と全体Stop、30秒タイムアウト。言語設定のみ保存。サンプルは [speech-ai-chat.json](../public/diagram/data/speech-ai-chat.json)。実音声・Androidは別途確認 |
 | DIAGRAM-05 | BLEサーボ指令・旧センサー連携を変える | [servo.ts](../diagram/ts/hardware/servo.ts): ServoMotorBlock、[ble.ts](../diagram/ts/ble-wifi/ble.ts): BLEConnection、[diagram_util.ts](../diagram/ts/diagram_util.ts): 旧sendData | サーボは角度／速度を選び、明示ARM後に角度60～120°をMOVE、速度−100～100%をSET_SPEED。モード変更は無効化。DISABLE/STOP、停止時の待機指令取消。旧センサーはPOST /send_data、定期取得はdiy_sbc=false |
@@ -120,15 +120,15 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 
 ## ESP32連携とrobotの関連機能
 
-ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内の旧ESP32フォルダーは廃止対象。[連携ガイド](esp32-integration.md)から仕様・ビルド・送受信タイミングを参照する。robot側の行は元の関連機能の所在を示す。
+ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内の旧ESP32フォルダーは廃止対象。[連携ガイド](diagram/esp32-integration.md)から仕様・ビルド・送受信タイミングを参照する。robot側の行は元の関連機能の所在を示す。
 
 | ID | 移行・変更したい機能 | 現在のソース | 実装の境界 |
 |---|---|---|---|
 | ROBOT-01 | AI質問画面とAPI | [chat/src/main.ts](../../robot/chat/src/main.ts)、[server/app.ts](../../robot/chat/server/app.ts)、[server/index.ts](../../robot/chat/server/index.ts) | 1問ごとの文章応答。モーターへの直接指令は未実装 |
 | ROBOT-02 | BLE接続・サーボ操作 | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ARM/MOVE/STOP/DISABLE、ACK、直列化、切断。uroaの接続はDIAGRAM-06、ServoMotorBlockのBLE操作はDIAGRAM-05 |
 | ROBOT-03 | IMU表示・グラフ・CSV | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | 加速度・角速度。姿勢角やサーボ実測角度ではない |
-| ROBOT-04 | ESP32のBLE／Wi-Fiサーボ・IMU・XIAOカメラ | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[共通C++クラス](../../esp32/README.md)、[通信仕様](../../esp32/app/diagram-control/docs/protocol.md) | 別リポジトリーのdiagram-controlとlibで管理する。DevKit／XIAO／SuperMiniに対応し、カメラはSenseのみ。操作・保存・認証は[Wi-Fiガイド](esp32-ble-lab-wifi.md)。ビルド・模擬確認・実機報告を区別する |
-| ROBOT-05 | 旧FS90R倒立アプリ（運用対象外） | [廃止範囲と残る互換機能](esp32-integration.md#旧フォルダーの廃止と残る互換機能)、[PlotTelemetry形式](../../esp32/lib/plot/README.md) | 旧倒立アプリは廃止対象で、別リポジトリーへ未移行。WebのBalance受信・サンプル・模擬テストは残る。現行diagram-controlはBalanceを送らない。実車の倒立成立は未確認 |
+| ROBOT-04 | ESP32のBLE／Wi-Fiサーボ・IMU・XIAOカメラ | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[共通C++クラス](../../esp32/README.md)、[通信仕様](../../esp32/app/diagram-control/docs/protocol.md) | 別リポジトリーのdiagram-controlとlibで管理する。DevKit／XIAO／SuperMiniに対応し、カメラはSenseのみ。操作・保存・認証は[Wi-Fiガイド](diagram/esp32-ble-lab-wifi.md)。ビルド・模擬確認・実機報告を区別する |
+| ROBOT-05 | 旧FS90R倒立アプリ（運用対象外） | [廃止範囲と残る互換機能](diagram/esp32-integration.md#旧フォルダーの廃止と残る互換機能)、[PlotTelemetry形式](../../esp32/lib/plot/README.md) | 旧倒立アプリは廃止対象で、別リポジトリーへ未移行。WebのBalance受信・サンプル・模擬テストは残る。現行diagram-controlはBalanceを送らない。実車の倒立成立は未確認 |
 | ROBOT-05 | DCモーター・エンコーダーの診断 | [main.cpp](../../robot/esp32_recovery/src/main.cpp) | 別ファームウェア。シリアル指令、IMU、手動停止と2秒経過停止 |
 
 ## 更新するとき

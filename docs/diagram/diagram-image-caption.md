@@ -22,13 +22,13 @@ JSON・コピーへ追加する設定はモデル名だけ。APIキー・画像�
 
 ## ソースと共通処理
 
-- [image-caption.ts](../diagram/ts/ai/image-caption.ts): 説明文のTextPort出力・表示、factory登録とコピー。
-- [gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts): `captionGeminiImage()`で画像と説明指示を送信し、通常のテキスト応答を返す。物体検出のJSON Schema指定は使わない。
-- [camera-ai-block.ts](../diagram/ts/ai/camera-ai-block.ts): 物体検出と画像説明で共有する画像固定・キー入力・接続確認・通信待機・表示・保存・後片付け。
-- [ai-client.ts](../diagram/ts/ai/ai-client.ts): 固定のGoogle APIへのREST通信、認証ヘッダー、共通の応答解析・エラー処理。
+- [image-caption.ts](../../diagram/ts/ai/image-caption.ts): 説明文のTextPort出力・表示、factory登録とコピー。
+- [gemini-vision-client.ts](../../diagram/ts/ai/gemini-vision-client.ts): `captionGeminiImage()`で画像と説明指示を送信し、通常のテキスト応答を返す。物体検出のJSON Schema指定は使わない。
+- [camera-ai-block.ts](../../diagram/ts/ai/camera-ai-block.ts): 物体検出と画像説明で共有する画像固定・キー入力・接続確認・通信待機・表示・保存・後片付け。
+- [ai-client.ts](../../diagram/ts/ai/ai-client.ts): 固定のGoogle APIへのREST通信、認証ヘッダー、共通の応答解析・エラー処理。
 
 画像は長辺最大1024px、JPEG品質0.8、Base64でInteractions APIへ送信する。接続確認は10秒、説明取得は60秒の時間制限。`store:false`を指定する。SDK・サーバー・モデル資産の追加はない。
 
 全体Stop・手動の説明停止・カメラの配線変更・取得元変更・利用不可・解像度変更・タブ非表示で待機と結果を解除する。切断・Clear・図読込・削除・pagehide・破棄では保持キーも解除する。通常のStopは保持済みキーを維持する。世代番号とAbortSignalで遅れた応答を抑止し、削除時はカメラ／配線／停止の購読・DOMを解放する。中断はGoogle側の処理・課金の取消を保証しない。
 
-物体検出は同じ共通基底を利用するが、ポート順・型名・型番号・モデル設定・矩形表示・検出プロンプトは維持する。物体検出のStruct定義は`object-detection.ts`内に置く。操作は[物体検出ガイド](diagram-gemini-object-detection.md)、検証範囲は[build-and-test.md](build-and-test.md)、API仕様は[公式の画像理解ガイド](https://ai.google.dev/gemini-api/docs/image-understanding)を参照する。
+物体検出は同じ共通基底を利用するが、ポート順・型名・型番号・モデル設定・矩形表示・検出プロンプトは維持する。物体検出のStruct定義は`object-detection.ts`内に置く。操作は[物体検出ガイド](diagram-gemini-object-detection.md)、検証範囲は[build-and-test.md](../build-and-test.md)、API仕様は[公式の画像理解ガイド](https://ai.google.dev/gemini-api/docs/image-understanding)を参照する。

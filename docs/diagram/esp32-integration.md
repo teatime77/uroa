@@ -8,14 +8,14 @@
 
 | 内容 | 参照先 |
 |---|---|
-| ESP32側の作業案内・構成 | [AGENTS.md](../../esp32/AGENTS.md)、[README](../../esp32/README.md)、[設計](../../esp32/docs/architecture.md) |
-| 基板・ビルド・書き込み・操作・停止条件 | [diagram-control README](../../esp32/app/diagram-control/README.md)、[platformio.ini](../../esp32/app/diagram-control/platformio.ini) |
-| BLE／Wi-Fiのバイナリ通信形式 | [protocol.md](../../esp32/app/diagram-control/docs/protocol.md) |
-| 配線 | [wiring.md](../../esp32/app/diagram-control/docs/wiring.md) |
-| 指令キュー・機器操作・周期・期限監視 | [main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[config.h](../../esp32/app/diagram-control/include/config.h) |
-| 通信ライブラリー | [BLE](../../esp32/lib/ble/README.md)、[Wi-Fi](../../esp32/lib/wifi/README.md)、[Protocol](../../esp32/lib/protocol/README.md) |
-| 機器ライブラリー | [Servo](../../esp32/lib/servo/README.md)、[IMU](../../esp32/lib/imu/README.md) |
-| ブラウザー側の接続・サーボ・センサー | [ble.ts](../diagram/ts/ble-wifi/ble.ts)、[servo.ts](../diagram/ts/hardware/servo.ts)、[imu.ts](../diagram/ts/hardware/imu.ts) |
+| ESP32側の作業案内・構成 | [AGENTS.md](../../../esp32/AGENTS.md)、[README](../../../esp32/README.md)、[設計](../../../esp32/docs/architecture.md) |
+| 基板・ビルド・書き込み・操作・停止条件 | [diagram-control README](../../../esp32/app/diagram-control/README.md)、[platformio.ini](../../../esp32/app/diagram-control/platformio.ini) |
+| BLE／Wi-Fiのバイナリ通信形式 | [protocol.md](../../../esp32/app/diagram-control/docs/protocol.md) |
+| 配線 | [wiring.md](../../../esp32/app/diagram-control/docs/wiring.md) |
+| 指令キュー・機器操作・周期・期限監視 | [main.cpp](../../../esp32/app/diagram-control/src/main.cpp)、[config.h](../../../esp32/app/diagram-control/include/config.h) |
+| 通信ライブラリー | [BLE](../../../esp32/lib/ble/README.md)、[Wi-Fi](../../../esp32/lib/wifi/README.md)、[Protocol](../../../esp32/lib/protocol/README.md) |
+| 機器ライブラリー | [Servo](../../../esp32/lib/servo/README.md)、[IMU](../../../esp32/lib/imu/README.md) |
+| ブラウザー側の接続・サーボ・センサー | [ble.ts](../../diagram/ts/ble-wifi/ble.ts)、[servo.ts](../../diagram/ts/hardware/servo.ts)、[imu.ts](../../diagram/ts/hardware/imu.ts) |
 | Wi-Fi画面・保存・カメラ | [接続画面](diagram-esp32-connection-ui.md)、[Wi-Fiガイド](esp32-ble-lab-wifi.md) |
 
 仕様と実装が食い違う場合は両側の現行ソースを照合する。特に既定環境はREADMEだけで判断せず`platformio.ini`を確認し、コマンドでは環境を明示する。
@@ -33,7 +33,7 @@ pio run --project-dir app/diagram-control -e xiao_esp32s3
 pio run --project-dir app/diagram-control -e supermini_esp32s3
 ```
 
-`pio`がPATHにない場合は、PlatformIO IDE付属のCLIを使う。Upload・Monitorでは基板と実際のCOMポートを指定する。詳しい手順は上表のアプリREADME、検証記録は[ESP32側のbuild-and-test.md](../../esp32/docs/build-and-test.md)を参照する。
+`pio`がPATHにない場合は、PlatformIO IDE付属のCLIを使う。Upload・Monitorでは基板と実際のCOMポートを指定する。詳しい手順は上表のアプリREADME、検証記録は[ESP32側のbuild-and-test.md](../../../esp32/docs/build-and-test.md)を参照する。
 
 ## 送受信のタイミング
 
@@ -57,9 +57,9 @@ pio run --project-dir app/diagram-control -e supermini_esp32s3
 
 2026-10-30にユーザーがuroa内の`esp32/`と`esp32-ble-lab/`を削除する方針を決定した。この文書更新は削除前の準備で、フォルダーの削除そのものは行わない。以後、現行のビルド・書き込み・通信仕様の参照先には使わない。
 
-旧BLE Labと倒立アプリのビルド・書き込みは運用対象外。倒立アプリは別リポジトリーへ移行しておらず、diagram-controlにも含まれない。削除前のソースや当時の仕様が必要な場合は、uroaのGit履歴で該当時点を参照する。旧ファームウェアの構造の説明は[履歴資料](esp32-ble-lab-firmware.md)、当時の確認結果は[build-and-test.md](build-and-test.md)に残す。
+旧BLE Labと倒立アプリのビルド・書き込みは運用対象外。倒立アプリは別リポジトリーへ移行しておらず、diagram-controlにも含まれない。削除前のソースや当時の仕様が必要な場合は、uroaのGit履歴で該当時点を参照する。旧ファームウェアの構造の説明は[履歴資料](esp32-ble-lab-firmware.md)、当時の確認結果は[build-and-test.md](../build-and-test.md)に残す。
 
-ブラウザー側のBalance型・version=2/schema=1受信パーサー・IMUBlockの第2出力・模擬テスト・サンプル図は、この文書更新では削除しない。通信形式は別リポジトリーの[PlotTelemetry](../../esp32/lib/plot/README.md)を参照する。**現行diagram-controlはgyro・accのIMU通知を送り、Balance通知は送らない**ため、balance出力は未取得のままとなる。ブラウザーに互換処理が残っていることは、倒立アプリの提供・運用や実車の倒立成立を意味しない。
+ブラウザー側のBalance型・version=2/schema=1受信パーサー・IMUBlockの第2出力・模擬テスト・サンプル図は、この文書更新では削除しない。通信形式は別リポジトリーの[PlotTelemetry](../../../esp32/lib/plot/README.md)を参照する。**現行diagram-controlはgyro・accのIMU通知を送り、Balance通知は送らない**ため、balance出力は未取得のままとなる。ブラウザーに互換処理が残っていることは、倒立アプリの提供・運用や実車の倒立成立を意味しない。
 
 ## 確認範囲
 

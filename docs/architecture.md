@@ -2,7 +2,7 @@
 
 調査日: 2026-10-09（日本時間）。主要ソース、設定、既存文書を読んだ静的な調査結果。全行の監査や実行検証ではなく、未コミット変更を含むローカル状態を対象とする。2026-10-09の調査では、アプリ起動、ビルド、テスト、外部API呼び出し、Firebase操作、実機操作は行っていない。後日の実行確認は [current-state.md](current-state.md) に条件と結果を記録する。
 
-2026-10-30更新: ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内の旧2フォルダーは廃止対象。作業先・仕様・送受信タイミングは[ESP32連携ガイド](esp32-integration.md)を参照する。
+2026-10-30更新: ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内の旧2フォルダーは廃止対象。作業先・仕様・送受信タイミングは[ESP32連携ガイド](diagram/esp32-integration.md)を参照する。
 
 ## 目的と全体構成
 
@@ -70,7 +70,7 @@ flowchart TD
 | `plot` | README・設定ファイルはあるが、調査時点では実装ソースがない | [README.md](../plot/README.md)、[package.json](../plot/package.json) |
 | 別リポジトリー`esp32/app/diagram-control` | DevKit V1／XIAO ESP32-S3 Sense／SuperMiniのBLE・Wi-Fi、角度／速度サーボ、IMU、Senseカメラ。PlatformIOで独立してビルド | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[platformio.ini](../../esp32/app/diagram-control/platformio.ini) |
 | 別リポジトリー`esp32/lib` | BLE・Wi-Fi・Protocol・Servo・IMU・Plotの共有C++ソース。uroaから分離して管理 | [ESP32教材ガイド](../../esp32/README.md)、[設計](../../esp32/docs/architecture.md) |
-| 旧倒立アプリ（運用対象外） | uroa内の旧ESP32フォルダーとともに廃止対象。別リポジトリーへ未移行。ブラウザーのBalance受信互換処理は残るが、diagram-controlは送信しない | [廃止範囲と互換機能](esp32-integration.md#旧フォルダーの廃止と残る互換機能) |
+| 旧倒立アプリ（運用対象外） | uroa内の旧ESP32フォルダーとともに廃止対象。別リポジトリーへ未移行。ブラウザーのBalance受信互換処理は残るが、diagram-controlは送信しない | [廃止範囲と互換機能](diagram/esp32-integration.md#旧フォルダーの廃止と残る互換機能) |
 
 ### 数学・図形処理の主要な境界
 
@@ -104,13 +104,13 @@ playback.tsではinstanceofで使う操作クラスを実行時importし、Opera
 
 ### diagramの実機向け処理
 
-2026-10-15に[ImageCaptionBlock](../diagram/ts/ai/image-caption.ts)を追加した。CameraBlockの端末／XIAO画像をGeminiへ送り、日本語の説明文をTextPortへ出力する。手動ボタンとStart時の1回実行に対応し、Startでは応答取得後にTTS等のActionへ進む。画像固定・キー管理・取消・保存・表示は物体検出と共通の[CameraAIBlock](../diagram/ts/ai/camera-ai-block.ts)へまとめ、物体検出のポート・保存形式は維持する。操作と検証範囲は[画像説明ガイド](diagram-image-caption.md)。
+2026-10-15に[ImageCaptionBlock](../diagram/ts/ai/image-caption.ts)を追加した。CameraBlockの端末／XIAO画像をGeminiへ送り、日本語の説明文をTextPortへ出力する。手動ボタンとStart時の1回実行に対応し、Startでは応答取得後にTTS等のActionへ進む。画像固定・キー管理・取消・保存・表示は物体検出と共通の[CameraAIBlock](../diagram/ts/ai/camera-ai-block.ts)へまとめ、物体検出のポート・保存形式は維持する。操作と検証範囲は[画像説明ガイド](diagram/diagram-image-caption.md)。
 
-2026-10-15に[ObjectDetectionBlock](../diagram/ts/ai/object-detection.ts)を追加した。CameraBlockの端末／XIAO画像を1枚固定し、Gemini Interactions APIへ直接送信して日本語ラベル・矩形を表示する。手動1回とStart時の1回実行に対応し、ラベル・個数・先頭物体のStructを出力する。キーは各ブロックで一時保持し、モデル名だけを図へ保存する。画像転送とJSON応答検証は[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts)、REST通信は既存AIチャットと共通の[ai-client.ts](../diagram/ts/ai/ai-client.ts)へ分けた。SDK・モデル・WASMの追加はない。操作・取消・出力形式・検証範囲は[物体検出ガイド](diagram-gemini-object-detection.md)。
+2026-10-15に[ObjectDetectionBlock](../diagram/ts/ai/object-detection.ts)を追加した。CameraBlockの端末／XIAO画像を1枚固定し、Gemini Interactions APIへ直接送信して日本語ラベル・矩形を表示する。手動1回とStart時の1回実行に対応し、ラベル・個数・先頭物体のStructを出力する。キーは各ブロックで一時保持し、モデル名だけを図へ保存する。画像転送とJSON応答検証は[gemini-vision-client.ts](../diagram/ts/ai/gemini-vision-client.ts)、REST通信は既存AIチャットと共通の[ai-client.ts](../diagram/ts/ai/ai-client.ts)へ分けた。SDK・モデル・WASMの追加はない。操作・取消・出力形式・検証範囲は[物体検出ガイド](diagram/diagram-gemini-object-detection.md)。
 
 2026-10-15にdiagramの機能別ソース14ファイルを`diagram/ts/ai/`、`ble-wifi/`、`hardware/`、`plot/`、`camera/`へ移した。AIチャット・音声認識、BLE／Wi-Fi接続、サーボ／IMU、グラフ、カメラ取得をそれぞれまとめる。共通のブロック・ポート・型・実行管理は直下に残し、CameraBlock本体も`block.ts`に置く。処理内容・ブロックの保存形式・通信仕様は変更せず、importと参照先を更新した。
 
-ブロック追加のための現行実装・登録手順・実行方式・保存形式・既知の制約は [diagram実装ガイド](diagram-implementation.md) を参照する。構造体の未実装の式評価・型推論は [設計案](diagram-struct-design.md) と区別する。
+ブロック追加のための現行実装・登録手順・実行方式・保存形式・既知の制約は [diagram実装ガイド](diagram/diagram-implementation.md) を参照する。構造体の未実装の式評価・型推論は [設計案](diagram/diagram-struct-design.md) と区別する。
 
 [canvas.ts](../diagram/ts/canvas.ts)と [ui.ts](../diagram/ts/ui.ts)が編集・描画、[port.ts](../diagram/ts/port.ts)が接続・値の伝播、[json-util.ts](../diagram/ts/json-util.ts)がJSON保存を担当する。入力・計算ブロックと手続きブロックを接続し、Start／Stopで実行する。
 
@@ -143,7 +143,7 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 
 「このCHを停止」はDISABLE、「全サーボ停止」とdiagramの手続きStop・アプリ停止はSTOPを送る。STOPはIMU通知とBLE接続を保持する。チャンネル変更・ブロック削除では以前のCHをDISABLEする。停止・切断・CH変更・削除後に待機中のARM/MOVEを送らないよう、接続世代、CHごとの操作世代、ブロックの操作世代を確認する。連続する角度変更は未送信の古いMOVEを取り消す。停止ACKを確認できなければ切断する。全OFFのStatusやPCA異常で有効状態を解除し、サーボの自動再有効化は行わない。
 
-有効状態は共有BLE接続のCH単位で保持するため、同じCHを指定した複数ブロックは同じ出力を操作する。CH・移動時間はJSONに保存し、接続・有効状態は保存しない。旧JSONのchannelと数値入力ポートは維持し、duration省略時は1000msとする。角度は内部指令値であり、MOVEのACKは受付結果で、動作完了や実角度の確認ではない。現行ファームウェアの処理と送受信タイミングは[ESP32連携ガイド](esp32-integration.md)を参照する。
+有効状態は共有BLE接続のCH単位で保持するため、同じCHを指定した複数ブロックは同じ出力を操作する。CH・移動時間はJSONに保存し、接続・有効状態は保存しない。旧JSONのchannelと数値入力ポートは維持し、duration省略時は1000msとする。角度は内部指令値であり、MOVEのACKは受付結果で、動作完了や実角度の確認ではない。現行ファームウェアの処理と送受信タイミングは[ESP32連携ガイド](diagram/esp32-integration.md)を参照する。
 
 InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。ServoMotorBlockは配線接続時にその値を入力ポートへ取り込み、解除時は未入力に戻す。値の復元・配線だけではMOVEを送らず、有効化後の入力変更または移動ボタンで送信する。実際の送信は`BLE servo send`、ACK受信は`BLE servo ACK`としてコンソールにも表示する。送信・受信ログにはARM/MOVE/STOP/DISABLE、指令番号、CH、value、durationを含む。MOVEのvalueは角度の100倍であり、ACKは受付確認を示す。
 
@@ -169,15 +169,15 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 2026-10-19の追加変更で、BLEペアリングのBluetooth Passkeyも教材用の全基板共通値`123456`へ固定した。OSのペアリング要求にはこの値を入力する。再起動しても値は変わらず、Serial Monitorでのコード確認は不要。BLE暗号化・MITM認証の処理は継続する。変更にはファームウェアの再Uploadが必要。
 
-同日の後続変更で、接続成功したSSID名だけを`uroa-wifi-ssids-v1`へ最大20件保存する履歴を追加した。SSID一覧から検索せずに履歴を選べる。パスワード・基板ID・IPは履歴へ含めず、接続先の機器選択画面は追加しない。詳細な操作・保存境界は[接続画面ガイド](diagram-esp32-connection-ui.md)を参照する。
+同日の後続変更で、接続成功したSSID名だけを`uroa-wifi-ssids-v1`へ最大20件保存する履歴を追加した。SSID一覧から検索せずに履歴を選べる。パスワード・基板ID・IPは履歴へ含めず、接続先の機器選択画面は追加しない。詳細な操作・保存境界は[接続画面ガイド](diagram/diagram-esp32-connection-ui.md)を参照する。
 
 共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)はBLE設定・Wi-Fi認証、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)はSSID選択・手入力・Wi-FiパスワードのChrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有IDを保存する。2026-10-17から接続キーはブラウザーとファームウェアに定義する教材用共通固定値を自動使用し、入力・Chrome保存を削除した。旧NVSの接続キーは更新したファームウェアの起動時に削除する。同日の追加変更で保存済み機器の選択画面と接続先のlocalStorage保存を廃止し、初回・次回ともBLE接続中の基板へSSIDとパスワードを送ってWi-Fi接続する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
 
-WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
+WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](diagram/esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
 
 ### 2026-10-15: CameraBlockの端末カメラ選択
 
-[block.ts](../diagram/ts/block.ts)のCameraBlockに「端末のカメラ／XIAO」の選択を追加した。端末は[device-camera.ts](../diagram/ts/camera/device-camera.ts)がブロックごとに`getUserMedia()`・video・描画予約を所有し、「開始」の明示操作で取得する。全体Stop・取得元変更・削除・非表示・pagehideで停止し、遅い取得結果のTrackも解放する。XIAOを選んだブロックは従来の[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)によるJPEG取得を共有する。コピー・保存図は取得元設定だけを引き継ぎ、旧設定欠落はXIAO、端末の自動起動は行わない。FaceDetectionBlockの画像参照は接続したCameraBlockの選択元へ追従する。画像ポート出力や画像AIは追加していない。2026-10-15の検証はユーザー指定でビルドまでとし、ブラウザー・Android・実機テストはユーザーが行う。詳細な操作は[diagram実装ガイド](diagram-implementation.md)を参照する。
+[block.ts](../diagram/ts/block.ts)のCameraBlockに「端末のカメラ／XIAO」の選択を追加した。端末は[device-camera.ts](../diagram/ts/camera/device-camera.ts)がブロックごとに`getUserMedia()`・video・描画予約を所有し、「開始」の明示操作で取得する。全体Stop・取得元変更・削除・非表示・pagehideで停止し、遅い取得結果のTrackも解放する。XIAOを選んだブロックは従来の[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)によるJPEG取得を共有する。コピー・保存図は取得元設定だけを引き継ぎ、旧設定欠落はXIAO、端末の自動起動は行わない。FaceDetectionBlockの画像参照は接続したCameraBlockの選択元へ追従する。画像ポート出力や画像AIは追加していない。2026-10-15の検証はユーザー指定でビルドまでとし、ブラウザー・Android・実機テストはユーザーが行う。詳細な操作は[diagram実装ガイド](diagram/diagram-implementation.md)を参照する。
 
 ### game・movieのデータと実行
 
@@ -304,7 +304,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 
 隣接する [robotの設計文書](../../robot/docs/architecture.md) に、AI質問画面、BLEサーボ・IMU操作、DCモーター復旧確認を記録している。
 
-履歴: 2026-10-14にrobotからuroa内の`esp32-ble-lab/firmware/`へソース・設定・BLE仕様・配線・検証記録・ライセンスを取り込み、2026-10-26に共通処理を`esp32/lib/`へ切り出した。その後、現行開発は別リポジトリーの`D:\usr\prj\esp32`へ分離した。2026-10-30にuroa内の旧2フォルダーの削除方針が決まり、今後の変更・ビルドは別リポジトリーのdiagram-controlとlibで行う。旧構成の説明は[履歴資料](esp32-ble-lab-firmware.md)、当時の検証は[build-and-test.md](build-and-test.md)を参照する。PlatformIOはnpmと独立し、npmのverifyには含まれない。
+履歴: 2026-10-14にrobotからuroa内の`esp32-ble-lab/firmware/`へソース・設定・BLE仕様・配線・検証記録・ライセンスを取り込み、2026-10-26に共通処理を`esp32/lib/`へ切り出した。その後、現行開発は別リポジトリーの`D:\usr\prj\esp32`へ分離した。2026-10-30にuroa内の旧2フォルダーの削除方針が決まり、今後の変更・ビルドは別リポジトリーのdiagram-controlとlibで行う。旧構成の説明は[履歴資料](diagram/esp32-ble-lab-firmware.md)、当時の検証は[build-and-test.md](build-and-test.md)を参照する。PlatformIOはnpmと独立し、npmのverifyには含まれない。
 
 | 機能 | 現在の方式 |
 |---|---|
@@ -315,7 +315,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 | uroa/diagramのAIChatBlock | 学習者のキーをブロック内で一時保持し、ブラウザーからGoogle Interactions APIへ直接質問。回答全文をTTSBlockへ渡す |
 
-BLE接続・サーボ・IMUは現行diagram-controlのGATT仕様を使う。仕様は[protocol.md](../../esp32/app/diagram-control/docs/protocol.md)、配線は[wiring.md](../../esp32/app/diagram-control/docs/wiring.md)、構成と周期は[ESP32連携ガイド](esp32-integration.md)を参照する。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
+BLE接続・サーボ・IMUは現行diagram-controlのGATT仕様を使う。仕様は[protocol.md](../../esp32/app/diagram-control/docs/protocol.md)、配線は[wiring.md](../../esp32/app/diagram-control/docs/wiring.md)、構成と周期は[ESP32連携ガイド](diagram/esp32-integration.md)を参照する。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
 
 2026-10-12にユーザーがデモ仕様を提示した。diagram内でInputTextBlock・チャットブロック・TTSBlockを使うAIチャットと、ServoMotorBlock・IMUBlock・グラフブロックを使う実機操作／計測の2種類を独立して作る。AIによる定型動作の選択・サーボ操作は要件ではない。ESP32、PCA9685、SG90、MPU-6050／GY-521を使い、IMU取得はユーザー確認済み。本番は携帯電話のアクセスポイント経由でインターネットへ接続した本人のAndroidタブレット、予備はWindowsのローカルVite。HTTPS・公開AIバックエンドの配置とサーボ動作はエージェント未確認。
 

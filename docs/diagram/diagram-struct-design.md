@@ -32,10 +32,10 @@ struct IMU { gyro: vec3; acc: vec3; }
 
 ## 現行ソースと制約
 
-- 設計時はindex.tsにVariable、Field、Struct、DataTypeがあり、Structはmembers、Fieldはname・type・parent、DataTypeはtypeName・dimensionsを持つだけだった。初回実装で [data_type.ts](../diagram/ts/data_type.ts)へ移し、index.tsは再exportする。
-- [port.ts](../diagram/ts/port.ts)のPort.valueはanyを維持する。fitPortTypeは接続方向と指定済みのデータ型を比較する。setPortValueは型が指定されていれば検証してから接続先へ伝播し、その場でvalueChangedを呼ぶ。
-- [block.ts](../diagram/ts/block.ts)のmakeInputValueMapは数値のみ許容する。calcTermはMap<string, number>からnumberを返す。CalcBlockはbなど単一の出力名を左辺とする式を評価する。
-- [parser.ts](../parser/ts/parser.ts)は既にドット参照をApp(".", [RefVar("a"), RefVar("gyro"), RefVar("x")])として解析する。関数呼出しの形でvec3(...)やIMU(...)も解析できる。
+- 設計時はindex.tsにVariable、Field、Struct、DataTypeがあり、Structはmembers、Fieldはname・type・parent、DataTypeはtypeName・dimensionsを持つだけだった。初回実装で [data_type.ts](../../diagram/ts/data_type.ts)へ移し、index.tsは再exportする。
+- [port.ts](../../diagram/ts/port.ts)のPort.valueはanyを維持する。fitPortTypeは接続方向と指定済みのデータ型を比較する。setPortValueは型が指定されていれば検証してから接続先へ伝播し、その場でvalueChangedを呼ぶ。
+- [block.ts](../../diagram/ts/block.ts)のmakeInputValueMapは数値のみ許容する。calcTermはMap<string, number>からnumberを返す。CalcBlockはbなど単一の出力名を左辺とする式を評価する。
+- [parser.ts](../../parser/ts/parser.ts)は既にドット参照をApp(".", [RefVar("a"), RefVar("gyro"), RefVar("x")])として解析する。関数呼出しの形でvec3(...)やIMU(...)も解析できる。
 - 現行parser/lib/parser.jsでb = a.gyro.x、b = a.gyro、b = vec3(a.acc.x, a.acc.y, a.acc.z)、b = IMU(a.gyro, a.acc)のASTを確認した。構造体として評価できることを確認したわけではない。lexerのSymbolTableに単独のドットがなく、ドットの不明トークンログが出る点は実装時に確認する。
 
 ## 型定義と実データ

@@ -4,7 +4,7 @@
 
 ## ESP32文書の参照先整理（2026-10-30）
 
-ESP32の現行ソースと検証記録は別リポジトリーの`D:\usr\prj\esp32`へ統一する。[ESP32連携ガイド](esp32-integration.md)に仕様・配線・基板別ビルド・送受信タイミングをまとめる。uroa内の`esp32/`と`esp32-ble-lab/`は削除対象で、この文書更新では削除しない。旧倒立アプリは別リポジトリーへ未移行で運用対象外。WebのBalance受信互換処理・サンプル・模擬テストは残す。
+ESP32の現行ソースと検証記録は別リポジトリーの`D:\usr\prj\esp32`へ統一する。[ESP32連携ガイド](diagram/esp32-integration.md)に仕様・配線・基板別ビルド・送受信タイミングをまとめる。uroa内の`esp32/`と`esp32-ble-lab/`は削除対象で、この文書更新では削除しない。旧倒立アプリは別リポジトリーへ未移行で運用対象外。WebのBalance受信互換処理・サンプル・模擬テストは残す。
 
 以下の日付付きの旧ESP32ビルド・Upload手順・検証結果は、当時の配置に対する履歴。旧パスのコマンドは削除後の実行手順ではなく、古い成功結果を現行diagram-controlの確認結果へ読み替えない。旧ファイルはuroaの削除前のGit履歴で参照する。現行の手順と確認範囲は[アプリREADME](../../esp32/app/diagram-control/README.md)と[ESP32側の検証記録](../../esp32/docs/build-and-test.md)を参照する。
 
@@ -99,7 +99,7 @@ PlatformIOで`esp32dev`・`xiao_esp32s3`がともにビルド成功。差分の�
 
 ## 接続済みSSIDの履歴選択（2026-10-19）
 
-PCからのWi-Fi接続成功というユーザー報告とSSID再入力の手間を減らす依頼を受け、Wi-Fi制御接続まで成功したSSID名をlocalStorageの`uroa-wifi-ssids-v1`へ新しい順に最大20件保存する処理を追加した。既存のSSID一覧に「以前接続したSSID」を表示し、検索後も履歴を維持する。接続失敗・取消では履歴を追加せず、パスワード・接続キー・基板ID・IPは履歴へ含めない。既存データからの自動移行はなく、変更後の接続成功から履歴を作る。操作は[接続画面ガイド](diagram-esp32-connection-ui.md)を参照する。
+PCからのWi-Fi接続成功というユーザー報告とSSID再入力の手間を減らす依頼を受け、Wi-Fi制御接続まで成功したSSID名をlocalStorageの`uroa-wifi-ssids-v1`へ新しい順に最大20件保存する処理を追加した。既存のSSID一覧に「以前接続したSSID」を表示し、検索後も履歴を維持する。接続失敗・取消では履歴を追加せず、パスワード・接続キー・基板ID・IPは履歴へ含めない。既存データからの自動移行はなく、変更後の接続成功から履歴を作る。操作は[接続画面ガイド](diagram/diagram-esp32-connection-ui.md)を参照する。
 
 `npm.cmd run build`（TypeScript参照ビルド、201モジュール、92項目コピー、Vite 41.69秒）と`npm.cmd run check:dist`が成功。既存gameの動的／静的import併用の警告2件は継続。差分の空白を確認した。テストはユーザー指定により追加・実行していない。履歴保存・選択・検索との併用・Chrome自動入力・実通信の動作確認はユーザーが行う。Web側だけの変更で、ファームウェアの変更・ビルド・Uploadは行っていない。
 
@@ -115,13 +115,13 @@ PCからのWi-Fi接続成功というユーザー報告とSSID再入力の手間
 
 ## PCのBLE接続失敗の診断（2026-10-19）
 
-タブレットからはBLE・Wi-Fi接続とシリアル表示に成功し、PCからは「接続失敗」となりESP32の接続ログも出ないとのユーザー報告を受けた。原因は未特定。BLE初期化の例外と15秒タイムアウトに対して、処理段階・エラー名・全文をConsoleへ出す診断を追加した。機器選択キャンセル・全体取消では診断エラーを出さず、資格情報はログへ含めない。操作は[接続画面ガイド](diagram-esp32-connection-ui.md)を参照する。
+タブレットからはBLE・Wi-Fi接続とシリアル表示に成功し、PCからは「接続失敗」となりESP32の接続ログも出ないとのユーザー報告を受けた。原因は未特定。BLE初期化の例外と15秒タイムアウトに対して、処理段階・エラー名・全文をConsoleへ出す診断を追加した。機器選択キャンセル・全体取消では診断エラーを出さず、資格情報はログへ含めない。操作は[接続画面ガイド](diagram/diagram-esp32-connection-ui.md)を参照する。
 
 `npm.cmd run build`（TypeScript参照ビルド、201モジュール、92項目コピー、Vite 31.25秒）と`npm.cmd run check:dist`が成功。既存gameの動的／静的import併用の警告2件は継続。差分の空白を確認した。テストはユーザー指定により追加・実行せず、PC実機での失敗段階・Console表示・原因解消は未確認。今回はWeb側の診断だけを追加し、ESP32ファームウェアの変更・再ビルド・Uploadは行っていない。
 
 ## ESP32の教材用固定接続キー（2026-10-17）
 
-Wi-Fi接続キーをブラウザーとファームウェア共通の教材用固定値に変更し、入力・識別名・表示切替・接続キーのChrome保存要求を削除した。ルーターのSSID・パスワード入力、Wi-FiパスワードのChrome保存要求、BLEペアリングは継続する。操作と更新方法は[Wi-Fiガイド](esp32-ble-lab-wifi.md)を参照する。
+Wi-Fi接続キーをブラウザーとファームウェア共通の教材用固定値に変更し、入力・識別名・表示切替・接続キーのChrome保存要求を削除した。ルーターのSSID・パスワード入力、Wi-FiパスワードのChrome保存要求、BLEペアリングは継続する。操作と更新方法は[Wi-Fiガイド](diagram/esp32-ble-lab-wifi.md)を参照する。
 
 - `npm.cmd run build`成功。TypeScript参照ビルドとVite公開ビルド（201モジュール、92項目コピー）を確認した。既存gameの動的／静的import併用の警告2件は残る。
 - `npm.cmd run check:dist`成功。5アプリの入口・JS/CSS参照・92件のWebGPU資産を静的確認した。
@@ -133,7 +133,7 @@ Wi-Fi接続キーをブラウザーとファームウェア共通の教材用固
 
 ## Gemini画像説明（2026-10-15）
 
-ImageCaptionBlockを追加し、CameraBlockの画像をGeminiへ送って短い日本語の説明文をTextPortへ出力する処理を実装した。手動ボタンとStartに対応し、Start時は説明の取得完了後にTTSへ進める。操作・通信・保存・取消は[画像説明ガイド](diagram-image-caption.md)。
+ImageCaptionBlockを追加し、CameraBlockの画像をGeminiへ送って短い日本語の説明文をTextPortへ出力する処理を実装した。手動ボタンとStartに対応し、Start時は説明の取得完了後にTTSへ進める。操作・通信・保存・取消は[画像説明ガイド](diagram/diagram-image-caption.md)。
 
 - `npm.cmd run verify`成功。TypeScript参照ビルド、Vite公開ビルド（201モジュール変換、92項目コピー、23.08秒）、成果物の静的確認を完了。既存gameの動的／静的import併用の警告2件は残る。
 - CameraBlock → ImageCaptionBlock → TTSBlockの`gemini-image-caption.json`を追加し、画像説明のサンプル・アイコンを`check:dist`の必須資産へ追加。25アイコンと型名、サンプルのポートID、操作ガイドのローカルリンクを静的確認した。
@@ -143,7 +143,7 @@ ImageCaptionBlockを追加し、CameraBlockの画像をGeminiへ送って短い�
 
 ## Geminiカメラ物体検出（2026-10-15）
 
-ObjectDetectionBlockを追加し、端末／XIAOのCameraBlock画像を1枚固定してGeminiへ送信する処理を実装した。日本語ラベル・矩形表示、ラベル・個数・先頭物体Structの出力、キー入力・接続確認・切断、保存・コピー・取消・遅延応答の抑止を含む。操作・データ形式・通信は[Gemini物体検出ガイド](diagram-gemini-object-detection.md)。
+ObjectDetectionBlockを追加し、端末／XIAOのCameraBlock画像を1枚固定してGeminiへ送信する処理を実装した。日本語ラベル・矩形表示、ラベル・個数・先頭物体Structの出力、キー入力・接続確認・切断、保存・コピー・取消・遅延応答の抑止を含む。操作・データ形式・通信は[Gemini物体検出ガイド](diagram/diagram-gemini-object-detection.md)。
 
 - `npm.cmd run verify`成功。TypeScript参照ビルド、Vite公開ビルド（200モジュール変換、92項目コピー、41.19秒）、成果物の静的確認を完了。既存gameの動的／静的import併用の警告2件は残る。
 - 新しいサンプルJSONとアイコンを`check:dist`の必須資産へ追加した。アイコンを再生成し、24種類へ更新した。
@@ -164,7 +164,7 @@ AI（`ai/`）、BLE／Wi-Fi（`ble-wifi/`）、サーボ／IMU（`hardware/`）�
 
 ## CameraBlockの端末カメラ選択（2026-10-15）
 
-「端末のカメラ／XIAO」の選択と端末映像の開始・停止、設定のみの保存・復元を追加した。実装・操作は[diagram実装ガイド](diagram-implementation.md)を参照する。取得・描画の停止、許可待ちの遅延完了時のTrack解放、旧JSONのXIAO既定値、接続したCameraBlockの画像を使うFaceDetectionBlockをソース上で確認した。
+「端末のカメラ／XIAO」の選択と端末映像の開始・停止、設定のみの保存・復元を追加した。実装・操作は[diagram実装ガイド](diagram/diagram-implementation.md)を参照する。取得・描画の停止、許可待ちの遅延完了時のTrack解放、旧JSONのXIAO既定値、接続したCameraBlockの画像を使うFaceDetectionBlockをソース上で確認した。
 
 - 最終ソースで`npm.cmd run build`成功。TypeScript参照ビルドとVite公開ビルドを完了し、197モジュール変換、92項目コピー、Viteは16.40秒。既存gameの動的／静的import併用の警告2件は残る。
 - `npm.cmd run check:dist`成功。ルート・5アプリの入口、ローカルJS／CSS参照、92件のWebGPU資産を静的確認した。
@@ -174,7 +174,7 @@ AI（`ai/`）、BLE／Wi-Fi（`ble-wifi/`）、サーボ／IMU（`hardware/`）�
 
 ## ESP32 BLEファームウェア（2026-10-14）
 
-`esp32-ble-lab/firmware/`へrobotの現行ソースを取り込んだ。PlatformIOで独立してビルドする。npmの`build`・`verify`はESP32向けのビルドを含まない。設定・配線・書き込み・diagram操作は `esp32-ble-lab/README.md`、実装解説は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
+`esp32-ble-lab/firmware/`へrobotの現行ソースを取り込んだ。PlatformIOで独立してビルドする。npmの`build`・`verify`はESP32向けのビルドを含まない。設定・配線・書き込み・diagram操作は `esp32-ble-lab/README.md`、実装解説は [esp32-ble-lab-firmware.md](diagram/esp32-ble-lab-firmware.md) を参照する。
 
 以下の取り込み・XIAO環境追加時の結果はWi-Fi機能追加前の記録。当時のWi-Fi機能追加後の結果は後述の「diagram／ESP32のWi-Fi機能追加」を参照する。現行diagram-controlの記録は別リポジトリーを参照する。
 
@@ -205,7 +205,7 @@ diagram/ts/ble-wifi/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry
 
 ## diagram／ESP32のWi-Fi機能追加（2026-10-14）
 
-BLEによるSSID検索・設定、NVS保存、mDNS、Wi-Fiでのサーボ／IMU制御、XIAOのJPEG取得とCameraBlock表示を追加した。DevKit V1とXIAOは通信・制御を共通化し、カメラだけをXIAO向けに条件コンパイルする。初回設定・Chrome保存・次回接続・通信制約は [Wi-Fi接続ガイド](esp32-ble-lab-wifi.md) を参照する。
+BLEによるSSID検索・設定、NVS保存、mDNS、Wi-Fiでのサーボ／IMU制御、XIAOのJPEG取得とCameraBlock表示を追加した。DevKit V1とXIAOは通信・制御を共通化し、カメラだけをXIAO向けに条件コンパイルする。初回設定・Chrome保存・次回接続・通信制約は [Wi-Fi接続ガイド](diagram/esp32-ble-lab-wifi.md) を参照する。
 
 ```powershell
 npm.cmd run build
@@ -225,7 +225,7 @@ npm.cmd run build
 
 ユーザーから、BLE接続ログは表示されるがペアリングコードが表示されないと報告された。インストール済みNimBLE-Arduino 2.3.6の`NimBLEServer.cpp`を確認し、`setSecurityPasskey()`で既定値以外のコードを設定すると`onPassKeyDisplay()`を呼ばないことを確認した。表示用のコールバックを削除し、設定するコードをBLE開始時と`onConnect()`でSerialへ直接表示するよう修正した。コードは引き続き起動ごとに生成し、Wi-Fiパスワード・接続キーは出力しない。
 
-PlatformIOの`esp32dev`と`xiao_esp32s3`のビルドが正常終了（36.75秒／32.30秒）。Web側は変更していない。Upload・テスト・修正後の実機表示確認は行っていない。再書き込み後の操作は [Wi-Fi接続ガイド](esp32-ble-lab-wifi.md) を参照する。
+PlatformIOの`esp32dev`と`xiao_esp32s3`のビルドが正常終了（36.75秒／32.30秒）。Web側は変更していない。Upload・テスト・修正後の実機表示確認は行っていない。再書き込み後の操作は [Wi-Fi接続ガイド](diagram/esp32-ble-lab-wifi.md) を参照する。
 
 ### Wi-FiカメラのCORS応答修正（2026-10-14）
 

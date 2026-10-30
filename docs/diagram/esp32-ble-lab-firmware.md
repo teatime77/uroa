@@ -1,6 +1,6 @@
 # 旧ESP32 BLE Labの構成とmain.cpp解説（履歴）
 
-2026-10-30更新: **この文書はuroa内の旧ファームウェアの履歴資料で、現行仕様書ではない。** 旧`esp32/`と`esp32-ble-lab/`は廃止対象。現行のESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理し、[diagram-control README](../../esp32/app/diagram-control/README.md)、[通信仕様](../../esp32/app/diagram-control/docs/protocol.md)、[ESP32連携ガイド](esp32-integration.md)を参照する。
+2026-10-30更新: **この文書はuroa内の旧ファームウェアの履歴資料で、現行仕様書ではない。** 旧`esp32/`と`esp32-ble-lab/`は廃止対象。現行のESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理し、[diagram-control README](../../../esp32/app/diagram-control/README.md)、[通信仕様](../../../esp32/app/diagram-control/docs/protocol.md)、[ESP32連携ガイド](esp32-integration.md)を参照する。
 
 以下の「現在」「今回」、関数名・設定値・ビルド／書き込み手順は各節の記録時点を指す。旧パスは削除後に存在するリンクとして扱わず、uroaのGit履歴で当時のファイルを参照する。この解説や過去の確認結果を、現行diagram-controlのAPI・動作確認結果へ読み替えない。
 
@@ -20,11 +20,11 @@
 
 各クラスは教材のconfig.hを参照せず、設定・TwoWire・コールバックを受け取る。通信のコールバックではI²Cを操作せず、制御ループで機器を更新する。出力異常の自発Statusと指令へのACK、STOPでIMU通知を維持する扱い、再接続時に自動ARMしない扱いを維持する。通信形式・UUID・NVS形式は変更しない。
 
-カメラの基板固有処理は従来のcamera.cppに残す。通信インスタンスは基板ごとに1つをファームウェアの稼働中ずっと保持する。Wi-Fiのタスク・サーバーを破棄するAPIは今回追加しない。利用方法は `esp32/README.md`、ビルドと未確認範囲は [build-and-test.md](build-and-test.md) を参照する。
+カメラの基板固有処理は従来のcamera.cppに残す。通信インスタンスは基板ごとに1つをファームウェアの稼働中ずっと保持する。Wi-Fiのタスク・サーバーを破棄するAPIは今回追加しない。利用方法は `esp32/README.md`、ビルドと未確認範囲は [build-and-test.md](../build-and-test.md) を参照する。
 
 ## 旧構成の記録
 
-作成日: 2026-10-13、配置更新日: 2026-10-14（日本時間）。対象は `esp32-ble-lab/firmware/src/main.cpp`。2026-10-14にrobotの作業ツリーを、`main.cpp`の未コミット変更も含めてuroaへ取り込んだ。ソースの内容は変更していない。2026-10-13の解説作成ではソース・設定・関連仕様を照合し、ビルドや実機動作の再確認は行っていない。取り込み後のビルド結果・確認範囲は [build-and-test.md](build-and-test.md) に記録する。
+作成日: 2026-10-13、配置更新日: 2026-10-14（日本時間）。対象は `esp32-ble-lab/firmware/src/main.cpp`。2026-10-14にrobotの作業ツリーを、`main.cpp`の未コミット変更も含めてuroaへ取り込んだ。ソースの内容は変更していない。2026-10-13の解説作成ではソース・設定・関連仕様を照合し、ビルドや実機動作の再確認は行っていない。取り込み後のビルド結果・確認範囲は [build-and-test.md](../build-and-test.md) に記録する。
 
 ## 2026-10-14: Wi-Fi機能追加後の読み方
 
@@ -55,8 +55,8 @@ flowchart LR
 | `esp32-ble-lab/firmware/include/config.h` | ピン、角度範囲、パルス幅、BLE UUID、タイムアウト |
 | `esp32-ble-lab/firmware/platformio.ini` | `esp32dev`／`xiao_esp32s3`、Arduino、依存ライブラリー、BLE接続数の設定 |
 | `esp32-ble-lab/docs/protocol.md` | BLEパケットの仕様 |
-| [diagram/ts/ble-wifi/ble.ts](../diagram/ts/ble-wifi/ble.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
-| [web/src/protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts)、[web/src/ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts) | 取り込み元の専用Web画面。解説作成時の照合先。今回の移行対象外 |
+| [diagram/ts/ble-wifi/ble.ts](../../diagram/ts/ble-wifi/ble.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
+| [web/src/protocol.ts](../../../robot/esp32-ble-lab/web/src/protocol.ts)、[web/src/ble.ts](../../../robot/esp32-ble-lab/web/src/ble.ts) | 取り込み元の専用Web画面。解説作成時の照合先。今回の移行対象外 |
 | `Arduino.h` | `setup()`、`loop()`、`millis()`、シリアル出力など |
 | `Wire.h` | I²C通信。PCA9685とIMUが同じバスを使う |
 | `NimBLEDevice.h` | BLEサーバー、接続イベント、書き込み・通知 |
@@ -414,4 +414,4 @@ MOVEの10バイトは次のようになる。
 
 この文書で確認したのは、現在のソースにある処理、設定値、専用Web画面のプロトコルとの対応である。実サーボの到達角度、停止までの実時間、BLE通知の到達、実端末の接続は今回検証していない。
 
-配線・電源は `esp32-ble-lab/docs/wiring.md`、ビルド・書き込み・uroaでの操作手順は `esp32-ble-lab/README.md`、取り込み元の過去の検証記録は `esp32-ble-lab/docs/validation.md`を参照する。uroaとの全体的な関係は [architecture.md](architecture.md)を参照する。
+配線・電源は `esp32-ble-lab/docs/wiring.md`、ビルド・書き込み・uroaでの操作手順は `esp32-ble-lab/README.md`、取り込み元の過去の検証記録は `esp32-ble-lab/docs/validation.md`を参照する。uroaとの全体的な関係は [architecture.md](../architecture.md)を参照する。
