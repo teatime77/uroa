@@ -1,5 +1,11 @@
 # ESP32のWi-Fi設定・制御・カメラ
 
+2026-10-30更新: 現行ファームウェアは別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)。uroa内の旧`esp32/`と`esp32-ble-lab/`は廃止対象。ファイル名は既存リンクのため維持し、以下の操作・構成の参照先は現行リポジトリーへ更新する。仕様・配線・ビルド・送受信タイミングの入口は[ESP32連携ガイド](esp32-integration.md)を参照する。
+
+## 実装時の経緯と確認範囲
+
+以下の日付付きの実装・ユーザー報告は当時の構成の記録であり、現行diagram-controlを今回再検証した結果ではない。
+
 実装日: 2026-10-14。今回はユーザー指定によりソース実装とビルドまで。テスト・Upload・ブラウザー／実機確認は行っていない。以下は実装した操作手順で、実機での成功記録ではない。
 
 2026-10-17更新: 教材用としてWi-Fi接続キーを全基板共通の固定値に変更した。入力欄・識別名・表示切替・Chromeへの接続キー保存要求を削除し、初回・次回とも入力不要とした。diagramとESP32の両方を更新し、ファームウェアを再Uploadする。テストはユーザーが行う。
@@ -16,15 +22,15 @@
 
 ## ソースと構成
 
-DevKit V1とXIAOでサーボ・IMU・BLE設定・Wi-Fi通信を共通化する。カメラはXIAOだけ。
+現行diagram-controlはDevKit V1・XIAO ESP32-S3 Sense・SuperMiniでサーボ・IMU・BLE設定・Wi-Fi通信を共通化する。カメラはSenseだけ。
 
 | ソース | 役割 |
 |---|---|
-| [main.cpp](../esp32-ble-lab/firmware/src/main.cpp) | 共通指令キュー、機器クラス呼び出し、停止・接続世代・期限監視 |
-| [network.cpp](../esp32-ble-lab/firmware/src/network.cpp) | WifiNetworkの教材設定・カメラコールバックを接続 |
-| [uroa_wifi.cpp](../esp32/lib/wifi/src/uroa_wifi.cpp) | WifiNetwork: Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
-| [uroa_ble.cpp](../esp32/lib/ble/src/uroa_ble.cpp) | BleTransport: BLEサービス・通知と、認証済みWi-Fi設定JSONの分割転送 |
-| [camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp) | XIAOのPSRAMを使う320×240 JPEG。DevKitはカメラなし |
+| [main.cpp](../../esp32/app/diagram-control/src/main.cpp) | 共通指令キュー、機器クラス呼び出し、停止・接続世代・期限監視 |
+| [network.cpp](../../esp32/app/diagram-control/src/network.cpp) | WifiNetworkの教材設定・カメラコールバックを接続 |
+| [uroa_wifi.cpp](../../esp32/lib/wifi/src/uroa_wifi.cpp) | WifiNetwork: Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
+| [uroa_ble.cpp](../../esp32/lib/ble/src/uroa_ble.cpp) | BleTransport: BLEサービス・通知と、認証済みWi-Fi設定JSONの分割転送 |
+| [camera.cpp](../../esp32/app/diagram-control/src/camera.cpp) | SenseのPSRAMを使う320×240 JPEG。DevKitとSuperMiniはカメラなし |
 | [ble.ts](../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
 | [robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、SSID名だけの接続履歴保存 |
 | [robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
@@ -34,13 +40,13 @@ DevKit V1とXIAOでサーボ・IMU・BLE設定・Wi-Fi通信を共通化する�
 
 ## 初回の操作
 
-1. PC／AndroidとXIAOが同じLANで通信できるようにする。XIAOには2.4GHzのSSIDを指定する。PC／Androidは同じルーターの5GHzでも、端末間通信が許可されていればよい。XIAOへ付属アンテナを取り付ける。新しいファームウェアを対象ボード環境でUploadする。XIAOは`xiao_esp32s3`（COM4）、DevKitは`esp32dev`。Serial Monitorは診断でログが必要な場合に115200bpsで開く。
+1. PC／AndroidとESP32が同じLANで通信できるようにする。ESP32には2.4GHzのSSIDを指定する。PC／Androidは同じルーターの5GHzでも、端末間通信が許可されていればよい。XIAOへ付属アンテナを取り付ける。別リポジトリーのdiagram-controlを対象ボード環境でUploadする。XIAOは`xiao_esp32s3`、DevKitは`esp32dev`、SuperMiniは`supermini_esp32s3`とし、実際のCOMポートを指定する。Serial Monitorは診断でログが必要な場合に115200bpsで開く。
 2. diagramにBLEConnectionBlockを配置し、「接続」で機器を選ぶ。サーボを有効化せず「Wi-Fi設定／接続」を押す。
 3. OSがBLEペアリングを要求したら、固定コード`123456`を入力する。Serial Monitorでの確認は不要。BLE開始時と`BLE connected`の直後にも`BLE setup pairing code: 123456`を表示し、再起動後も同じ値を使う。Wi-Fi設定Characteristicは暗号化・MITM認証済み接続でのみアクセスできる。この教材用コードは全基板共通で、基板ごとの秘密情報ではない。Wi-Fiパスワード・接続キーはシリアルへ出力しない。
 4. 「以前接続したSSID」から選ぶか、「Wi-Fiを検索」でSSIDを選択するか手入力し、パスワードを入力する。オープンネットワークは「パスワードなし」を明示する。
 5. 「Wi-Fiへ接続」を押す。機器の選択は不要で、BLE接続中の基板へ設定を送る。Wi-Fi接続とサーバー開始の成功後、SSID・パスワードをNVSへ保存する。失敗時は以前の保存値を上書きしない。
 6. 基板固有ID、mDNS名、現在のIP、ポートをBLEで取得し、教材用固定キーに対応したファームウェアか確認する。接続キーの入力は不要。diagramはWi-Fi側の認証・INFO ACKを確認し、ESP32はBLE接続・広告を停止する。
-7. ServoMotorBlockで改めて「90°で有効化」を押す。切り替え前の有効状態は引き継がない。IMUBlockがあれば共有10Hz通知を再開する。
+7. ServoMotorBlockでモードに応じて改めて「90°で有効化」または「0%で有効化」を押す。切り替え前の有効状態は引き継がない。IMUBlockがあれば共有10Hz通知を再開する。
 8. CameraBlockを配置すると、既定の取得元「XIAO」でJPEG取得・表示を開始する。実装時の追加待ち1秒は、後続のユーザー変更により現在0ms。実際の更新間隔は撮影・通信・画像読み込みなどの時間に依存する。XIAOを選択した複数CameraBlockは1台の共通画像を表示する。「端末のカメラ」を選び「開始」を押すとPC／Android自身のカメラへ切り替えられる。端末カメラはESP32への接続不要で、HTTPS／localhostとブラウザーのカメラ許可が必要。選択設定だけを保存し、読込では端末カメラを起動しない。操作・停止条件は[diagram実装ガイド](diagram-implementation.md)を参照する。2026-10-15の追加はビルドまでの確認で、ブラウザー・Android・実機確認はユーザーが行う。顔検出処理は追加していない。
 
 Wi-Fi設定中はサーボ停止・STREAM=0を送信し、BLEハートビートを一時停止する。設定を閉じてBLEに戻る場合はハートビートとIMU購読を再開する。サーボは自動有効化しない。
@@ -80,13 +86,13 @@ CORS応答では、`Access-Control-Allow-Origin`の値をHTTP送信完了まで�
 
 diagramは1.5秒周期のPING、個別ACKを最大2.5秒待つ。ESP32は5秒の指令期限超過・接続世代変更・切断・キュー飽和でサーボ／IMUを停止する。全体Stopはサーボ停止でIMU通知を維持する。古いARM/MOVEを新しい接続へ適用せず、再接続で手動ARMを要求する。Clear・図読込・最後の接続所有ブロック削除・タブ非表示・pagehide・破棄で設定画面・待機・接続・カメラ取得を解除する。カメラ未検出・画像取得失敗は画像の表示へ通知し、制御接続とは別に扱う。
 
-## ビルド・今回の確認範囲
+## ビルドと検証記録
 
-依存にArduinoJson 6.21.5とWebSockets 2.7.1を追加し、既存のEspressif32 6.10.0・NimBLE 2.3.6・PCA9685ライブラリーを維持する。
+現行の依存は別リポジトリーの各`lib/*/library.json`と`app/diagram-control/platformio.ini`を参照する。以下はuroaルートからESP32の3環境をビルドする例。通常の作業では対象基板の`-e`だけを指定する。npmのビルドにESP32のビルドは含まれない。
 
 ```powershell
 npm.cmd run build
-& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev -e xiao_esp32s3
+& "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir ../esp32/app/diagram-control -e esp32dev -e xiao_esp32s3 -e supermini_esp32s3
 ```
 
-ビルド結果は [build-and-test.md](build-and-test.md) に記録する。テストファイルは変更していない。OSペアリング・Chrome保存／自動入力・Wi-Fi・mDNS・切り替え・サーボ停止・IMU・カメラ・Android・公開HTTPSはユーザーによる確認範囲。
+ブラウザー側の結果は[uroaのbuild-and-test.md](build-and-test.md)、ファームウェア側の結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記録する。2026-10-30の参照先整理では文書のみを変更し、ビルド・Upload・通信・実機確認を再実行していない。OSペアリング・Chrome保存／自動入力・Wi-Fi・mDNS・切り替え・サーボ停止・IMU・カメラ・Android・公開HTTPSの過去の報告は実施時点を区別する。

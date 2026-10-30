@@ -1,9 +1,0 @@
-{
-  "name": "UroaBLE",
-  "version": "0.1.0",
-  "description": "BLE command transport and authenticated provisioning channel",
-  "frameworks": "arduino",
-  "platforms": "espressif32",
-  "license": "MIT",
-  "dependencies": { "h2zero/NimBLE-Arduino": "2.3.6" }
-}

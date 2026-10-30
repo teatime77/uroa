@@ -2,6 +2,8 @@
 
 調査日: 2026-10-09（日本時間）。主要ソース、設定、既存文書を読んだ静的な調査結果。全行の監査や実行検証ではなく、未コミット変更を含むローカル状態を対象とする。2026-10-09の調査では、アプリ起動、ビルド、テスト、外部API呼び出し、Firebase操作、実機操作は行っていない。後日の実行確認は [current-state.md](current-state.md) に条件と結果を記録する。
 
+2026-10-30更新: ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内の旧2フォルダーは廃止対象。作業先・仕様・送受信タイミングは[ESP32連携ガイド](esp32-integration.md)を参照する。
+
 ## 目的と全体構成
 
 uroaは数学・科学教材を作成／再生するWebアプリ群。TypeScriptを中心に、KaTeXによる数式表示、Canvasによる図形・ゲーム描画、ブラウザー音声合成、Firebaseによる保存、WebGPUによる計算・描画を組み合わせる。
@@ -66,9 +68,9 @@ flowchart TD
 | `lesson` | 独自教材テキストから見出し・本文・定義・定理・数式をHTMLへ変換 | [lesson.ts](../lesson/ts/lesson.ts) |
 | `media` | マイク録音、録音の再生・ダウンロード | [media.ts](../media/ts/media.ts) |
 | `plot` | README・設定ファイルはあるが、調査時点では実装ソースがない | [README.md](../plot/README.md)、[package.json](../plot/package.json) |
-| `esp32-ble-lab/firmware` | ESP32 DevKit V1／XIAO ESP32S3 Sense上のBLEサーバー、PCA9685サーボ制御、MPU-6050計測。PlatformIOで独立してビルド | [main.cpp](../esp32-ble-lab/firmware/src/main.cpp)、[config.h](../esp32-ble-lab/firmware/include/config.h)、[platformio.ini](../esp32-ble-lab/firmware/platformio.ini) |
-| `esp32/lib` | 教材共有のC++ソース。BLE・Wi-Fi・通信形式・PCA9685・MPU-6050のクラス。2026-10-26から既存Labで利用 | [ESP32教材ガイド](../esp32/README.md)、[教材追加手順](../esp32/app/README.md) |
-| `esp32/lib/plot`・`esp32/app/inverted-pendulum` | 6系列のBLEプロット通知と、Supermini／FS90R×2の100Hz倒立制御。起動校正で目標姿勢を固定し、自律制御・BLE観測・停止を分離。実車の倒立成立は未確認 | [PlotTelemetry](../esp32/lib/plot/README.md)、[倒立教材](../esp32/app/inverted-pendulum/README.md) |
+| 別リポジトリー`esp32/app/diagram-control` | DevKit V1／XIAO ESP32-S3 Sense／SuperMiniのBLE・Wi-Fi、角度／速度サーボ、IMU、Senseカメラ。PlatformIOで独立してビルド | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[platformio.ini](../../esp32/app/diagram-control/platformio.ini) |
+| 別リポジトリー`esp32/lib` | BLE・Wi-Fi・Protocol・Servo・IMU・Plotの共有C++ソース。uroaから分離して管理 | [ESP32教材ガイド](../../esp32/README.md)、[設計](../../esp32/docs/architecture.md) |
+| 旧倒立アプリ（運用対象外） | uroa内の旧ESP32フォルダーとともに廃止対象。別リポジトリーへ未移行。ブラウザーのBalance受信互換処理は残るが、diagram-controlは送信しない | [廃止範囲と互換機能](esp32-integration.md#旧フォルダーの廃止と残る互換機能) |
 
 ### 数学・図形処理の主要な境界
 
@@ -133,7 +135,7 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
 - 現在は `diy_sbc = false` によりキュー初期化・旧センサーの定期取得が無効。
 
-2026-10-12に [ble.ts](../diagram/ts/ble-wifi/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、robot/esp32-ble-labと同じサービス・3つのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
+2026-10-12に [ble.ts](../diagram/ts/ble-wifi/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、現行diagram-controlと共通のサービス・Command／Status／Telemetryのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
 
 同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
 
@@ -141,7 +143,7 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 
 「このCHを停止」はDISABLE、「全サーボ停止」とdiagramの手続きStop・アプリ停止はSTOPを送る。STOPはIMU通知とBLE接続を保持する。チャンネル変更・ブロック削除では以前のCHをDISABLEする。停止・切断・CH変更・削除後に待機中のARM/MOVEを送らないよう、接続世代、CHごとの操作世代、ブロックの操作世代を確認する。連続する角度変更は未送信の古いMOVEを取り消す。停止ACKを確認できなければ切断する。全OFFのStatusやPCA異常で有効状態を解除し、サーボの自動再有効化は行わない。
 
-有効状態は共有BLE接続のCH単位で保持するため、同じCHを指定した複数ブロックは同じ出力を操作する。CH・移動時間はJSONに保存し、接続・有効状態は保存しない。旧JSONのchannelと数値入力ポートは維持し、duration省略時は1000msとする。角度は内部指令値であり、MOVEのACKは受付結果で、動作完了や実角度の確認ではない。詳しいファームウェア処理は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
+有効状態は共有BLE接続のCH単位で保持するため、同じCHを指定した複数ブロックは同じ出力を操作する。CH・移動時間はJSONに保存し、接続・有効状態は保存しない。旧JSONのchannelと数値入力ポートは維持し、duration省略時は1000msとする。角度は内部指令値であり、MOVEのACKは受付結果で、動作完了や実角度の確認ではない。現行ファームウェアの処理と送受信タイミングは[ESP32連携ガイド](esp32-integration.md)を参照する。
 
 InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。ServoMotorBlockは配線接続時にその値を入力ポートへ取り込み、解除時は未入力に戻す。値の復元・配線だけではMOVEを送らず、有効化後の入力変更または移動ボタンで送信する。実際の送信は`BLE servo send`、ACK受信は`BLE servo ACK`としてコンソールにも表示する。送信・受信ログにはARM/MOVE/STOP/DISABLE、指令番号、CH、value、durationを含む。MOVEのvalueは角度の100倍であり、ACKは受付確認を示す。
 
@@ -151,7 +153,7 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 BLEの20バイトTelemetry version=1をlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として先頭ポートへ1回出力する（現行console.logはコメントアウト）。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度は出力しない。
 
-2026-10-27に[PlotTelemetry](../esp32/lib/plot/README.md)の20byte通知version=2/schema=1を追加した。[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts)が角度・目標・角速度・誤差・左右速度指令を`Balance`構造体へ変換し、IMUBlockの2番目のbalanceポートへ出す。姿勢推定は倒立教材のESP32側で行い、速度は実測値ではなく%指令。IMUとbalanceの購読で10Hz STREAMを共有し、両ポートの購読・値は削除・切断で解放する。既存JSONの先頭IMUポートは維持し、従来Labのbalance出力は未取得のまま。[inverted-pendulum.json](../public/diagram/data/inverted-pendulum.json)はIMUとbalanceを2個のPlotBlockへ接続する。
+2026-10-27に[PlotTelemetry](../../esp32/lib/plot/README.md)の20byte通知version=2/schema=1に対応した。[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts)が角度・目標・角速度・誤差・左右速度指令を`Balance`構造体へ変換し、IMUBlockの2番目のbalanceポートへ出す。速度は実測値ではなく%指令。IMUとbalanceの購読で10Hz STREAMを共有し、両ポートの購読・値は削除・切断で解放する。既存JSONの先頭IMUポートは維持する。2026-10-30の旧倒立アプリ廃止方針後も受信互換処理と[inverted-pendulum.json](../public/diagram/data/inverted-pendulum.json)は残すが、現行diagram-controlはBalance通知を送らず、balance出力は未取得となる。
 
 Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単一の接続元をたどる。型が不明、接続元が複数、循環参照ならundefinedを返す。参照結果をdataTypeへ保存しないので、解除後に古い型を残さず、JSONには明示型だけを保存する。値の検証・描画・接続検査も有効な型を使う。subscribeConnections(listener)は配線更新後、両端へ{port, peer, connected}を同期通知し、返された関数で購読を解除する。重複接続・未接続の解除は通知しない。disconnectはどちらの端子からでも呼べ、disconnectAllとBlock.clearBlockで全配線を解除する。通知は当該ポートの接続変更に対するもので、ブロックをまたぐ式の型推論・型変更通知は未実装。
 
@@ -302,18 +304,18 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 
 隣接する [robotの設計文書](../../robot/docs/architecture.md) に、AI質問画面、BLEサーボ・IMU操作、DCモーター復旧確認を記録している。
 
-2026-10-14にESP32 BLEファームウェアを [esp32-ble-lab/firmware](../esp32-ble-lab/firmware/) へ通常フォルダーとして取り込んだ。robotの作業ツリーにある`main.cpp`の未コミット変更も含み、ソース・設定は変更していない。BLE仕様・配線・元の検証記録・MITライセンスも同梱した。PlatformIOのビルドはnpm workspaces・TypeScript・Viteから独立しており、`npm run verify`には含めない。今後のuroa側の変更はこの配置で管理する。元のrobot側と履歴は保持し、旧専用Web画面・chat・DCモーター用ファームウェアは今回取り込んでいない。手順と取り込み元は [README](../esp32-ble-lab/README.md)、今回の検証は [build-and-test.md](build-and-test.md) を参照する。
+履歴: 2026-10-14にrobotからuroa内の`esp32-ble-lab/firmware/`へソース・設定・BLE仕様・配線・検証記録・ライセンスを取り込み、2026-10-26に共通処理を`esp32/lib/`へ切り出した。その後、現行開発は別リポジトリーの`D:\usr\prj\esp32`へ分離した。2026-10-30にuroa内の旧2フォルダーの削除方針が決まり、今後の変更・ビルドは別リポジトリーのdiagram-controlとlibで行う。旧構成の説明は[履歴資料](esp32-ble-lab-firmware.md)、当時の検証は[build-and-test.md](build-and-test.md)を参照する。PlatformIOはnpmと独立し、npmのverifyには含まれない。
 
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの旧カメラ・センサー処理 | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートとconsoleへ出力し、汎用PlotBlockへ配線してgyro・accを表示 |
-| uroa/esp32-ble-lab/firmware | 上記diagramとBLE protocol v1で通信するESP32側の処理。ソースはrobotから取り込み済み |
+| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートへ出力し、汎用PlotBlockへ配線してgyro・accを表示（console.logはコメントアウト） |
+| 別リポジトリーesp32/app/diagram-control | diagramとBLE／Wi-Fiで通信する現行ESP32アプリ。uroa内の旧BLE Labは廃止対象 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
 | uroa/diagramのAIChatBlock | 学習者のキーをブロック内で一時保持し、ブラウザーからGoogle Interactions APIへ直接質問。回答全文をTTSBlockへ渡す |
 
-BLE接続・サーボ・IMUは取り込んだファームウェアのGATT仕様を使う。仕様は [protocol.md](../esp32-ble-lab/docs/protocol.md)、配線は [wiring.md](../esp32-ble-lab/docs/wiring.md) を参照する。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
+BLE接続・サーボ・IMUは現行diagram-controlのGATT仕様を使う。仕様は[protocol.md](../../esp32/app/diagram-control/docs/protocol.md)、配線は[wiring.md](../../esp32/app/diagram-control/docs/wiring.md)、構成と周期は[ESP32連携ガイド](esp32-integration.md)を参照する。AIChatBlockは教材向けのGoogle直接通信で、robot/chatのバックエンドとは独立している。AI回答とサーボ操作も独立しており、実装・模擬確認・実機確認はそれぞれ区別する。
 
 2026-10-12にユーザーがデモ仕様を提示した。diagram内でInputTextBlock・チャットブロック・TTSBlockを使うAIチャットと、ServoMotorBlock・IMUBlock・グラフブロックを使う実機操作／計測の2種類を独立して作る。AIによる定型動作の選択・サーボ操作は要件ではない。ESP32、PCA9685、SG90、MPU-6050／GY-521を使い、IMU取得はユーザー確認済み。本番は携帯電話のアクセスポイント経由でインターネットへ接続した本人のAndroidタブレット、予備はWindowsのローカルVite。HTTPS・公開AIバックエンドの配置とサーボ動作はエージェント未確認。
 
@@ -347,4 +349,4 @@ ServoMotorBlockは`mode: "angle" | "speed"`を保存する。旧JSONと不明な
 
 BLEConnectionは有効CHとそのモードを共有し、接続世代・CH操作世代・ブロック操作世代を使って古い指令を取り消す。モード変更ではDISABLEを送り、旧モードの待機指令と遅れたACKによる再有効化を防ぐ。速度用ARM_SPEED=8・SET_SPEED=9を追加し、負の値はi16の0.01%で送る。Status flags bit4は指定CHの速度モード、code=7はモード不一致。STOPでIMU通知を保持する既存の動作も維持する。
 
-速度対応は別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)と[共通サーボライブラリー](../../esp32/lib/servo/README.md)に実装する。既存のuroa内BLE Labと倒立教材のファームウェアは変更せず、旧BLE Labでは従来の角度操作を維持する。新Webから旧ファームウェアへ速度操作を送ると明示エラーとなり、角度操作へフォールバックしない。
+速度対応は別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)と[共通サーボライブラリー](../../esp32/lib/servo/README.md)で管理する。旧BLE Labへの速度指令が明示エラーとなる互換処理は残るが、旧ファームウェアのビルド・書き込みは運用対象外。旧倒立アプリも別リポジトリーへ移行していない。

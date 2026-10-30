@@ -1,6 +1,14 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-27。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-30。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## ESP32文書の参照先整理（2026-10-30）
+
+ESP32の現行ソースと検証記録は別リポジトリーの`D:\usr\prj\esp32`へ統一する。[ESP32連携ガイド](esp32-integration.md)に仕様・配線・基板別ビルド・送受信タイミングをまとめる。uroa内の`esp32/`と`esp32-ble-lab/`は削除対象で、この文書更新では削除しない。旧倒立アプリは別リポジトリーへ未移行で運用対象外。WebのBalance受信互換処理・サンプル・模擬テストは残す。
+
+以下の日付付きの旧ESP32ビルド・Upload手順・検証結果は、当時の配置に対する履歴。旧パスのコマンドは削除後の実行手順ではなく、古い成功結果を現行diagram-controlの確認結果へ読み替えない。旧ファイルはuroaの削除前のGit履歴で参照する。現行の手順と確認範囲は[アプリREADME](../../esp32/app/diagram-control/README.md)と[ESP32側の検証記録](../../esp32/docs/build-and-test.md)を参照する。
+
+今回の変更は文書のみ。削除予定フォルダーを除いた36文書・606件のローカルリンクを確認し、旧フォルダー内を指すリンクとリンク切れはともに0件。追加した連携ガイドへの見出しリンク、記述・差分と`git diff --check`も確認した。npm・PlatformIOのビルド、ブラウザー・Upload・実機確認は実行対象外。
 
 ## BalanceとIMUの連続BLE通知の修正（2026-10-27）
 
@@ -22,7 +30,7 @@
 
 ## FS90R 2輪倒立教材とプロット通知（2026-10-27）
 
-[教材](../esp32/app/inverted-pendulum/README.md)と[PlotTelemetry](../esp32/lib/plot/README.md)、diagramのBalance型・受信パーサー・IMUBlockの第2出力・[サンプル図](../public/diagram/data/inverted-pendulum.json)を追加した。既存Labのファームウェアと共有BLE／IMU／protocolの実装はこの変更で編集していない。
+`esp32/app/inverted-pendulum/README.md`と`esp32/lib/plot/README.md`、diagramのBalance型・受信パーサー・IMUBlockの第2出力・[サンプル図](../public/diagram/data/inverted-pendulum.json)を追加した。既存Labのファームウェアと共有BLE／IMU／protocolの実装はこの変更で編集していない。
 
 - PlatformIOの`supermini_esp32s3`ビルド成功。ESP32-S3の汎用定義に4MB Flash・DIO・USB CDCを指定、PSRAM不使用。RAM 29,876 bytes、アプリFlash 525,085 bytes。PlatformIOの既存キャッシュへの書込制限後、権限付きでビルドを完了した。
 - `npm.cmd run verify`成功。TypeScript、公開ビルド（202モジュール）、5アプリの入口と92件のWebGPU資産、新サンプルの存在を静的確認。既存gameの動的／静的import警告2件は継続。
@@ -62,7 +70,7 @@ node --test --test-name-pattern='Balance telemetry|multiple IMU|IMU absence|IMU 
 
 ## ESP32共有C++ライブラリーへのクラス化（2026-10-26）
 
-`main.cpp`と`network.cpp`からBLE・Wi-Fi・通信形式・PCA9685・MPU-6050を [esp32/lib](../esp32/README.md) の5クラスへ切り出した。既存Labの場所は維持し、PlatformIOの`lib_deps`で共有ソースを参照する。外部依存のバージョンは各`library.json`へ集約した。新教材の作成手順は [app/README.md](../esp32/app/README.md)。
+`main.cpp`と`network.cpp`からBLE・Wi-Fi・通信形式・PCA9685・MPU-6050を `esp32/README.md` の5クラスへ切り出した。既存Labの場所は維持し、PlatformIOの`lib_deps`で共有ソースを参照する。外部依存のバージョンは各`library.json`へ集約した。当時の教材追加手順は`esp32/app/README.md`に記載していた。
 
 ```powershell
 & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev -e xiao_esp32s3
@@ -85,7 +93,7 @@ Wi-Fiの主要25関数は、クラスへの所属・設定参照・コールバ�
 
 ユーザー指定のSDA=D4／GPIO5、SCL=D5／GPIO6を現行ソースで再確認した。`xiao_esp32s3`は既にこのピン配置へ切り替わり、PCA9685・MPU6050の初期化、ARM/MOVE/DISABLE/STOP、IMU読み出しとBLE／Wi-Fi通知はDevKitと同じ処理を使う。指定ピンに対応する制御処理を重複して追加する必要はなかった。
 
-起動ログに使用GPIO・100kHz・`Wire.begin()`の結果を追加し、配線表の先頭を両ボード対応へ更新した。インストール済みArduinoライブラリーの`Wire`はI²C0、ESP32-S3 SDKのカメラSCCB設定は`CONFIG_SCCB_HARDWARE_I2C_PORT1`であることをソース・設定で確認した。カメラのGPIO40/39と外部機器のGPIO5/6は別の設定として扱う。I²C機器の検出結果と操作は[配線表](../esp32-ble-lab/docs/wiring.md)を参照する。
+起動ログに使用GPIO・100kHz・`Wire.begin()`の結果を追加し、配線表の先頭を両ボード対応へ更新した。インストール済みArduinoライブラリーの`Wire`はI²C0、ESP32-S3 SDKのカメラSCCB設定は`CONFIG_SCCB_HARDWARE_I2C_PORT1`であることをソース・設定で確認した。カメラのGPIO40/39と外部機器のGPIO5/6は別の設定として扱う。I²C機器の検出結果と操作は`esp32-ble-lab/docs/wiring.md`を参照する。
 
 PlatformIOで`esp32dev`・`xiao_esp32s3`がともにビルド成功。差分の空白と文書の参照先を確認した。今回はファームウェアと文書の変更のみで、Web側のビルドは実行していない。テスト・Upload・実配線でのサーボ動作・IMU通知・カメラとの同時動作はユーザーが確認する。
 
@@ -166,9 +174,9 @@ AI（`ai/`）、BLE／Wi-Fi（`ble-wifi/`）、サーボ／IMU（`hardware/`）�
 
 ## ESP32 BLEファームウェア（2026-10-14）
 
-[esp32-ble-lab/firmware](../esp32-ble-lab/firmware/)へrobotの現行ソースを取り込んだ。PlatformIOで独立してビルドする。npmの`build`・`verify`はESP32向けのビルドを含まない。設定・配線・書き込み・diagram操作は [README](../esp32-ble-lab/README.md)、実装解説は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
+`esp32-ble-lab/firmware/`へrobotの現行ソースを取り込んだ。PlatformIOで独立してビルドする。npmの`build`・`verify`はESP32向けのビルドを含まない。設定・配線・書き込み・diagram操作は `esp32-ble-lab/README.md`、実装解説は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
 
-以下の取り込み・XIAO環境追加時の結果はWi-Fi機能追加前の記録。現在のソースとビルド結果は後述の「diagram／ESP32のWi-Fi機能追加」を参照する。
+以下の取り込み・XIAO環境追加時の結果はWi-Fi機能追加前の記録。当時のWi-Fi機能追加後の結果は後述の「diagram／ESP32のWi-Fi機能追加」を参照する。現行diagram-controlの記録は別リポジトリーを参照する。
 
 ```powershell
 # uroaルート。PlatformIO CLIがPATHにある場合
@@ -181,11 +189,11 @@ pio run --project-dir esp32-ble-lab/firmware -e esp32dev
 
 WindowsのPlatformIO IDE付属CLIで上記ビルドが成功し、`firmware/.pio/build/esp32dev/firmware.bin`を生成した（83.47秒）。Espressif32 6.10.0、Arduino ESP32 2.0.17、NimBLE-Arduino 2.3.6、Adafruit PWM Servo Driver Library 3.0.2、Adafruit BusIO 1.17.4を使用。RAMは36,108／327,680 bytes（11.0%）、Flashは621,425／1,310,720 bytes（47.4%）。初回は隔離環境でPlatformIO共通キャッシュの`platforms.lock`への書き込みが拒否されたため、ビルドを隔離環境外で実行した。生成物・依存は`.pio/`内に置かれ、Gitの追跡対象外である。
 
-diagram/ts/ble-wifi/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の [validation.md](../esp32-ble-lab/docs/validation.md) は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
+diagram/ts/ble-wifi/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の `esp32-ble-lab/docs/validation.md` は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
 
 ### XIAO ESP32S3 Sense対応時の記録（2026-10-14、Wi-Fi機能追加前）
 
-`platformio.ini`へ`xiao_esp32s3`環境を追加し、ボードIDを`seeed_xiao_esp32s3`、書き込み・モニターポートをユーザー指定のCOM4へ設定した。ライブラリーと接続数の設定は`esp32dev`から継承する。同日のUploadエラー報告を受け、環境未指定時の既定値を`xiao_esp32s3`へ変更した。DevKit V1では`-e esp32dev`を明示する。Espressif32 6.10.0のXIAOボード定義にはUSB CDCの有効化が含まれる。`config.h`は`ARDUINO_XIAO_ESP32S3`でSDA/SCLをGPIO5/6（D4/D5）へ切り替え、DevKit V1のGPIO21/22を維持する。`main.cpp`の制御・通信・停止処理は変更していない。[配線表](../esp32-ble-lab/docs/wiring.md)と[操作手順](../esp32-ble-lab/README.md)を更新した。
+`platformio.ini`へ`xiao_esp32s3`環境を追加し、ボードIDを`seeed_xiao_esp32s3`、書き込み・モニターポートをユーザー指定のCOM4へ設定した。ライブラリーと接続数の設定は`esp32dev`から継承する。同日のUploadエラー報告を受け、環境未指定時の既定値を`xiao_esp32s3`へ変更した。DevKit V1では`-e esp32dev`を明示する。Espressif32 6.10.0のXIAOボード定義にはUSB CDCの有効化が含まれる。`config.h`は`ARDUINO_XIAO_ESP32S3`でSDA/SCLをGPIO5/6（D4/D5）へ切り替え、DevKit V1のGPIO21/22を維持する。`main.cpp`の制御・通信・停止処理は変更していない。`esp32-ble-lab/docs/wiring.md`と`esp32-ble-lab/README.md`を更新した。
 
 ```powershell
 & "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe" run --project-dir esp32-ble-lab/firmware -e esp32dev -e xiao_esp32s3

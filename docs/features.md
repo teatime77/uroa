@@ -1,6 +1,6 @@
 # 機能索引
 
-更新日: 2026-10-12（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
+更新日: 2026-10-30（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
 
 全体の依存関係は [architecture.md](architecture.md)、改善の順序は [improvement-plan.md](improvement-plan.md)、実際に確認した条件・結果は [現状確認](current-state.md) を参照する。この索引にソースが載っていることは、その機能を実行検証済みであることを意味しない。
 
@@ -57,7 +57,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | DIAGRAM-11 | 音声を認識して文字列で出力する | [speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts): SpeechRecognitionBlock、[speech-client.ts](../diagram/ts/ai/speech-client.ts): recognizeSpeech | Startで日本語の単発認識、セッション終了後にTextPortへ出力。「認識終了」と全体Stop、30秒タイムアウト。言語設定のみ保存。サンプルは [speech-ai-chat.json](../public/diagram/data/speech-ai-chat.json)。実音声・Androidは別途確認 |
 | DIAGRAM-05 | BLEサーボ指令・旧センサー連携を変える | [servo.ts](../diagram/ts/hardware/servo.ts): ServoMotorBlock、[ble.ts](../diagram/ts/ble-wifi/ble.ts): BLEConnection、[diagram_util.ts](../diagram/ts/diagram_util.ts): 旧sendData | サーボは角度／速度を選び、明示ARM後に角度60～120°をMOVE、速度−100～100%をSET_SPEED。モード変更は無効化。DISABLE/STOP、停止時の待機指令取消。旧センサーはPOST /send_data、定期取得はdiy_sbc=false |
 | DIAGRAM-06 | BLE機器を選択して接続・切断する | [ble.ts](../diagram/ts/ble-wifi/ble.ts): BLEConnectionBlock、BLEConnection、diagramBLE | ツールボックスから配置。canvasのButton、接続状態・端末名・エラー表示、INFOのACK・PING。実機検証とは区別する |
-| DIAGRAM-07 | IMUと倒立テレメトリーを構造体で出力する | [imu.ts](../diagram/ts/hardware/imu.ts): IMUBlock、[ble.ts](../diagram/ts/ble-wifi/ble.ts): parseIMUSample、subscribeSamples、[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts) | 先頭ポートはgyro・acc、2番目balanceは姿勢角・目標・角速度・誤差・左右速度指令%。10Hz STREAMを共有しPlotBlockで表示。姿勢推定は倒立教材のESP32側。従来Labはbalance未取得 |
+| DIAGRAM-07 | IMUと互換用Balance通知を構造体で出力する | [imu.ts](../diagram/ts/hardware/imu.ts): IMUBlock、[ble.ts](../diagram/ts/ble-wifi/ble.ts): parseIMUSample、subscribeSamples、[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts) | 先頭ポートはgyro・acc。10Hz STREAMを共有しPlotBlockで表示。第2のbalance出力は旧倒立教材向けの受信互換機能で、現行diagram-controlは送信しない |
 | DIAGRAM-08 | ポートに構造体の型と値を指定する | [data_type.ts](../diagram/ts/data_type.ts): Struct、Field、DataType、[port.ts](../diagram/ts/port.ts): StructPort、getDataType、subscribeConnections | 入れ子検証、複製・freeze、型一致、型参照の保存・復元。型未指定の入力は単一接続元を参照。配線変更後に両端へ通知。CalcBlockの構造体評価は未実装 |
 | DIAGRAM-09 | 数値・構造体を時系列グラフにする | [plot.ts](../diagram/ts/plot/plot.ts): PlotBlock、[plot_data.ts](../diagram/ts/plot/plot_data.ts): PlotHistory、getPlotGroups | Structの数値Fieldを列挙し、入れ子を横並びパネルに表示。IMUならgyro・acc、x/y/zはRGB。直近30秒、1秒ごとにμ±3σで軸更新。Plotlyを遅延読込。単位・3D表示は後続 |
 
@@ -118,15 +118,17 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | BUILD-02 | HTML・モジュール・公開資産の配信を変える | [vite.config.ts](../vite.config.ts)、[build_all.py](../build_all.py)、[scripts/check-dist.mjs](../scripts/check-dist.mjs) | `verify` は公開ビルドと成果物確認。Pythonも同じnpmビルドを呼ぶ。ブラウザ確認は [tests/test.py](../tests/test.py) を別途実行 |
 | BUILD-03 | Flask・Firebase Hostingで配信する | [web.py](../web.py)、[firebase.json](../firebase.json) | Flaskはdistの静的配信。Vite開発用APIが自動的に配信先へ移るわけではない |
 
-## robotの移行対象（一部取り込み済み）
+## ESP32連携とrobotの関連機能
+
+ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内の旧ESP32フォルダーは廃止対象。[連携ガイド](esp32-integration.md)から仕様・ビルド・送受信タイミングを参照する。robot側の行は元の関連機能の所在を示す。
 
 | ID | 移行・変更したい機能 | 現在のソース | 実装の境界 |
 |---|---|---|---|
 | ROBOT-01 | AI質問画面とAPI | [chat/src/main.ts](../../robot/chat/src/main.ts)、[server/app.ts](../../robot/chat/server/app.ts)、[server/index.ts](../../robot/chat/server/index.ts) | 1問ごとの文章応答。モーターへの直接指令は未実装 |
 | ROBOT-02 | BLE接続・サーボ操作 | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ARM/MOVE/STOP/DISABLE、ACK、直列化、切断。uroaの接続はDIAGRAM-06、ServoMotorBlockのBLE操作はDIAGRAM-05 |
 | ROBOT-03 | IMU表示・グラフ・CSV | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | 加速度・角速度。姿勢角やサーボ実測角度ではない |
-| ROBOT-04 | ESP32のBLE／Wi-Fiサーボ・IMU・XIAOカメラ | [共有C++クラス](../esp32/README.md)、[main.cpp](../esp32-ble-lab/firmware/src/main.cpp)、[network.cpp](../esp32-ble-lab/firmware/src/network.cpp)、[camera.cpp](../esp32-ble-lab/firmware/src/camera.cpp)、[platformio.ini](../esp32-ble-lab/firmware/platformio.ini) | BLE設定、NVS、mDNS、Wi-Fi制御、PWM・I2C・停止とXIAOのJPEGを実装。2026-10-26に共通機能をesp32/libのクラスへ移した。操作・保存・認証は[Wi-Fiガイド](esp32-ble-lab-wifi.md)。今回の確認はビルドまでで実機テストはユーザーが行う |
-| ROBOT-05 | FS90Rの2輪倒立とBLEプロット | [倒立教材](../esp32/app/inverted-pendulum/README.md)、[PlotTelemetry](../esp32/lib/plot/README.md) | Supermini GPIO8/9、GY-521、PCA9685のCH0/1。起動時に静止校正し100Hzで自動制御。IMU・姿勢・左右速度指令%をdiagramへ送る。転倒・STOP・切断で停止、再始動はリセット。実車の倒立成立は未確認 |
+| ROBOT-04 | ESP32のBLE／Wi-Fiサーボ・IMU・XIAOカメラ | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[共通C++クラス](../../esp32/README.md)、[通信仕様](../../esp32/app/diagram-control/docs/protocol.md) | 別リポジトリーのdiagram-controlとlibで管理する。DevKit／XIAO／SuperMiniに対応し、カメラはSenseのみ。操作・保存・認証は[Wi-Fiガイド](esp32-ble-lab-wifi.md)。ビルド・模擬確認・実機報告を区別する |
+| ROBOT-05 | 旧FS90R倒立アプリ（運用対象外） | [廃止範囲と残る互換機能](esp32-integration.md#旧フォルダーの廃止と残る互換機能)、[PlotTelemetry形式](../../esp32/lib/plot/README.md) | 旧倒立アプリは廃止対象で、別リポジトリーへ未移行。WebのBalance受信・サンプル・模擬テストは残る。現行diagram-controlはBalanceを送らない。実車の倒立成立は未確認 |
 | ROBOT-05 | DCモーター・エンコーダーの診断 | [main.cpp](../../robot/esp32_recovery/src/main.cpp) | 別ファームウェア。シリアル指令、IMU、手動停止と2秒経過停止 |
 
 ## 更新するとき

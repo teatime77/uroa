@@ -1,8 +1,8 @@
 # diagramのESP32 BLE／Wi-Fi接続画面
 
-更新日: 2026-10-19。現在の画面の説明と操作手順。今ある入力欄とボタンの使い方をまとめる。
+更新日: 2026-10-30。現在の画面の説明と操作手順。今ある入力欄とボタンの使い方をまとめる。現行ファームウェアは別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)。uroa内の旧ESP32フォルダーは廃止対象。作業先と通信仕様は[ESP32連携ガイド](esp32-integration.md)を参照する。
 
-初回・次回ともBLEでESP32へ接続し、Wi-FiのSSIDとパスワードを入力して「Wi-Fiへ接続」を押す。保存済み機器の選択は行わない。Wi-Fi接続キーは教材用の共通固定値を自動使用する。XIAO ESP32S3 SenseとDevKit V1で設定手順は共通で、カメラはXIAOだけが対象。
+初回・次回ともBLEでESP32へ接続し、Wi-FiのSSIDとパスワードを入力して「Wi-Fiへ接続」を押す。保存済み機器の選択は行わない。Wi-Fi接続キーは教材用の共通固定値を自動使用する。XIAO ESP32-S3 Sense・DevKit V1・SuperMiniで設定手順は共通で、カメラはSenseだけが対象。
 
 ## 最初に読むこと
 
@@ -20,7 +20,7 @@ Gemini APIキーはAIChatBlockの別の設定。上の3項目には入力せず�
 
 ## 接続前の準備
 
-- 対象のファームウェアをESP32へ書き込んでおく。XIAOはPlatformIO環境`xiao_esp32s3`、今回のUSBポートはCOM4。書き込み時にはSerial Monitorを閉じる。[ファームウェアの操作手順](../esp32-ble-lab/README.md)を参照する。
+- 別リポジトリーのdiagram-controlをESP32へ書き込んでおく。PlatformIO環境はXIAOが`xiao_esp32s3`、DevKitが`esp32dev`、SuperMiniが`supermini_esp32s3`。COMポートは実際の接続先を指定する。書き込み時にはSerial Monitorを閉じる。[現行ファームウェアの操作手順](../../esp32/app/diagram-control/README.md)を参照する。BLE機器選択では通常`ESP32-Diagram-Control`を選ぶ。
 - diagramをChromeで開く。PCのローカル開発では、uroaルートで`npm.cmd run dev`を実行し、`http://localhost:5173/diagram/index.html`を開く。Androidなどから使う場合はHTTPSとブラウザーの対応が必要。
 - XIAOが接続するWi-Fiは2.4GHzを使う。PCが同じルーターの5GHzへ接続していても、同じLAN内で端末同士が通信できれば利用できる。ゲストネットワークや端末分離の設定では通信できない場合がある。[XIAOのWi-Fi仕様](https://wiki.seeedstudio.com/xiao_esp32s3_wifi_usage/)を参照する。
 - 初回のBLEペアリングには固定コード`123456`を使う。診断でログが必要な場合はSerial Monitorを115200bpsで開く。XIAOの付属アンテナも接続しておく。
@@ -143,6 +143,6 @@ PCだけ接続できない場合はdiagramを再読み込みし、F12で開発�
 
 ## 参照先と確認範囲
 
-画面の項目・処理は [ble.ts](../diagram/ts/ble-wifi/ble.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)、[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) の現行ソースに基づく。通信・保存・認証の詳しい実装は [ESP32のWi-Fi設定・制御・カメラ](esp32-ble-lab-wifi.md)、配線・書き込みは [ESP32 BLE LabのREADME](../esp32-ble-lab/README.md) を参照する。
+画面の項目・処理は [ble.ts](../diagram/ts/ble-wifi/ble.ts)、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)、[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts) の現行ソースに基づく。通信・保存・認証の詳しい実装は[ESP32のWi-Fi設定・制御・カメラ](esp32-ble-lab-wifi.md)、配線・書き込みは[現行diagram-controlのREADME](../../esp32/app/diagram-control/README.md)を参照する。
 
 以前の会話ではユーザーからWindowsのChromeでのWi-Fi接続・カメラ画像表示と、追加待ち0msで滑らかになったとの報告を受けている。エージェントによる実機テストや、Chrome保存・次回接続・Androidを含む全手順の動作確認とは区別する。2026-10-17の固定キー化はソースと文書を変更し、動作テストはユーザーが行う。
