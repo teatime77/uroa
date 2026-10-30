@@ -137,13 +137,13 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 
 同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
 
-2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/hardware/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）。CH0～15と移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
+2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/hardware/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）または速度指令（%）。CH0～15と角度の移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
 
 「このCHを停止」はDISABLE、「全サーボ停止」とdiagramの手続きStop・アプリ停止はSTOPを送る。STOPはIMU通知とBLE接続を保持する。チャンネル変更・ブロック削除では以前のCHをDISABLEする。停止・切断・CH変更・削除後に待機中のARM/MOVEを送らないよう、接続世代、CHごとの操作世代、ブロックの操作世代を確認する。連続する角度変更は未送信の古いMOVEを取り消す。停止ACKを確認できなければ切断する。全OFFのStatusやPCA異常で有効状態を解除し、サーボの自動再有効化は行わない。
 
 有効状態は共有BLE接続のCH単位で保持するため、同じCHを指定した複数ブロックは同じ出力を操作する。CH・移動時間はJSONに保存し、接続・有効状態は保存しない。旧JSONのchannelと数値入力ポートは維持し、duration省略時は1000msとする。角度は内部指令値であり、MOVEのACKは受付結果で、動作完了や実角度の確認ではない。詳しいファームウェア処理は [esp32-ble-lab-firmware.md](esp32-ble-lab-firmware.md) を参照する。
 
-InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。ServoMotorBlockは配線接続時にその値を入力ポートへ取り込み、解除時は未入力に戻す。値の復元・配線だけではMOVEを送らず、有効化後の入力変更または移動ボタンで送信する。サーボの入力変更は`Servo input`、実際の送信は`BLE servo send`、ACK受信は`BLE servo ACK`としてコンソールにも表示する。送信・受信ログにはARM/MOVE/STOP/DISABLE、指令番号、CH、value、durationを含む。MOVEのvalueは角度の100倍であり、ACKは受付確認を示す。
+InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。ServoMotorBlockは配線接続時にその値を入力ポートへ取り込み、解除時は未入力に戻す。値の復元・配線だけではMOVEを送らず、有効化後の入力変更または移動ボタンで送信する。実際の送信は`BLE servo send`、ACK受信は`BLE servo ACK`としてコンソールにも表示する。送信・受信ログにはARM/MOVE/STOP/DISABLE、指令番号、CH、value、durationを含む。MOVEのvalueは角度の100倍であり、ACKは受付確認を示す。
 
 続いて同日に [data_type.ts](../diagram/ts/data_type.ts) へ既存のVariable・Field・Struct・DataTypeを移し、vec3とIMU（gyro: vec3、acc: vec3）を登録した。PortTypeの接続方向とは別にPort.dataTypeを追加した。StructPortは入出力双方で構造体を検証・複製・深いfreezeを行い、1つの値として伝播する。NumberPort・TextPortは値の型を指定し、既知の型同士の不一致を接続時に拒否する。型未指定の既存Portは互換のため維持する。型参照は既存のポートJSONへ任意のdataTypeとして保存・復元し、ライブの計測値は保存しない。CalcBlock・CompareBlockは現段階では数値型で、構造体のフィールド計算は未実装。
 
@@ -340,3 +340,11 @@ buildAppPagesPluginがalgebra・game・diagram・movie・webgpuのHTMLへ共通�
 testProofはexample.mathの読込・解析を行い、開発用出力はsaveProofOutputへ分けた。initAlgebraはViteのDEV条件でのみ保存を実行し、保存失敗は警告にして後続の簡約を継続する。読込・解析の失敗はこのcatchの対象外。
 
 KaTeX内部の未使用importを削除し、makeUIFromJSONへButton/Labelの型オーバーロードを追加した。クラス参照はimport typeとし、実行時の生成関数登録は維持した。全体の型確認、ルートViteビルド、開発・ビルド後の5画面起動、保存APIの成功・失敗・非呼出しを確認した。音声終了を模擬した完了確認と通常音声の確認は区別する。条件と残件は [current-state.md](current-state.md) の修正後の記録を参照する。
+
+## サーボの角度／速度モード（2026-10-28）
+
+ServoMotorBlockは`mode: "angle" | "speed"`を保存する。旧JSONと不明な値は角度モードとして復元し、有効状態・接続・入力のライブ状態は保存しない。速度モードでは0%で明示ARMし、方向付き−100〜100%を即時送信する。「速度0で停止」は中立指令、「このCHを無効化」と全体STOPはPWM停止である。速度は実測値ではない。
+
+BLEConnectionは有効CHとそのモードを共有し、接続世代・CH操作世代・ブロック操作世代を使って古い指令を取り消す。モード変更ではDISABLEを送り、旧モードの待機指令と遅れたACKによる再有効化を防ぐ。速度用ARM_SPEED=8・SET_SPEED=9を追加し、負の値はi16の0.01%で送る。Status flags bit4は指定CHの速度モード、code=7はモード不一致。STOPでIMU通知を保持する既存の動作も維持する。
+
+速度対応は別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)と[共通サーボライブラリー](../../esp32/lib/servo/README.md)に実装する。既存のuroa内BLE Labと倒立教材のファームウェアは変更せず、旧BLE Labでは従来の角度操作を維持する。新Webから旧ファームウェアへ速度操作を送ると明示エラーとなり、角度操作へフォールバックしない。

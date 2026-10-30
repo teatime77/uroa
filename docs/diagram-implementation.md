@@ -90,7 +90,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | InputRangeBlock | range、最小・最大の入力欄、出力 | 現在の出力は型未指定Port。DOMの所有・解除を確認する |
 | CalcBlock／CompareBlock | 数値入力、数値の式評価。比較結果は0/1 | calcは明示的な呼出し。構造体の式評価・一般的な自動計算スケジューラーは未実装 |
 | BLEConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
-| ServoMotorBlock | 角度のNumberPort入力。ARM、MOVE、DISABLE、STOP | 有効化は明示操作。角度60～120°、CH0～15、時間0～10000ms。値は実測角度ではない |
+| ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度60～120°、速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
 | IMUBlock | 先頭imuはgyro・accのvec3、2番目balanceは姿勢・左右速度指令%のStructPort | 配置したブロックで10Hz STREAMを共有。balanceはESP32の倒立教材が送るversion=2/schema=1。従来JSONの先頭ポートを維持。両出力とも切断・計測停止で消去。現行console.logはコメントアウト |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
@@ -103,6 +103,8 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | ImageCaptionBlock | Geminiへ画像を1枚送信し、日本語の短い説明文をTextPort出力 | 手動の「画像を説明」／Startで1回。Startでは説明取得後にTTSへ進める。モデル名だけ保存。[画像説明ガイド](diagram-image-caption.md) |
 | FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧顔領域・距離の表示と出力。顔表示の画像は接続したCameraBlockを参照 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。顔検出AIは未実装 |
 | ConditionGate／TriggerGate | 条件・入出力ポートや枠を定義 | ConditionGateの値ルーティング、TriggerGateのrunは未実装。配置できることと実行できることは別 |
+
+モードによって`children()`へ追加するボタンは、初期モードで表示しない場合も描画コンテキストを設定する。ServoMotorBlockは`setContext2D()`で速度0ボタンも初期化し、モード変更後の描画・ヒット判定に使う。
 
 `JoyStickBlock`はblock.tsの生成関数にあるが、現在の25種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot/plot.ts`は別のものとして扱う。
 

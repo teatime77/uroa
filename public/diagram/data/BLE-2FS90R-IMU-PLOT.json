@@ -1,0 +1,125 @@
+[
+  {
+    "idx": 0,
+    "typeName": "BLEConnectionBlock",
+    "x": 665,
+    "y": 71,
+    "ports": []
+  },
+  {
+    "idx": 1,
+    "typeName": "IMUBlock",
+    "x": 645,
+    "y": 346,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [
+          2
+        ],
+        "dataType": {
+          "typeName": "IMU",
+          "dimensions": []
+        }
+      },
+      {
+        "idx": 1,
+        "destinations": [],
+        "dataType": {
+          "typeName": "Balance",
+          "dimensions": []
+        }
+      }
+    ]
+  },
+  {
+    "idx": 2,
+    "typeName": "PlotBlock",
+    "x": 446,
+    "y": 527,
+    "ports": [
+      {
+        "idx": 2,
+        "destinations": []
+      }
+    ]
+  },
+  {
+    "idx": 3,
+    "typeName": "ServoMotorBlock",
+    "x": 266,
+    "y": 201,
+    "ports": [
+      {
+        "idx": 3,
+        "destinations": [],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "channel": 0,
+    "duration": 1000,
+    "mode": "speed"
+  },
+  {
+    "idx": 4,
+    "typeName": "InputNumberBlock",
+    "x": 309,
+    "y": 104,
+    "ports": [
+      {
+        "idx": 4,
+        "destinations": [
+          3
+        ],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "text": "16",
+    "value": 16
+  },
+  {
+    "idx": 5,
+    "typeName": "InputNumberBlock",
+    "x": 1336,
+    "y": 100,
+    "ports": [
+      {
+        "idx": 5,
+        "destinations": [
+          6
+        ],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "text": "-8",
+    "value": -8
+  },
+  {
+    "idx": 6,
+    "typeName": "ServoMotorBlock",
+    "x": 1292,
+    "y": 220,
+    "ports": [
+      {
+        "idx": 6,
+        "destinations": [],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "channel": 1,
+    "duration": 1000,
+    "mode": "speed"
+  }
+]

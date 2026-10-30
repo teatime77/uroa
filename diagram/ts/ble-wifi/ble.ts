@@ -51,9 +51,10 @@ export function parseIMUSample(data: DataView): IMUSample {
     });
 }
 
-const errors = ["成功", "指令形式が不正", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー"];
-type BLEOpcode = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-const servoOperations: Partial<Record<BLEOpcode, string>> = { 1: "ARM", 2: "MOVE", 3: "STOP", 7: "DISABLE" };
+const errors = ["成功", "指令形式が不正（速度制御には対応ファームウェアが必要です）", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー", "角度／速度モードが異なります。無効化してから有効化してください。"];
+type BLEOpcode = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type ServoMode = "angle" | "speed";
+const servoOperations: Partial<Record<BLEOpcode, string>> = { 1: "ARM", 2: "MOVE", 3: "STOP", 7: "DISABLE", 8: "ARM_SPEED", 9: "SET_SPEED" };
 
 /** One connection per diagram document. Blocks subscribe; GATT objects are never saved. */
 export class BLEConnection {
@@ -72,7 +73,7 @@ export class BLEConnection {
     private connectTimer?: ReturnType<typeof setTimeout>;
     private tail: Promise<unknown> = Promise.resolve();
     private pending = new Map<number, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-    private armedChannels = new Set<number>();
+    private armedChannels = new Map<number, ServoMode>();
     private servoVersions = Array<number>(16).fill(0);
     private service?: BLEService;
     private wifi?: RobotWifi;
@@ -80,7 +81,9 @@ export class BLEConnection {
     private provisioning = false;
     private closing = false;
 
-    isServoArmed(channel: number): boolean { return this.armedChannels.has(channel); }
+    isServoArmed(channel: number, mode?: ServoMode): boolean {
+        return this.armedChannels.has(channel) && (mode === undefined || this.armedChannels.get(channel) === mode);
+    }
 
     private notify(): void { this.listeners.forEach(listener => listener(this.state)); }
 
@@ -98,24 +101,44 @@ export class BLEConnection {
         if (!this.state.pcaAvailable) throw new Error("PCA9685が見つかりません。");
     }
 
-    async armServo(channel: number, isCurrent = () => true): Promise<void> {
+    async armServo(channel: number, isCurrent = () => true, mode: ServoMode = "angle"): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
-        const version = this.servoVersions[channel];
-        await this.sendControl(1, 9000, channel, 0,
+        const version = ++this.servoVersions[channel];
+        await this.sendControl(mode === "speed" ? 8 : 1, mode === "speed" ? 0 : 9000, channel, 0,
             () => version === this.servoVersions[channel] && isCurrent(),
-            () => { this.armedChannels.add(channel); this.notify(); });
+            () => { this.armedChannels.set(channel, mode); this.notify(); });
     }
 
-    async moveServo(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
+    async moveAngle(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
         if (!Number.isFinite(angle) || angle < 60 || angle > 120) throw new Error("角度は60～120°で指定してください。");
         if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
-        if (!this.isServoArmed(channel)) throw new Error("先に90°で有効化してください。");
+        if (!this.isServoArmed(channel, "angle")) throw new Error("先に角度モードで90°の有効化を行ってください。");
         const version = this.servoVersions[channel];
         await this.sendControl(2, Math.round(angle * 100), channel, duration,
-            () => version === this.servoVersions[channel] && this.isServoArmed(channel) && isCurrent());
+            () => version === this.servoVersions[channel] && this.isServoArmed(channel, "angle") && isCurrent());
+    }
+
+    /** 旧呼出元の互換窓口。新しい呼出元はmoveAngle()を使う。 */
+    async moveServo(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
+        await this.moveAngle(channel, angle, duration, isCurrent);
+    }
+
+    /** 速度は方向付きの指令%。0%はPWMを維持して中立パルスを送る。 */
+    async setSpeed(channel: number, percent: number, isCurrent = () => true): Promise<void> {
+        this.checkChannel(channel);
+        this.checkServoConnection();
+        if (!Number.isFinite(percent) || percent < -100 || percent > 100) {
+            throw new Error("速度は−100～100%で指定してください。");
+        }
+        if (!this.isServoArmed(channel, "speed")) {
+            throw new Error("先に速度モードで0%の有効化を行ってください。");
+        }
+        const version = this.servoVersions[channel];
+        await this.sendControl(9, Math.round(percent * 100), channel, 0,
+            () => version === this.servoVersions[channel] && this.isServoArmed(channel, "speed") && isCurrent());
     }
 
     async disableServo(channel: number): Promise<void> {
@@ -199,6 +222,12 @@ export class BLEConnection {
         const stopped = !pcaAvailable || (!(flags & 4) && (this.armedChannels.size > 0 || data.getUint16(2, true) === 0));
         if (stopped) this.resetServos();
         const channel = data.getUint8(5);
+        const mode: ServoMode = flags & 0x10 ? "speed" : "angle";
+        if (channel < 16 && this.armedChannels.has(channel) && this.armedChannels.get(channel) !== mode) {
+            this.armedChannels.delete(channel);
+            this.servoVersions[channel]++;
+            this.notify();
+        }
         const channelStopped = data.getUint8(1) === 3 && channel < 16 && this.armedChannels.delete(channel);
         if (channelStopped) this.servoVersions[channel]++;
         if (stopped || channelStopped || this.state.pcaAvailable !== pcaAvailable || this.state.imuAvailable !== imuAvailable || this.state.streaming !== streaming) {
@@ -459,7 +488,12 @@ export class BLEConnection {
             const packet = new DataView(bytes.buffer);
             bytes[0] = 1; bytes[1] = opcode; bytes[4] = channel;
             packet.setUint16(2, sequence, true);
-            packet.setUint16(6, value, true);
+            if (opcode === 9) {
+                packet.setInt16(6, value, true);
+            }
+            else {
+                packet.setUint16(6, value, true);
+            }
             packet.setUint16(8, duration, true);
             const operation = servoOperations[opcode];
             const details = { operation, sequence, channel, value, duration };

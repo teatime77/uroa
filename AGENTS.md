@@ -30,7 +30,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 
 - `diagram/ts/ai/speech-recognition.ts`のSpeechRecognitionBlockはStartで単発の音声認識を待ち、セッション終了後に確定文字列をTextPortへ出力する。認識終了は結果を待つstop、全体Stopはabort。30秒タイムアウト、言語設定のみ保存し、復元で認識を始めない。ブラウザーの認識サービスに依存し、実音声・Androidの確認と模擬確認を区別する。
 
-- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockでrobotのESP32へ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは明示的な90°有効化後、数値入力の角度（60～120°）をBLEのMOVEで送る。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockが先頭StructPortからgyro・acc、2番目balanceから倒立教材の姿勢・速度指令を出力し、配置されたIMUBlockが10HzのSTREAMを共有する。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
+- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockでrobotのESP32へ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは角度／速度モードを選び、90°または速度0%で明示的に有効化する。角度は60～120°のMOVE、速度は−100～100%のSET_SPEEDを送る。モード変更ではCHを無効化し、再有効化する。速度対応ファームウェアは隣接するesp32リポジトリーのapp/diagram-control。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockが先頭StructPortからgyro・acc、2番目balanceから倒立教材の姿勢・速度指令を出力し、配置されたIMUBlockが10HzのSTREAMを共有する。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
 - `diagram/ts/index.ts`の `diy_sbc = false` により旧HTTPセンサーの定期取得は無効。旧カメラ・センサーのHTTP `POST /send_data`は残るが、ServoMotorBlockはBLEを使う。BLEのIMU通知受信は独立している。
 - plotには実装ソースがない。lessonの `@let` は未実装。mediaのCanvas動画録画・音声合成部分はコメントアウトされている。
 - planeの旧図形JSON保存・復元とmovie内のスライド・クイズ機能は廃止済み。図形の追加時は操作記録による生成・再生を確認する。diagram・FirebaseのJSON保存、独立した `lesson/ts/` は別機能として残る。

@@ -36,7 +36,7 @@ async function pageFor(context) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-        const mock = window.bleMock = { mode: 'ok', requests: 0, writes: [], controls: [], rate: 0, armed: [], active: 0, maximum: 0 };
+        const mock = window.bleMock = { mode: 'ok', requests: 0, writes: [], controls: [], rate: 0, armed: [], servoModes: {}, active: 0, maximum: 0 };
         class Characteristic extends EventTarget {
             constructor() { super(); this.value = new DataView(new ArrayBuffer(12)); this.value.setUint8(0, 1); this.value.setUint8(4, 3); }
             async startNotifications() { return this; }
@@ -51,16 +51,20 @@ async function pageFor(context) {
                 if (mock.mode !== 'holdAck') {
                     const channel = bytes[4];
                     let code = 0;
-                    if (bytes[1] === 1) {
+                    if (bytes[1] === 1 || bytes[1] === 8) {
                         if (mock.mode === 'missingPca') code = 4;
-                        else if (!mock.armed.includes(channel)) mock.armed.push(channel);
+                        else if (mock.mode === 'legacy' && bytes[1] === 8) code = 1;
+                        else {
+                            mock.servoModes[channel] = bytes[1] === 8 ? 'speed' : 'angle';
+                            if (!mock.armed.includes(channel)) mock.armed.push(channel);
+                        }
                     }
-                    if (bytes[1] === 2 && !mock.armed.includes(channel)) code = 3;
+                    if ((bytes[1] === 2 || bytes[1] === 9) && !mock.armed.includes(channel)) code = 3;
                     if (bytes[1] === 3) mock.armed = [];
                     if (bytes[1] === 7) mock.armed = mock.armed.filter(ch => ch !== channel);
                     if (bytes[1] === 4) mock.rate = packet.getUint16(6, true);
                     status.value.setUint8(1, code);
-                    status.value.setUint8(4, (mock.mode === 'missingPca' ? 2 : mock.mode === 'missingImu' ? 1 : 3) | (mock.armed.length ? 4 : 0) | (mock.rate ? 8 : 0));
+                    status.value.setUint8(4, (mock.mode === 'missingPca' ? 2 : mock.mode === 'missingImu' ? 1 : 3) | (mock.armed.length ? 4 : 0) | (mock.rate ? 8 : 0) | (mock.servoModes[channel] === 'speed' ? 16 : 0));
                     status.value.setUint8(5, channel);
                     status.value.setUint16(2, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(2, true), true);
                     status.dispatchEvent(new Event('characteristicvaluechanged'));
@@ -391,6 +395,109 @@ test('servo placement needs explicit ARM and wired degrees become MOVE with chan
     assert.ok(commands.every(command => command.bytes.length === 10 && command.bytes[0] === 1 && command.bytes[5] === 0));
     assert.equal(await page.evaluate(() => window.bleMock.maximum), 1);
     await page.screenshot({ path: 'tmp/servo-block.png', clip: { x: 650, y: 380, width: 390, height: 350 } });
+});
+
+test('servo speed mode explicitly arms at zero, encodes signed percent and keeps zero distinct from disable', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    await placeServo(page);
+    await page.getByRole('combobox', { name: 'サーボの制御モード' }).selectOption('speed');
+    await page.waitForFunction(() => !window.servo.armButton.disabled);
+    await page.evaluate(() => { window.servo.inputPort.setPortValue(-25.25); return window.servo.valueChanged(); });
+    assert.equal(await page.evaluate(() => window.bleMock.writes.some(op => op === 1 || op === 2 || op === 8 || op === 9)), false);
+    await page.evaluate(() => window.servo.arm());
+    await page.evaluate(() => window.servo.valueChanged());
+    await page.evaluate(() => window.servo.zeroSpeed());
+    const commands = await page.evaluate(() => window.bleMock.controls.filter(command => command.opcode === 8 || command.opcode === 9));
+    assert.deepEqual(commands.map(command => [command.opcode, command.value, command.duration]), [[8, 0, 0], [9, 65536 - 2525, 0], [9, 0, 0]]);
+    assert.equal(await page.evaluate(() => window.bleFixture.connection.isServoArmed(0, 'speed')), true);
+    assert.equal(await page.evaluate(() => window.bleFixture.connection.isServoArmed(0, 'angle')), false);
+    assert.equal(await page.evaluate(() => window.servo.durationInput.hidden), true);
+    assert.equal(await page.evaluate(() => window.servo.inputPort.value), -25.25);
+    await page.screenshot({ path: 'tmp/servo-speed-mode.png' });
+    await page.evaluate(() => window.servo.disable());
+    assert.equal(await page.evaluate(() => window.bleMock.controls.at(-1).opcode), 7);
+    assert.equal(await page.evaluate(() => window.bleFixture.connection.isServoArmed(0)), false);
+});
+
+test('servo speed bounds and mode mismatch reject writes and legacy firmware cannot arm speed', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    await placeServo(page);
+    await page.getByRole('combobox', { name: 'サーボの制御モード' }).selectOption('speed');
+    await page.waitForFunction(() => !window.servo.armButton.disabled);
+    await page.evaluate(() => { window.bleMock.mode = 'legacy'; return window.servo.arm(); });
+    assert.equal(await page.evaluate(() => window.bleFixture.connection.isServoArmed(0)), false);
+    assert.match(await page.evaluate(() => window.servo.message), /対応ファームウェア/);
+    assert.equal(await page.evaluate(() => window.bleMock.writes.includes(1)), false);
+    await page.evaluate(() => { window.bleMock.mode = 'ok'; return window.servo.arm(); });
+    const result = await page.evaluate(async () => {
+        const connection = window.bleFixture.connection;
+        const before = window.bleMock.controls.length;
+        const errors = [];
+        for (const value of [-101, 101, NaN, Infinity]) {
+            try { await connection.setSpeed(0, value); } catch (error) { errors.push(error.message); }
+        }
+        try { await connection.moveServo(0, 90, 0); } catch (error) { errors.push(error.message); }
+        try { await connection.setSpeed(1, 50); } catch (error) { errors.push(error.message); }
+        return { errors, writes: window.bleMock.controls.length - before };
+    });
+    assert.equal(result.errors.length, 6); assert.equal(result.writes, 0);
+    await page.evaluate(async () => {
+        await window.bleFixture.connection.setSpeed(0, -100);
+        await window.bleFixture.connection.setSpeed(0, 100);
+    });
+    assert.deepEqual(await page.evaluate(() => window.bleMock.controls.slice(-2).map(command => command.value)), [65536 - 10000, 10000]);
+});
+
+test('servo mode change cancels queued speed and disables before explicit angle rearming', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await clickButton(page); await waitPhase(page, 'connected');
+    await placeServo(page);
+    await page.getByRole('combobox', { name: 'サーボの制御モード' }).selectOption('speed');
+    await page.waitForFunction(() => !window.servo.armButton.disabled);
+    await page.evaluate(() => window.servo.arm());
+    await page.evaluate(() => {
+        window.bleMock.mode = 'holdWrite';
+        window.servo.inputPort.setPortValue(20); window.firstSpeed = window.servo.valueChanged();
+    });
+    await page.waitForFunction(() => !!window.bleMock.finishWrite);
+    await page.evaluate(() => { window.servo.inputPort.setPortValue(40); window.secondSpeed = window.servo.valueChanged(); });
+    await page.getByRole('combobox', { name: 'サーボの制御モード' }).selectOption('angle');
+    await page.evaluate(() => { window.bleMock.mode = 'ok'; window.bleMock.finishWrite(); });
+    await page.waitForFunction(() => !window.servo.busy && !window.bleFixture.connection.isServoArmed(0));
+    await page.evaluate(() => Promise.all([window.firstSpeed, window.secondSpeed]));
+    assert.equal(await page.evaluate(() => window.bleMock.controls.filter(command => command.opcode === 9).length), 1);
+    assert.equal(await page.evaluate(() => window.bleMock.controls.at(-1).opcode), 7);
+    assert.equal(await page.evaluate(() => window.servo.moveButton.disabled), true);
+    await page.evaluate(() => window.servo.arm());
+    assert.equal(await page.evaluate(() => window.bleMock.controls.at(-1).opcode), 1);
+});
+
+test('servo speed mode saves and copies settings without PWM and cleans up its selector', async context => {
+    const page = await pageFor(context);
+    await placeBlock(page); await placeServo(page);
+    await page.getByRole('combobox', { name: 'サーボの制御モード' }).selectOption('speed');
+    await page.waitForFunction(() => !window.servo.busy);
+    const settings = await page.evaluate(() => {
+        const copy = window.servo.copy();
+        const obj = copy.makeObj();
+        copy.clearBlock();
+        return obj;
+    });
+    assert.equal(settings.mode, 'speed'); assert.equal('armed' in settings, false);
+    assert.equal(await page.evaluate(() => window.bleMock.writes.length), 0);
+    const saved = await page.evaluate(() => window.bleFixture.editor.blocks.map(block => block.makeObj()));
+    await page.evaluate(blocks => {
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([JSON.stringify(blocks)], 'speed-servo.json', { type: 'application/json' }));
+        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
+    }, saved);
+    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks.at(-1).mode), 'speed');
+    await connectFirstBlock(page);
+    assert.equal(await page.evaluate(() => window.bleMock.writes.some(op => op === 1 || op === 8 || op === 9)), false);
+    await page.getByRole('button', { name: 'Clear', exact: true }).click();
+    assert.equal(await page.getByRole('combobox', { name: 'サーボの制御モード' }).count(), 0);
 });
 
 test('servo rejects invalid angles, channels and durations before BLE writes', async context => {

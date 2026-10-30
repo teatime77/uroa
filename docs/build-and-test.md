@@ -470,3 +470,18 @@ npm.cmd run test:e2e:lifecycle -- --base-url http://localhost:4173/
 検証では作業フォルダー内の `tmp/p3-venv` にPython 3.12・Playwright 1.63.0を準備し、既存のChromiumを使用した。通常の実行コマンドのPython環境は利用者の環境で準備する。`tests/test.py` のSHA256は変更前後とも `FE2F4527A91AAFEDF7C23326280C3EC2BCB44D9C4DEC9037E90F76C5885886FD`。
 
 音声を実際に聞いての確認、全GPUデモの数値・停止、Android、ESP32、Firebaseの外部操作は未検証。GPU停止の専用確認はdiagram経由のfdtdパッケージを対象とする。
+
+## ServoMotorBlockの角度／速度対応（2026-10-28）
+
+角度60〜120度と方向付き速度−100〜100%を選択できるようにした。速度0で有効化し、モード変更では旧指令を取り消してCHを無効化する。速度0の中立指令とDISABLE/STOPを区別する。旧JSONは角度モードで復元する。
+
+対応ファームウェアは隣接するesp32リポジトリーのdiagram-controlと共通Servo・Protocol。opcode 8/9、符号付き0.01%とStatus bit4、モード不一致code=7を追加し、旧操作1〜7とサイズは維持する。
+
+検証結果:
+
+- `npm.cmd run verify`成功。TypeScript・公開ビルド・公開成果物の静的確認を完了。既存gameのimportに関する警告は継続。
+- `tests/ble-browser.test.mjs`のサーボ関連12件が最終実行で成功。負の速度のバイト列、速度0とDISABLEの区別、範囲・モード検査、旧ファームウェアでの拒否、切り替え中の待機指令取消、JSON・コピー・DOM破棄と既存の角度制御を模擬BLEで確認した。条件は`UROA_TEST_DIAGRAM_ONLY=1`、ローカルCDNミラーとテスト用Chrome。開発サーバーのHMR後に参照が分かれた実行を除き、再起動したサーバーで確認した。
+- 速度モードで後から表示するボタンの描画コンテキスト未設定を検出し、`setContext2D()`で初期モードによらず設定するよう修正した。修正後の画面もスクリーンショットで確認した。
+- 別リポジトリーのdiagram-controlは`esp32dev`・`xiao_esp32s3`の両方でビルド成功。検証用の同じ相対配置と短いパッケージ参照パスを使い、コンパイル・リンク・サイズ確認・バイナリー生成を完了した。
+
+全アプリのブラウザー起動、実BLE/Wi-Fi、実サーボの中立・方向・速度・信号無効化時の挙動、実機への書き込み、Arduino製の他マイコンは未確認。C++のI2C操作を模擬実行した試験ではない。
