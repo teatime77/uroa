@@ -36,7 +36,7 @@ async function pageFor(context) {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
-        const mock = window.bleMock = { mode: 'ok', requests: 0, writes: [], controls: [], rate: 0, armed: [], servoModes: {}, active: 0, maximum: 0 };
+        const mock = window.bleMock = { mode: 'ok', requests: 0, writes: [], controls: [], deviceInfos: [], rate: 0, armed: [], servoModes: {}, active: 0, maximum: 0 };
         class Characteristic extends EventTarget {
             constructor() { super(); this.value = new DataView(new ArrayBuffer(12)); this.value.setUint8(0, 1); this.value.setUint8(4, 3); }
             async startNotifications() { return this; }
@@ -72,6 +72,11 @@ async function pageFor(context) {
             }
         }
         const command = new Characteristic(), status = new Characteristic(), telemetry = new Characteristic();
+        const deviceInfo = {
+            async writeValueWithResponse(bytes) {
+                mock.deviceInfos.push([...bytes]);
+            },
+        };
         const device = new EventTarget();
         device.name = 'ESP32-BLE-Lab';
         device.gatt = {
@@ -87,6 +92,9 @@ async function pageFor(context) {
             async getPrimaryService() {
                 if (mock.mode === 'unsupported') throw new DOMException('No service', 'NotFoundError');
                 return { async getCharacteristic(uuid) {
+                    if (uuid.includes('1406-')) {
+                        return deviceInfo;
+                    }
                     return uuid.includes('1401-') ? command : uuid.includes('1403-') ? status : telemetry;
                 } };
             },
@@ -99,11 +107,16 @@ async function pageFor(context) {
             status.dispatchEvent(new Event('characteristicvaluechanged'));
         };
         mock.emitTelemetry = (bad = false) => {
-            telemetry.value = new DataView(new ArrayBuffer(bad ? 19 : 20));
+            const sensorCount = window.bleFixture.connection.sensors.length;
+            telemetry.value = new DataView(new ArrayBuffer(bad ? 7 : 8 + 13 * sensorCount));
             if (!bad) {
-                telemetry.value.setUint8(0, 1); telemetry.value.setUint8(1, 11);
+                telemetry.value.setUint8(0, 3); telemetry.value.setUint8(1, 11);
                 telemetry.value.setUint16(2, 7, true); telemetry.value.setUint32(4, 1234, true);
-                [16384, -8192, 0, 131, -262, 0].forEach((raw, index) => telemetry.value.setInt16(8 + index * 2, raw, true));
+                for (let sensor = 0; sensor < sensorCount; sensor++) {
+                    const offset = 8 + 13 * sensor;
+                    telemetry.value.setUint8(offset, 0);
+                    [16384, -8192, 0, 131, -262, 0].forEach((raw, index) => telemetry.value.setInt16(offset + 1 + index * 2, raw, true));
+                }
             }
             telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
         };

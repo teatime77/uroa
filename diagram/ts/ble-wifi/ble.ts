@@ -1,14 +1,20 @@
-import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "../block";
+import { MyError, Vec2 } from "@i18n";
+import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { Button, type Attr, type UI } from "../ui";
 import { theCanvas } from "../diagram_util";
-import { imuType, type IMUValue } from "../data_type";
 import { BLEWifiSetup, RobotWifi, type RobotEndpoint } from "./robot-wifi";
 import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
 import { parseBalanceSample, type BalanceSample } from "../plot/plot_telemetry";
+import { theEditor } from "../json-util";
 
-// Same GATT service and packet format as robot/esp32-ble-lab.
+const DeviceInfoMaxLength = 20;
+const DeviceInfoWriteTimeoutMs = 2500;
+const DeviceTelemetryVersion = 3;
+const DeviceTelemetryHeaderLength = 8;
+const IMU6AxisRecordLength = 13;
+
+// GATT service shared with esp32/app/diagram-control.
 export const BLE_UUID = {
     service: "f3641400-00b0-4240-ba50-05ca45bf8abc",
     command: "f3641401-00b0-4240-ba50-05ca45bf8abc",
@@ -16,6 +22,7 @@ export const BLE_UUID = {
     status: "f3641403-00b0-4240-ba50-05ca45bf8abc",
     wifiConfig: "f3641404-00b0-4240-ba50-05ca45bf8abc",
     wifiResult: "f3641405-00b0-4240-ba50-05ca45bf8abc",
+    deviceInfo: "f3641406-00b0-4240-ba50-05ca45bf8abc",
 } as const;
 
 // Structural types keep this browser-only module independent of the robot build.
@@ -38,35 +45,58 @@ interface BLEAdapter {
 }
 export type BLEPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
 export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; transport?: "ble" | "wifi"; }
-export interface IMUSample { readonly sequence: number; readonly uptime: number; readonly value: IMUValue; }
-
-/** Decode robot's 20-byte telemetry: gyro °/s, acceleration m/s². */
-export function parseIMUSample(data: DataView): IMUSample {
-    if (data.byteLength !== 20 || data.getUint8(0) !== 1) throw new Error("IMUデータの形式が正しくありません。");
-    const acc = [8, 10, 12].map(offset => data.getInt16(offset, true) / 16384 * 9.80665);
-    const gyro = [14, 16, 18].map(offset => data.getInt16(offset, true) / 131);
-    return Object.freeze({
-        sequence: data.getUint16(2, true), uptime: data.getUint32(4, true),
-        value: imuType.copyValue({ gyro: { x: gyro[0], y: gyro[1], z: gyro[2] }, acc: { x: acc[0], y: acc[1], z: acc[2] } }) as IMUValue,
-    });
+const errors = ["成功", "指令形式が不正（速度制御には対応ファームウェアが必要です）", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー", "角度／速度モードが異なります。無効化してから有効化してください。"];
+/** diagram-controlと共通の指令番号。 */
+enum BLEOpcode {
+    ARM = 1,
+    MOVE = 2,
+    STOP = 3,
+    STREAM = 4,
+    PING = 5,
+    INFO = 6,
+    DISABLE = 7,
+    ARM_SPEED = 8,
+    SET_SPEED = 9,
 }
 
-const errors = ["成功", "指令形式が不正（速度制御には対応ファームウェアが必要です）", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー", "角度／速度モードが異なります。無効化してから有効化してください。"];
-type BLEOpcode = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+/** version 1のCommandパケットのサイズと各フィールドの位置。 */
+const BLE_COMMAND = {
+    byteLength: 10,
+    version: 1,
+    allChannels: 255,
+    maxSequence: 65535,
+    offset: {
+        version: 0,
+        opcode: 1,
+        sequence: 2,
+        channel: 4,
+        value: 6,
+        duration: 8,
+    },
+} as const;
+
 export type ServoMode = "angle" | "speed";
-const servoOperations: Partial<Record<BLEOpcode, string>> = { 1: "ARM", 2: "MOVE", 3: "STOP", 7: "DISABLE", 8: "ARM_SPEED", 9: "SET_SPEED" };
+const servoOperations: Partial<Record<BLEOpcode, string>> = {
+    [BLEOpcode.ARM]: "ARM",
+    [BLEOpcode.MOVE]: "MOVE",
+    [BLEOpcode.STOP]: "STOP",
+    [BLEOpcode.DISABLE]: "DISABLE",
+    [BLEOpcode.ARM_SPEED]: "ARM_SPEED",
+    [BLEOpcode.SET_SPEED]: "SET_SPEED",
+};
 
 /** One connection per diagram document. Blocks subscribe; GATT objects are never saved. */
 export class BLEConnection {
     state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
     private listeners = new Set<(state: BLEConnectionState) => void>();
-    private sampleListeners = new Set<(sample: IMUSample) => void>();
+    private imuStreamUsers = 0;
     private balanceListeners = new Set<(sample: BalanceSample) => void>();
     private requestedRate = 0;
     private device?: BLEDevice;
     private tx?: BLECharacteristic;
     private rx?: BLECharacteristic;
     private status?: BLECharacteristic;
+    private deviceInfo?: BLECharacteristic;
     private generation = 0;
     private sequence = 0;
     private heartbeat?: ReturnType<typeof setInterval>;
@@ -80,6 +110,8 @@ export class BLEConnection {
     private wifiDialog?: RobotWifiDialog;
     private provisioning = false;
     private closing = false;
+    private sensors   : FunctionBlock[] = [];
+    private actuators : FunctionBlock[] = [];
 
     isServoArmed(channel: number, mode?: ServoMode): boolean {
         return this.armedChannels.has(channel) && (mode === undefined || this.armedChannels.get(channel) === mode);
@@ -105,7 +137,7 @@ export class BLEConnection {
         this.checkChannel(channel);
         this.checkServoConnection();
         const version = ++this.servoVersions[channel];
-        await this.sendControl(mode === "speed" ? 8 : 1, mode === "speed" ? 0 : 9000, channel, 0,
+        await this.sendControl(mode === "speed" ? BLEOpcode.ARM_SPEED : BLEOpcode.ARM, mode === "speed" ? 0 : 9000, channel, 0,
             () => version === this.servoVersions[channel] && isCurrent(),
             () => { this.armedChannels.set(channel, mode); this.notify(); });
     }
@@ -117,7 +149,7 @@ export class BLEConnection {
         if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
         if (!this.isServoArmed(channel, "angle")) throw new Error("先に角度モードで90°の有効化を行ってください。");
         const version = this.servoVersions[channel];
-        await this.sendControl(2, Math.round(angle * 100), channel, duration,
+        await this.sendControl(BLEOpcode.MOVE, Math.round(angle * 100), channel, duration,
             () => version === this.servoVersions[channel] && this.isServoArmed(channel, "angle") && isCurrent());
     }
 
@@ -137,7 +169,7 @@ export class BLEConnection {
             throw new Error("先に速度モードで0%の有効化を行ってください。");
         }
         const version = this.servoVersions[channel];
-        await this.sendControl(9, Math.round(percent * 100), channel, 0,
+        await this.sendControl(BLEOpcode.SET_SPEED, Math.round(percent * 100), channel, 0,
             () => version === this.servoVersions[channel] && this.isServoArmed(channel, "speed") && isCurrent());
     }
 
@@ -149,7 +181,9 @@ export class BLEConnection {
         this.notify();
         if (this.state.phase !== "connected") return;
         const generation = this.generation;
-        try { await this.sendControl(7, 0, channel); }
+        try {
+            await this.sendControl(BLEOpcode.DISABLE, 0, channel);
+        }
         catch (error) {
             if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
             throw error;
@@ -161,7 +195,9 @@ export class BLEConnection {
         this.notify();
         if (this.state.phase !== "connected") return;
         const generation = this.generation;
-        try { await this.sendControl(3); }
+        try {
+            await this.sendControl(BLEOpcode.STOP);
+        }
         catch (error) {
             if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
             throw error;
@@ -183,11 +219,17 @@ export class BLEConnection {
         };
     }
 
-    subscribeSamples(listener: (sample: IMUSample) => void): () => void {
-        this.sampleListeners.add(listener);
+    /** 配置されたIMUブロックのSTREAM利用を登録し、解除関数を返す。 */
+    retainIMUStream(): () => void {
+        this.imuStreamUsers++;
         this.updateStream();
+        let released = false;
         return () => {
-            this.sampleListeners.delete(listener);
+            if (released) {
+                return;
+            }
+            released = true;
+            this.imuStreamUsers--;
             this.updateStream();
         };
     }
@@ -200,11 +242,11 @@ export class BLEConnection {
 
     private updateStream(): void {
         if (this.state.phase !== "connected" || this.provisioning) return;
-        const rate = (this.sampleListeners.size || this.balanceListeners.size) && this.state.imuAvailable ? 10 : 0;
+        const rate = (this.imuStreamUsers || this.balanceListeners.size) && this.state.imuAvailable ? 10 : 0;
         if (rate === this.requestedRate) return;
         this.requestedRate = rate;
         const generation = this.generation;
-        void this.sendControl(4, rate).catch(error => {
+        void this.sendControl(BLEOpcode.STREAM, rate).catch(error => {
             if (generation === this.generation) this.close("error", error.message);
         });
     }
@@ -239,7 +281,6 @@ export class BLEConnection {
 
     private sampleChanged = (event: Event): void => {
         if (this.state.phase !== "connected" || !this.state.imuAvailable || !this.requestedRate) return;
-        let sample: IMUSample;
         try {
             const value = (event.target as BLECharacteristic).value;
             if (!value) throw new Error("IMUデータがありません。");
@@ -252,14 +293,32 @@ export class BLEConnection {
                 }
                 return;
             }
-            sample = parseIMUSample(value);
+            
+            if (value.byteLength > 0 && value.getUint8(0) === DeviceTelemetryVersion) {
+                const sensors = this.sensors;
+                const expectedLength = DeviceTelemetryHeaderLength + sensors.length * IMU6AxisRecordLength;
+                if (value.byteLength !== expectedLength) {
+                    throw new Error("機器別Telemetryの長さと登録センサー数が一致しません。");
+                }
+                // 全レコードを検証してからポートへ反映する。
+                let offset = DeviceTelemetryHeaderLength;
+                for (const sensor of sensors) {
+                    if (sensor.deviceType !== DeviceType.IMU6Axis || value.getUint8(offset) !== sensor.deviceType) {
+                        throw new MyError();
+                    }
+                    offset += IMU6AxisRecordLength;
+                }
+                offset = DeviceTelemetryHeaderLength;
+                for (const sensor of sensors) {
+                    offset = sensor.readStatus(value, offset);
+                }
+                return;
+            }
+
+            throw new Error("未対応のIMUデータ形式です。");
         } catch (error) {
             this.close("error", error instanceof Error ? error.message : "IMUデータを受信できませんでした。");
             return;
-        }
-        for (const listener of this.sampleListeners) {
-            try { listener(sample); }
-            catch (error) { console.error("IMU sample handler failed", error); }
         }
     };
 
@@ -298,11 +357,13 @@ export class BLEConnection {
         clearTimeout(this.connectTimer);
         this.heartbeat = this.connectTimer = undefined;
         this.requestedRate = 0;
+        this.sensors = [];
+        this.actuators = [];
         this.status?.removeEventListener("characteristicvaluechanged", this.statusChanged);
         this.rx?.removeEventListener("characteristicvaluechanged", this.sampleChanged);
         this.device?.removeEventListener("gattserverdisconnected", this.lost);
         const device = this.device;
-        this.device = this.tx = this.rx = this.status = undefined;
+        this.device = this.tx = this.rx = this.status = this.deviceInfo = undefined;
         for (const pending of this.pending.values()) {
             clearTimeout(pending.timer);
             pending.reject(new Error("BLE接続が切れました。"));
@@ -366,7 +427,13 @@ export class BLEConnection {
             stage = "IMU Characteristic取得";
             const rx = await service.getCharacteristic(BLE_UUID.telemetry);
             check();
-            this.tx = tx; this.status = status; this.rx = rx;
+            stage = "機器情報Characteristic取得";
+            const deviceInfo = await service.getCharacteristic(BLE_UUID.deviceInfo);
+            check();
+            this.tx = tx;
+            this.status = status;
+            this.rx = rx;
+            this.deviceInfo = deviceInfo;
             status.addEventListener("characteristicvaluechanged", this.statusChanged);
             rx.addEventListener("characteristicvaluechanged", this.sampleChanged);
             stage = "状態通知登録";
@@ -381,7 +448,10 @@ export class BLEConnection {
             if (initialStatus.byteLength !== 12 || initialStatus.getUint8(0) !== 1) throw new Error("状態データの形式が正しくありません。");
             this.hardwareStatus(initialStatus);
             stage = "INFO応答確認";
-            await this.sendControl(6); // INFO ACK confirms application readiness, not motion completion.
+            await this.sendControl(BLEOpcode.INFO); // INFO ACK confirms application readiness, not motion completion.
+            check();
+            stage = "機器情報登録";
+            await this.sendDeviceInfo();
             check();
             clearTimeout(this.connectTimer); this.connectTimer = undefined;
             this.publish("connected", selected.name || "名前のない機器");
@@ -402,7 +472,7 @@ export class BLEConnection {
     private startHeartbeat(generation: number): void {
         clearInterval(this.heartbeat);
         this.heartbeat = setInterval(() => {
-            void this.sendControl(5).catch(error => {
+            void this.sendControl(BLEOpcode.PING).catch(error => {
                 if (this.generation === generation) this.close("error", error instanceof Error ? error.message : "機器の応答がありません。");
             });
         }, 1500);
@@ -418,7 +488,8 @@ export class BLEConnection {
         try {
             this.provisioning = true; clearInterval(this.heartbeat);
             await this.stopServos();
-            await this.sendControl(4, 0); this.requestedRate = 0;
+            await this.sendControl(BLEOpcode.STREAM, 0);
+            this.requestedRate = 0;
             const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
             const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
             if (generation !== this.generation) return;
@@ -451,7 +522,9 @@ export class BLEConnection {
             this.device?.removeEventListener("gattserverdisconnected", this.lost);
             this.status?.removeEventListener("characteristicvaluechanged", this.statusChanged);
             this.rx?.removeEventListener("characteristicvaluechanged", this.sampleChanged);
-            this.device?.gatt?.disconnect(); this.device = this.tx = this.status = this.rx = undefined; this.service = undefined;
+            this.device?.gatt?.disconnect();
+            this.device = this.tx = this.status = this.rx = this.deviceInfo = undefined;
+            this.service = undefined;
             this.wifi = wifi; const generation = ++this.generation;
             this.requestedRate = 0;
             for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Wi-Fiへ切り替えました。")); }
@@ -463,7 +536,8 @@ export class BLEConnection {
             };
             wifi.onLost = message => { if (this.generation === generation) this.close("error", message); };
             this.state = { phase: "connecting", deviceName: actual.name, transport: "wifi", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
-            await this.sendControl(6); signal.throwIfAborted();
+            await this.sendControl(BLEOpcode.INFO);
+            signal.throwIfAborted();
             if (generation !== this.generation) throw new Error("接続を取り消しました。");
             this.publish("connected", actual.name);
             this.provisioning = false;
@@ -477,24 +551,26 @@ export class BLEConnection {
         }
     }
 
-    private sendControl(opcode: BLEOpcode, value = 0, channel = 255, duration = 0,
+    private sendControl(opcode: BLEOpcode, value = 0, channel: number = BLE_COMMAND.allChannels, duration = 0,
         isCurrent = () => true, accepted = () => {}): Promise<void> {
         const generation = this.generation;
         const task = this.tail.catch(() => {}).then(async () => {
             if (generation !== this.generation || (!this.wifi?.connected && (!this.tx || !this.device?.gatt?.connected))) throw new Error("機器の接続が切れました。");
             if (!isCurrent()) throw new Error("サーボ操作を取り消しました。");
-            const sequence = this.sequence = this.sequence % 65535 + 1;
-            const bytes = new Uint8Array(10);
+            const sequence = this.sequence = this.sequence % BLE_COMMAND.maxSequence + 1;
+            const bytes = new Uint8Array(BLE_COMMAND.byteLength);
             const packet = new DataView(bytes.buffer);
-            bytes[0] = 1; bytes[1] = opcode; bytes[4] = channel;
-            packet.setUint16(2, sequence, true);
-            if (opcode === 9) {
-                packet.setInt16(6, value, true);
+            bytes[BLE_COMMAND.offset.version] = BLE_COMMAND.version;
+            bytes[BLE_COMMAND.offset.opcode] = opcode;
+            bytes[BLE_COMMAND.offset.channel] = channel;
+            packet.setUint16(BLE_COMMAND.offset.sequence, sequence, true);
+            if (opcode === BLEOpcode.SET_SPEED) {
+                packet.setInt16(BLE_COMMAND.offset.value, value, true);
             }
             else {
-                packet.setUint16(6, value, true);
+                packet.setUint16(BLE_COMMAND.offset.value, value, true);
             }
-            packet.setUint16(8, duration, true);
+            packet.setUint16(BLE_COMMAND.offset.duration, duration, true);
             const operation = servoOperations[opcode];
             const details = { operation, sequence, channel, value, duration };
             const ack = new Promise<void>((resolve, reject) => {
@@ -524,6 +600,57 @@ export class BLEConnection {
         });
         this.tail = task;
         return task;
+    }
+
+    /** センサー、アクチュエータの順に機器情報を1回のBLE書き込みで送る。 */
+    private async sendDeviceInfo(): Promise<void> {
+        const sensors = theEditor.blocks.filter(x => x instanceof FunctionBlock && x.isSensor()) as FunctionBlock[];
+        const actuators = theEditor.blocks.filter(x => x instanceof FunctionBlock && x.isActuator() && !sensors.includes(x)) as FunctionBlock[];
+        const devices = sensors.concat(actuators);
+        const bytes = new Uint8Array(DeviceInfoMaxLength);
+        let offset = 0;
+        for (const device of devices) {
+            const nextOffset = device.writeDeviceInfo(bytes, offset);
+            if (!Number.isInteger(nextOffset) || nextOffset <= offset || nextOffset > bytes.byteLength) {
+                throw new Error(`機器情報の形式が不正か、上限の${DeviceInfoMaxLength}バイトを超えています。`);
+            }
+            offset = nextOffset;
+        }
+        // 種別0は6軸IMUなので、未使用領域を0で埋めたまま送らない。
+        const payload = bytes.slice(0, offset);
+        const characteristic = this.deviceInfo;
+        const generation = this.generation;
+        const task = this.tail.catch(() => {}).then(async () => {
+            if (generation !== this.generation || characteristic !== this.deviceInfo || !characteristic ||
+                !this.device?.gatt?.connected || this.wifi?.connected) {
+                throw new Error("機器情報の送信には現在のESP32へのBLE接続が必要です。");
+            }
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const timeout = new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => {
+                        reject(new Error("機器情報のBLE書き込みがタイムアウトしました。"));
+                    }, DeviceInfoWriteTimeoutMs);
+                });
+                await Promise.race([characteristic.writeValueWithResponse(payload), timeout]);
+            }
+            catch (error) {
+                if (generation === this.generation) {
+                    this.close("error", error instanceof Error ? error.message : "機器情報を送信できませんでした。");
+                }
+                throw error;
+            }
+            finally {
+                clearTimeout(timer);
+            }
+            if (generation !== this.generation || characteristic !== this.deviceInfo) {
+                throw new Error("機器情報の送信を取り消しました。");
+            }
+            this.sensors = sensors;
+            this.actuators = actuators;
+        });
+        this.tail = task;
+        await task;
     }
 }
 

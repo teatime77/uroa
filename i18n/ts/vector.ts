@@ -152,6 +152,10 @@ export class Vec3 {
         return new Vec3(x, y, z);
     }
 
+    static zero(){
+        return new Vec3(0, 0, 0);
+    }
+
     constructor(x: number, y: number, z: number){
         this.x = x;
         this.y = y;

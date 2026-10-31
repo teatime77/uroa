@@ -1,6 +1,6 @@
 # diagramとESP32の連携
 
-更新日: 2026-10-30（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
+更新日: 2026-10-31（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
 
 ## 現行の参照先
 
@@ -19,6 +19,30 @@
 | Wi-Fi画面・保存・カメラ | [接続画面](diagram-esp32-connection-ui.md)、[Wi-Fiガイド](esp32-ble-lab-wifi.md) |
 
 仕様と実装が食い違う場合は両側の現行ソースを照合する。特に既定環境はREADMEだけで判断せず`platformio.ini`を確認し、コマンドでは環境を明示する。
+
+## DeviceInfoのCharacteristic（2026-10-31）
+
+diagramとESP32で既存Service内のDeviceInfo UUIDを`f3641406-00b0-4240-ba50-05ca45bf8abc`に揃える。Write with responseで、1回の書込上限は20バイト。Commandのopcodeや10バイト形式とは独立したCharacteristicである。
+
+BLE接続時のINFO応答後に`sendDeviceInfo()`を呼び、`writeDeviceInfo()`が返すセンサー、アクチュエータのレコードを順に連結して送る。IMU6Axis=0・IMU9Axis=1・UltrasonicDistanceSensor=2・Camera=3は種別の1バイト、ServoMotor=128は種別・CH 0〜15・モード（0=角度、1=速度）の3バイト。先頭の版番号や件数は付けず、使用した分だけを送る。末尾の0はIMU6Axisとして解釈されるため、未使用領域を付け足さない。空の図は0バイトで一覧を消去し、20バイト超や不正な書込位置は送信前に拒否する。既存の指令と送信待ち列を共有し、GATT書込は最大2.5秒待つ。
+
+ESP32では`Callbacks::deviceInfo`から内容と接続世代を通常指令のキューへコピーし、`loop()`で現在の接続世代・種別・レコード長・サーボCH／モードを検証する。全件が正しい場合だけ受信順の`deviceInfos`・`deviceInfoCount`へ置き換え、不正な場合は以前の一覧を保持する。結果はシリアルの`DeviceInfo accepted`／`DeviceInfo rejected`で確認する。通常のBLE接続・切断、Wi-Fi制御権解除、キュー飽和では一覧を消去する。BLEからWi-Fi制御権を取得するときは一覧を引き継ぐ。機器の存在確認・ドライバー追加・ARM・STREAM開始は行わない。詳細は[現行protocol.md](../../../esp32/app/diagram-control/docs/protocol.md)を参照する。
+
+切断・Wi-Fi切替時にはCharacteristicの参照を解除する。この窓口を持たない旧ファームウェアへのBLE接続は取得段階で失敗するため、両側の対応版を使う。分割転送・Wi-Fi経由の転送・DeviceInfo専用のアプリ側ACKは未実装。GATT書込成功はESP32での内容の検証完了を保証しない。
+
+`node --test tests/device-info-transfer.test.mjs`の8件はソースをメモリー内で評価する模擬BLE試験で、順序・0埋めなし・空一覧・長さ境界・不正な書込位置・送信待ち・旧接続の取消・直列化・タイムアウトを確認した。公開ビルド、C++ビルド、ブラウザー操作、Upload、実BLE／実機動作は確認していない。
+
+## 機器種別付きTelemetry（version=3）
+
+BLE・Wi-Fiとも、8バイトのヘッダー（version=3・flags・sequence・millis）に、登録センサー順で13バイトのIMUレコードを連結する。レコードは「IMU6Axisの種別0、加速度x/y/zのi16、角速度x/y/zのi16」で、数値はlittle endian。加速度はraw / 16384 × 9.80665 m/s²、角速度はraw / 131 °/s。複数IMUブロックは同じ物理MPU-6050のサンプルを共有する。DeviceInfo未受信でのSTREAM開始要求はFORMAT、IMU6Axis以外の登録センサーを含むSTREAMはHARDWAREエラーになる。
+
+通知長は8＋13×IMU数で、IMU1個は21バイト。ESP32の通知容量は268バイト、希望ATT MTUは271とする。実際に必要なのは通知長＋3以上の合意MTUであり、1個なら最低24、2個なら37が必要。不足時はSTREAMをRANGEエラーで拒否し、必要値をシリアルへ出す。Web BluetoothからMTUを直接指定する処理や分割通知は追加していない。希望値を設定しても、相手が必要な値へ対応する保証ではない。
+
+`sampleChanged()`はversion=3の長さ・種別を全件確認して各IMUBlockの`readStatus()`へ渡す。旧`parseIMUSample()`・購読APIとESP32の旧20バイト生成処理は削除済み。配置されたIMUBlockは`retainIMUStream()`で10HzのSTREAMを共有し、削除時に利用を解除する。Command／Statusのversion=1と倒立プロットのversion=2は維持する。送信形式の詳細は[protocol.md](../../../esp32/app/diagram-control/docs/protocol.md)を参照する。
+
+Wi-Fiも最大268バイトの可変長通知を扱い、HTTPでは最新IMU通知を1件だけ保持する。DeviceInfoのWi-Fi転送は未実装で、一覧の変更にはBLEでの再接続が必要。
+
+旧形式削除前には模擬試験15件で新旧の受信経路とDeviceInfo送信を確認した。旧形式削除以降はユーザー指定により模擬テストを実行しない。今回の変更は差分と参照を静的確認し、公開／C++ビルド、Upload、ブラウザー操作、MTU交渉、実BLE／Wi-Fi通信は未確認。
 
 ## ビルドの分担
 

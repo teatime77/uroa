@@ -1,6 +1,26 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-30。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-10-31。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## 旧IMU通知形式の削除（2026-10-31）
+
+diagramの`parseIMUSample()`・旧購読APIとESP32の`Protocol::telemetry()`を削除し、BLE・Wi-FiのIMU通知をversion=3へ統一した。Wi-Fiの送受信上限を268バイトへ拡張し、BLEからの制御権取得時は登録した機器一覧を引き継ぐ。Command／Statusのversion=1とBalanceのversion=2は維持する。
+
+以降はユーザー指定により模擬テストを実行しない。今回はソースの参照・差分を静的確認し、関連文書のローカルリンク60件の存在を確認した。npm／PlatformIOのビルド、ブラウザー操作、Upload、実BLE／Wi-Fi通信・実機動作は未確認。下記の模擬試験結果は旧形式削除前の履歴である。
+
+## 機器種別付きIMU通知への移行時の記録（2026-10-31、旧形式削除前）
+
+ESP32側にversion=3の通知生成を追加し、8バイトヘッダーと登録センサー順の13バイトIMUレコード（種別・加速度・角速度）を送る。通知容量と希望ATT MTUを拡張し、合意MTUに収まらないSTREAMは拒否する。ブラウザーは新形式を`readStatus()`へ渡し、旧`parseIMUSample()`はversion=1の経路に保持する。ユーザーが保存した`imu.ts`の加速度／角速度の変換係数は正しいことを確認した。
+
+`node --test tests/device-telemetry.test.mjs tests/device-info-transfer.test.mjs`は15件成功。新形式の21バイト受信、複数IMU、長さ・種別の全件検査、DataViewオフセット、正負の値と単位、旧形式の維持、既存DeviceInfo送信をメモリー内の模擬BLEで確認した。C++の実行・npm／PlatformIOのビルド・Upload・実BLE・MTU交渉は未確認。IMU1個でも21バイトの通知とATT MTU 24以上が必要で、分割通知は追加していない。詳細は[連携ガイド](diagram/esp32-integration.md)を参照する。
+
+## DeviceInfoのBLE送受信（2026-10-31）
+
+`sendDeviceInfo()`がセンサー・アクチュエータのレコードを使用バイト数だけ送る。ESP32側は専用コールバックから指令キューへコピーし、`loop()`で全件検証して機器一覧を保持する。形式と実装範囲は[ESP32連携ガイド](diagram/esp32-integration.md)を参照する。
+
+`node --test tests/device-info-transfer.test.mjs`は8件成功。TypeScriptソースをメモリー内で評価し、模擬Characteristicで順序・0埋めなし・空一覧・20バイト境界・不正な書込位置・送信待ち・切断取消・直列化・タイムアウトを確認した。既存ブラウザーテストの模擬GATTもDeviceInfoをCommandと分けて受け取るよう更新したが、そのブラウザーテストは実行していない。
+
+ユーザー指定によりnpm・PlatformIOのビルド確認は行わない。C++の実行、Upload、実BLE、実機の受信・機器動作は未確認。GATT書込成功はESP32の内容の検証完了を保証せず、専用のアプリ側ACKは追加していない。
 
 ## ESP32文書の参照先整理（2026-10-30）
 

@@ -8,6 +8,11 @@ export interface WifiNetwork { ssid: string; rssi: number; open: boolean; }
 export interface ConfigCharacteristic { readValue(): Promise<DataView>; writeValueWithResponse(value: Uint8Array): Promise<void>; }
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const ssidHistoryKey = "uroa-wifi-ssids-v1";
+const DeviceTelemetryVersion = 3;
+const DeviceTelemetryHeaderLength = 8;
+const IMU6AxisRecordLength = 13;
+const DeviceInfoMaxLength = 20;
+const DeviceTelemetryMaxLength = DeviceTelemetryHeaderLength + DeviceInfoMaxLength * IMU6AxisRecordLength;
 export function savedWifiSSIDs(): string[] {
     try {
         const data: unknown = JSON.parse(localStorage.getItem(ssidHistoryKey) || "[]");
@@ -241,7 +246,14 @@ export class RobotWifi {
     private receive(value: unknown): void {
         if (this.closed) return;
         const bytes = decodeHex(value);
-        if (bytes.length !== 12 && bytes.length !== 20) throw new Error("機器の通知形式が正しくありません。");
+        const status = bytes.length === 12 && bytes[0] === 1;
+        const balance = bytes.length === 20 && bytes[0] === 2;
+        const telemetry = bytes[0] === DeviceTelemetryVersion && bytes.length >= DeviceTelemetryHeaderLength &&
+            bytes.length <= DeviceTelemetryMaxLength &&
+            (bytes.length - DeviceTelemetryHeaderLength) % IMU6AxisRecordLength === 0;
+        if (!status && !balance && !telemetry) {
+            throw new Error("機器の通知形式が正しくありません。");
+        }
         this.onPacket(new DataView(bytes.buffer));
     }
     private async poll(): Promise<void> {

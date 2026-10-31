@@ -1,5 +1,5 @@
 import { Vec2 } from "@i18n";
-import { FunctionBlock, registerFunctionBlock } from "../block";
+import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramBLE, type ServoMode } from "../ble-wifi/ble";
 import { PortType, theCanvas } from "../diagram_util";
 import { NumberPort } from "../port";
@@ -28,6 +28,7 @@ export class ServoMotorBlock extends FunctionBlock {
 
     constructor(data: Attr) {
         super(data);
+        this.deviceType = DeviceType.ServoMotor;
         this.ports = [this.inputPort];
         this.releaseConnection = this.inputPort.subscribeConnections(change => {
             this.moveVersion++;
@@ -79,6 +80,18 @@ export class ServoMotorBlock extends FunctionBlock {
             this.refresh();
         });
         this.refresh();
+    }
+
+    isActuator() : boolean {
+        return true;
+    }
+
+    writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
+        bytes[offset]     = this.deviceType!;
+        bytes[offset + 1] = this.configuredChannel;
+        bytes[offset + 2] = (this.mode == "angle" ? 0 : 1);
+
+        return offset + 3;
     }
 
     private makeInput(label: string, min: number, max: number, value: number, width: number): HTMLInputElement {

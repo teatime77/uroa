@@ -18,6 +18,17 @@ const blockLineColor = "brown";
 const rangeWidth  = 150;
 const numberWidth = 45;
 
+const ActuatorBase = 128;
+
+export enum DeviceType { 
+    IMU6Axis = 0,
+    IMU9Axis = 1,
+    UltrasonicDistanceSensor = 2,
+    Camera = 3,
+
+    ServoMotor = ActuatorBase,
+ }
+
 export abstract class Block extends UI {
     ports : Port[] = [];
     outlineColor : string = "green";
@@ -314,6 +325,32 @@ export abstract class Block extends UI {
 export abstract class FunctionBlock extends Block {
     /** Functions that must finish before the action chains start. */
     readonly runOnStart: boolean = false;
+    deviceType? : DeviceType;
+
+    constructor(data : Attr){
+        super(data);
+    }
+
+    isSensor() : boolean {
+        return false;
+    }
+
+    isActuator() : boolean {
+        return false;
+    }
+
+    writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
+        throw new MyError();
+    }
+
+    writeCommand(bytes : Uint8Array, offset : number) : number {
+        throw new MyError();
+    }
+
+    readStatus(data: DataView, offset : number) : number {
+        throw new MyError();
+    }
+
     resetForRun(): void {}
 
     copy() : Block {
@@ -830,9 +867,20 @@ export class JoyStickBlock extends FunctionBlock {
 export class UltrasonicDistanceSensorBlock extends FunctionBlock {
     constructor(data : Attr){
         super(data);
+        this.deviceType = DeviceType.UltrasonicDistanceSensor;
         this.ports = [ 
             new Port(this, PortType.outputPort) 
         ];
+    }
+
+    isSensor() : boolean {
+        return true;
+    }
+
+    writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
+        bytes[offset] = this.deviceType!;
+
+        return offset + 1;
     }
 
     setBoxSize() : void {

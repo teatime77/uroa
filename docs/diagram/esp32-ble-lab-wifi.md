@@ -36,7 +36,7 @@
 | [robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
 | [camera-feed.ts](../../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
 
-制御指令・Status・Telemetryは既存の10／12／20バイトを維持する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
+制御指令は10バイト、Statusは12バイト。IMUのTelemetryはBLEと同じversion=3で、8バイトのヘッダーに13バイトのIMUレコードを登録数だけ連結する（最大268バイト）。BLEで登録したDeviceInfoはWi-Fi制御権の取得時に引き継ぐ。形式は[連携ガイド](esp32-integration.md)を参照する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
 
 ## 初回の操作
 
