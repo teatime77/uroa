@@ -23,6 +23,8 @@
 
 `hardware/`は今後の各種センサー・アクチュエータの機能も収めるための名称で、現在はサーボとIMUを置く。
 
+`control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
+
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 
 | ファイル | 役割・最初に見る箇所 |
@@ -44,6 +46,7 @@
 | [device-camera.ts](../../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
 | [servo.ts](../../diagram/ts/hardware/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
 | [imu.ts](../../diagram/ts/hardware/imu.ts) | IMUの受信購読と構造体出力 |
+| [pid.ts](../../diagram/ts/control/pid.ts) | IMUの加速度YによるP制御、2個のモータ速度、ゲイン・停止範囲設定。詳細は[PIDガイド](diagram-pid.md) |
 | [plot.ts](../../diagram/ts/plot/plot.ts)、[plot_data.ts](../../diagram/ts/plot/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
 | [ai-chat.ts](../../diagram/ts/ai/ai-chat.ts)、[ai-client.ts](../../diagram/ts/ai/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
 | [speech-recognition.ts](../../diagram/ts/ai/speech-recognition.ts)、[speech-client.ts](../../diagram/ts/ai/speech-client.ts) | 単発の音声認識、認識セッション終了待ち、文字列出力、取消・遅延イベント抑止 |
@@ -74,6 +77,7 @@ classDiagram
 | 入力値の通知に反応する | async valueChanged | ServoMotorBlock、PlotBlock |
 | 外部イベントから値を出す | 購読callback → outputPort.setPortValue | IMUBlock |
 | Startで完了を待つ関数 | FunctionBlock.runOnStart=true、resetForRun、async run | AIChatBlock |
+| Startで連続制御を開始する関数 | runOnStart=trueのrunで開始し、valueChangedで更新。indexでActionチェーン後にwaitUntilStoppedを待つ | PIDBlock |
 | 手続き順に完了を待つ処理 | ActionBlock.async run | TTSBlock、SleepBlock |
 | 専用ボタンで操作する | childrenにButtonを返し、clickに処理を接続 | BLEConnectionBlock、ServoMotorBlock、AIChatBlock |
 
@@ -81,7 +85,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 
 ## 4. 現在のブロックと実装範囲
 
-ツールボックスは現在25種類。以下はソースの実装説明で、実機で動いたという保証ではない。
+ツールボックスは現在26種類。以下はソースの実装説明で、実機で動いたという保証ではない。
 
 | ブロック | 入出力・動作 | 主な制約 |
 |---|---|---|
@@ -92,6 +96,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | BLEConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
 | ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度60～120°、速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
 | IMUBlock | imuはtime（ミリ秒）・gyro・accのvec3を持つ1個のStructPort | 配置したブロックで10Hz STREAMを共有。version=3をreadStatus(time, data, offset)で読み、切断・計測停止で出力を消去。旧balance受信・第2出力は削除済みで、そのポートを含む保存JSONは非対応。現行console.logはコメントアウト |
+| PIDBlock | IMUValue入力、2個の速度NumberPort出力。Start後の最初のacc Yの角度を垂直とするP制御 | Kpのみ計算。Ki・Kdは設定・保存のみ。各モータの停止範囲を補正し−100～100%に制限。入力消失・接続変更・Stop等で停止し再開はStart。通信遅延補償・個別反転なし。[PIDガイド](diagram-pid.md) |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 最上位のnumber型time（ミリ秒）を横軸に使い、縦軸系列から除く。timeがなければ受信時刻。最初のサンプルを0秒とし、時刻の巻き戻りで履歴を消去。直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
 | SpeechRecognitionBlock | 入力なし、TextPort出力。Startで単発の発話とセッション終了を待つ | ja-JPが既定。Web Speech API／webkit接頭辞を機能検出。30秒タイムアウト、権限・無音・空結果・通信失敗で後続を止める。実音声・Androidは別途確認 |
@@ -106,7 +111,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 
 モードによって`children()`へ追加するボタンは、初期モードで表示しない場合も描画コンテキストを設定する。ServoMotorBlockは`setContext2D()`で速度0ボタンも初期化し、モード変更後の描画・ヒット判定に使う。
 
-`JoyStickBlock`はblock.tsの生成関数にあるが、現在の25種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot/plot.ts`は別のものとして扱う。
+`JoyStickBlock`はblock.tsの生成関数にあるが、現在の26種類のツールには入っていない。旧`plot/`フォルダーと、実装済みの`diagram/ts/plot/plot.ts`は別のものとして扱う。
 
 ### CameraBlockの画像取得元（2026-10-15）
 
@@ -168,10 +173,12 @@ runProcedures（実行中の再起動を抑止、停止フラグとAbortControll
       → 対象FunctionBlock.runを依存順に1回ずつawait
   → getTopActions（topに接続元がないActionBlock）
   → ルート順にrunBlockChain（各runをawait）
+  → PIDBlock.waitUntilStoppedを待つ（連続制御中も全体Stopを受け付ける）
+  → finallyでPID制御を停止
   → finallyでStartボタンを戻す
 ```
 
-現在runOnStart=trueなのはAIChatBlock、SpeechRecognitionBlock、ObjectDetectionBlock、ImageCaptionBlock。対象の全ブロックを実行してから全Actionチェーンを開始する方式で、TTSごとに必要な関数だけを遅延実行する方式ではない。未接続の音声認識・物体検出・画像説明も対象になり、複数の音声認識を配置すれば順に発話を待つ。カメラ未取得・未認証の物体検出／画像説明はStartを失敗させる。最初の音声AIデモは認識ブロック1個で構成する。単独のTTSBlockもルートとして実行される。runStartFunctionsは走査中の依存循環を検査するが、その前の出力リセットや通常の値伝播まで安全にするものではない。
+現在runOnStart=trueなのはAIChatBlock、SpeechRecognitionBlock、ObjectDetectionBlock、ImageCaptionBlock、PIDBlock。PIDBlockはrunで連続制御を開始して戻り、最初のIMU計測を待つ間も後続の処理は進む。対象の全ブロックを実行してから全Actionチェーンを開始する方式で、TTSごとに必要な関数だけを遅延実行する方式ではない。未接続の音声認識・物体検出・画像説明も対象になり、複数の音声認識を配置すれば順に発話を待つ。カメラ未取得・未認証の物体検出／画像説明、未接続のPIDはStartを失敗させる。最初の音声AIデモは認識ブロック1個で構成する。単独のTTSBlockもルートとして実行される。runStartFunctionsは走査中の依存循環を検査するが、その前の出力リセットや通常の値伝播まで安全にするものではない。
 
 Startで待つ新しいFunctionBlockでは、runOnStart=true、前回出力を消すresetForRun、完了を表すPromiseを返すrunを実装する。runは失敗時に出力をundefinedへ戻して例外を投げる。途中状態は画面へ表示し、完了した値だけを出力する。例外が上へ伝われば以後のActionチェーンへ進まず、Startボタンはfinallyで戻る。
 
@@ -208,7 +215,7 @@ AIChatBlockとai-client.tsのwaitAIRequestは、通信がabortを無視する場
 
 ### 現行ツールボックスの注意点
 
-- Editorは型名でAIChatBlockを4番目、SpeechRecognitionBlockを5番目、ObjectDetectionBlockを6番目、ImageCaptionBlockを7番目へ移す。現在のアイコンは25種類。新しい型番号の末尾追加でAIの表示順が変わらないようにしている。
+- Editorは型名でPIDBlockをIMUの直後の3番目、AIChatBlockを4番目、SpeechRecognitionBlockを5番目、ObjectDetectionBlockを6番目、ImageCaptionBlockを7番目へ移す。現在のアイコンは26種類。新しい型番号の末尾追加でAIの表示順が変わらないようにしている。
 - 各ToolItemは32×32のアイコンで、クラス名はツールチップで確認する。縦配置は画面高に応じたスクロール・折返しを実装していない。項目追加時には小さい画面での配置を実際に確認する。
 - 通常のToolItem生成はpointermoveの有無を使い、微小ドラッグの閾値や安全なドロップ領域を網羅していない。
 - 新しいActionBlockをToolItemから生成する分岐と、既存ActionBlockを移動してtopへ自動接続する分岐は別である。近くへ配置すれば自動接続されると仮定しない。

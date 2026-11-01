@@ -1,0 +1,121 @@
+[
+  {
+    "idx": 0,
+    "typeName": "BLEConnectionBlock",
+    "x": 94,
+    "y": 86,
+    "ports": []
+  },
+  {
+    "idx": 1,
+    "typeName": "PIDBlock",
+    "x": 1183,
+    "y": 223,
+    "ports": [
+      {
+        "idx": 0,
+        "destinations": [],
+        "dataType": {
+          "typeName": "IMU",
+          "dimensions": []
+        }
+      },
+      {
+        "idx": 1,
+        "destinations": [
+          5
+        ],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      },
+      {
+        "idx": 2,
+        "destinations": [
+          6
+        ],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "kp": 0,
+    "ki": 0,
+    "kd": 0,
+    "motor1StopMin": -18,
+    "motor1StopMax": -6,
+    "motor2StopMin": 2,
+    "motor2StopMax": 12
+  },
+  {
+    "idx": 2,
+    "typeName": "IMUBlock",
+    "x": 784,
+    "y": 26,
+    "ports": [
+      {
+        "idx": 3,
+        "destinations": [
+          0,
+          4
+        ],
+        "dataType": {
+          "typeName": "IMU",
+          "dimensions": []
+        }
+      }
+    ]
+  },
+  {
+    "idx": 3,
+    "typeName": "PlotBlock",
+    "x": 389,
+    "y": 223,
+    "ports": [
+      {
+        "idx": 4,
+        "destinations": []
+      }
+    ]
+  },
+  {
+    "idx": 4,
+    "typeName": "ServoMotorBlock",
+    "x": 1080,
+    "y": 576,
+    "ports": [
+      {
+        "idx": 5,
+        "destinations": [],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "channel": 0,
+    "duration": 1000,
+    "mode": "speed"
+  },
+  {
+    "idx": 5,
+    "typeName": "ServoMotorBlock",
+    "x": 1417,
+    "y": 584,
+    "ports": [
+      {
+        "idx": 6,
+        "destinations": [],
+        "dataType": {
+          "typeName": "number",
+          "dimensions": []
+        }
+      }
+    ],
+    "channel": 1,
+    "duration": 1000,
+    "mode": "speed"
+  }
+]

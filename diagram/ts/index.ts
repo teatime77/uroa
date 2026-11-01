@@ -14,6 +14,7 @@ import { AIChatBlock } from "./ai/ai-chat";
 import { SpeechRecognitionBlock } from "./ai/speech-recognition";
 import { ObjectDetectionBlock } from "./ai/object-detection";
 import { ImageCaptionBlock } from "./ai/image-caption";
+import { PIDBlock } from "./control/pid";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
@@ -28,7 +29,7 @@ export function stopDiagram(): void {
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const BlockClassCount = 25;
+export const BlockClassCount = 26;
 
 export function makeBlock(idx : number) : Block {
     switch(idx){
@@ -57,6 +58,8 @@ export function makeBlock(idx : number) : Block {
     case 22: return new SpeechRecognitionBlock({});
     case 23: return new ObjectDetectionBlock({});
     case 24: return new ImageCaptionBlock({});
+        case 25:
+            return new PIDBlock({});
     default: throw new MyError();
     }
 }
@@ -88,6 +91,8 @@ export function geBlockName(idx : number) : string {
     case 22: return "SpeechRecognitionBlock";
     case 23: return "ObjectDetectionBlock";
     case 24: return "ImageCaptionBlock";
+        case 25:
+            return "PIDBlock";
     default: throw new MyError();
     }
 }
@@ -202,9 +207,17 @@ async function startProcedures() {
                 msg(`top proc:${top_block.constructor.name}`);
                 await runBlockChain(top_block);
             }
+            // 連続制御が終わるまでStartを実行中に保ち、全体Stopを受け付ける。
+            const controllers = theEditor.blocks.filter((block): block is PIDBlock => block instanceof PIDBlock);
+            await Promise.all(controllers.map(block => block.waitUntilStopped()));
             msg("procedures complete.");
         });
     } finally {
+        for (const block of theEditor.blocks) {
+            if (block instanceof PIDBlock) {
+                block.stop();
+            }
+        }
         startButton.innerText = "Start";
     }
 }

@@ -2,6 +2,14 @@
 
 更新日: 2026-11-01。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## PIDBlockの追加（2026-11-01）
+
+FunctionBlockとして[PIDBlock](../diagram/ts/control/pid.ts)を追加した。IMUValue入力のacc Yから求めた角度について、Start後の最初の計測を垂直基準とするP制御を行い、2個のNumberPortへモータ速度を出力する。モータごとの停止範囲を補正し、速度を−100～100%へ制限する。Kp・Ki・Kdと停止範囲をJSON・コピーで保持し、Ki・Kdは初版の計算には使わない。PID文字入りSVGとツールボックス登録、連続制御中の全体Stop、入力消失・配線変更・非表示・削除等の終了処理を追加した。操作と式は[PIDガイド](diagram/diagram-pid.md)を参照する。
+
+`npm.cmd run verify`が成功し、TypeScript参照ビルド、Vite公開ビルド（202モジュール）、5アプリの入口と92件のWebGPU資産の静的確認を完了した。既存gameの動的／静的import併用の警告2件は継続。
+
+ユーザーの従来の指定に従い、模擬・単体・ブラウザーテストは実行していない。配線操作、設定欄の表示、JSON往復、Start／Stop、実BLE／Wi-Fi、モータ速度と機体の安定性は実行未確認。ESP32のソース・通信仕様は変更していない。
+
 ## Telemetry時刻をPlotの横軸へ反映（2026-11-01）
 
 ユーザーが追加したTelemetryの時刻引数・IMUValue.timeを確認し、ヘッダーのmillis読み取りをリトルエンディアンへ修正し、実行時のimuStructにもnumber型timeを追加した。PlotHistoryは最上位の数値型time（ミリ秒）を横軸へ使い、最初のサンプルを0秒とする。time自体は縦軸の系列から除き、数値型timeがない入力は従来どおりブラウザー受信時刻を使う。時刻が巻き戻った場合は履歴と起点をリセットする。保持範囲は直近30秒、最大6000件のまま。

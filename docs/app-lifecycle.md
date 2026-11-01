@@ -12,6 +12,7 @@
 | [diagram/ts/ble-wifi/ble.ts](../diagram/ts/ble-wifi/ble.ts) | BLE接続ブロックと共有接続・サーボ指令・IMU通知管理。停止時に待機中のサーボ指令を取消。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
 | [diagram/ts/hardware/servo.ts](../diagram/ts/hardware/servo.ts) | 角度入力からBLEサーボ操作。明示ARM、MOVE、DISABLE/STOP。CH変更・削除で以前のCH停止、削除で購読・DOMを解除 |
 | [diagram/ts/hardware/imu.ts](../diagram/ts/hardware/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
+| [diagram/ts/control/pid.ts](../diagram/ts/control/pid.ts) | Startで垂直基準を取り直してP制御を開始。入力消失・配線変更・Stop・非表示・pagehideで停止し、停止範囲中央を出力。削除で購読と設定DOMを解除 |
 | [diagram/ts/plot/plot.ts](../diagram/ts/plot/plot.ts) | 型と配線を参照する汎用グラフ。削除時にPlotly・DOM・統計タイマー・ResizeObserver・購読・描画予約を解除 |
 | [diagram/ts/ai/ai-chat.ts](../diagram/ts/ai/ai-chat.ts) | キー入力とGoogle接続確認、Startで直接AI質問。Stopで待機を取消。切断・Clear・読込・削除・pagehide・破棄で保持キーを解除。削除では回答DOM・ダイアログ・配線と停止の購読を解除 |
 | [diagram/ts/runtime.ts](../diagram/ts/runtime.ts) | 実行中・停止フラグ、チェーン実行、キャンセル可能な待機、子アプリ停止の接続口 |
@@ -37,7 +38,7 @@
 
 `stop()` は初期化済みUIを保持して再生・実行を止める。ready後の再実行は各画面のStart／再生ボタンで行う。`start()`を再度呼ぶことは教材の再生を意味しない。
 
-diagramのStartはrunOnStartがtrueのFunctionBlock（現在はAIChatBlock）をデータ依存順にawaitし、その後にActionBlockを実行する。失敗時はTTSへ進まず、Startボタンを戻す。回答待ちのStopではAbortSignalが即時に待機を解除し、再実行で新しいSignalを作る。Clear・図読込は既存チェーンも停止する。実行中の任意のブロック削除もチェーンを止め、削除したTTSや切断した入力へ遅い回答を反映しない。ブラウザー側の中断は、Google側で進行中の生成まで取り消す保証ではない。
+diagramのStartはrunOnStartがtrueのFunctionBlockをデータ依存順にawaitし、その後にActionBlockを実行する。現在の対象は[diagram実装ガイド](diagram/diagram-implementation.md)を参照する。PIDBlockはrunで制御を開始して戻り、Actionチェーン後にwaitUntilStoppedを待つことで、計測ごとの連続制御中もStopを受け付ける。成功・中断・例外の終了処理ではPID制御も停止する。回答待ちのStopではAbortSignalが即時に待機を解除し、再実行で新しいSignalを作る。Clear・図読込は既存チェーンも停止する。実行中の任意のブロック削除もチェーンを止め、削除したTTSや切断した入力へ遅い回答を反映しない。ブラウザー側の中断は、Google側で進行中の生成まで取り消す保証ではない。
 
 `dispose()` は終了処理で、複数回呼んでも一度だけ処理する。初期化中ならAbortSignalを立て、await後に作成された資源も初期化処理が戻った後に破棄する。処理済みのアプリを初期化の逆順に破棄し、一つの後片付けが失敗しても残りを処理する。
 

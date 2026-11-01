@@ -408,6 +408,11 @@ export class Editor {
         setEditor(this);
 
         this.tools = range(BlockClassCount).map(x => new ToolItem(x));
+        // PIDをIMUの直後へ置き、画面上部から配置できるようにする。
+        const pidIndex = this.tools.findIndex(tool => geBlockName(tool.toolIdx) === "PIDBlock");
+        if (pidIndex >= 0) {
+            this.tools.splice(2, 0, this.tools.splice(pidIndex, 1)[0]);
+        }
         // Keep AI tools visible without depending on the last type index.
         for (const [offset, name] of ["AIChatBlock", "SpeechRecognitionBlock", "ObjectDetectionBlock", "ImageCaptionBlock"].entries()) {
             const idx = this.tools.findIndex(tool => geBlockName(tool.toolIdx) === name);
