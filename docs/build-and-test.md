@@ -1,6 +1,14 @@
 # ビルドと回帰テスト
 
-更新日: 2026-10-31。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-11-01。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## 旧Balance受信互換機能の削除（2026-11-01）
+
+BLE・Wi-Fiのversion=2通知受信、`parseBalanceSample()`、Balance関連型と購読API、IMUBlockの第2出力を削除した。専用サンプル`inverted-pendulum.json`とパーサー／ブラウザーのBalance専用模擬テストも削除し、`BLE-2FS90R-IMU-PLOT.json`はIMUの1ポート形式へ更新した。現行IMU通知version=3、10Hz STREAM共有、汎用PlotBlockの経路は維持する。旧balanceポート付き保存JSONの自動移行は行わない。
+
+`npm.cmd run verify`が成功し、TypeScript参照ビルド、Vite公開ビルド（201モジュール）、5アプリの入口と92件のWebGPU資産の静的確認を完了した。既存gameの動的／静的import併用の警告2件は継続。公開サンプルJSON 13件の解析とIMUの1ポート形式、更新サンプルの接続番号、関連6文書のローカルリンク474件、変更したJavaScriptの構文と差分の空白も静的確認した。
+
+テストはユーザー指定により実行していない。ブラウザー操作、実BLE／Wi-Fi通信・実機動作、ESP32のビルド・Uploadは未確認。以下の日付付きのBalance対応・試験結果は削除前の履歴であり、現行の実行手順ではない。
 
 ## 旧IMU通知形式の削除（2026-10-31）
 
@@ -50,7 +58,7 @@ ESP32の現行ソースと検証記録は別リポジトリーの`D:\usr\prj\esp
 
 ## FS90R 2輪倒立教材とプロット通知（2026-10-27）
 
-`esp32/app/inverted-pendulum/README.md`と`esp32/lib/plot/README.md`、diagramのBalance型・受信パーサー・IMUBlockの第2出力・[サンプル図](../public/diagram/data/inverted-pendulum.json)を追加した。既存Labのファームウェアと共有BLE／IMU／protocolの実装はこの変更で編集していない。
+`esp32/app/inverted-pendulum/README.md`と`esp32/lib/plot/README.md`、diagramのBalance型・受信パーサー・IMUBlockの第2出力・サンプル図`inverted-pendulum.json`を追加した。既存Labのファームウェアと共有BLE／IMU／protocolの実装はこの変更で編集していない。
 
 - PlatformIOの`supermini_esp32s3`ビルド成功。ESP32-S3の汎用定義に4MB Flash・DIO・USB CDCを指定、PSRAM不使用。RAM 29,876 bytes、アプリFlash 525,085 bytes。PlatformIOの既存キャッシュへの書込制限後、権限付きでビルドを完了した。
 - `npm.cmd run verify`成功。TypeScript、公開ビルド（202モジュール）、5アプリの入口と92件のWebGPU資産、新サンプルの存在を静的確認。既存gameの動的／静的import警告2件は継続。

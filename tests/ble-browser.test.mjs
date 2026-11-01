@@ -120,13 +120,6 @@ async function pageFor(context) {
             }
             telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
         };
-        mock.emitBalance = () => {
-            telemetry.value = new DataView(new ArrayBuffer(20));
-            telemetry.value.setUint8(0, 2); telemetry.value.setUint8(1, 1);
-            telemetry.value.setUint16(2, 9, true); telemetry.value.setUint32(4, 1234, true);
-            [125, 100, -250, 25, -3000, -3000].forEach((raw, i) => telemetry.value.setInt16(8 + i * 2, raw, true));
-            telemetry.dispatchEvent(new Event('characteristicvaluechanged'));
-        };
         Object.defineProperty(navigator, 'bluetooth', { configurable: true, value: {
             requestDevice(options) {
                 mock.requests++; mock.options = options; mock.userGesture = navigator.userActivation.isActive;
@@ -890,46 +883,6 @@ test('PlotBlock accepts other structs, rewires, saves/restores and releases DOM 
     await page.getByRole('button', {name: 'Clear', exact: true}).click();
     assert.equal(await page.locator('.diagram-plot').count(), 0);
     await page.waitForTimeout(200);
-    assert.equal(await page.locator('.diagram-plot').count(), 0);
-});
-
-test('Balance telemetry shares STREAM, plots commands, restores legacy IMU and clears live values', async context => {
-    const page = await pageFor(context);
-    await page.setViewportSize({ width: 1600, height: 1000 });
-    // The old one-port diagram must gain an empty second port without moving its IMU wire.
-    await page.evaluate(async () => {
-        const blocks = await (await fetch('/diagram/data/ble-imu-pca9685.json')).json();
-        const transfer = new DataTransfer();
-        transfer.items.add(new File([JSON.stringify(blocks.slice(0, 3))], 'legacy.json', { type: 'application/json' }));
-        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
-    });
-    await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 3);
-    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[1].outputPort.destinations.length), 1);
-    assert.equal(await page.evaluate(() => window.bleFixture.editor.blocks[1].balancePort.value), undefined);
-    // Load the complete two-plot sample, using the same drop path as the user.
-    await page.evaluate(async () => {
-        const blocks = await (await fetch('/diagram/data/inverted-pendulum.json')).json();
-        const transfer = new DataTransfer();
-        transfer.items.add(new File([JSON.stringify(blocks)], 'balance.json', { type: 'application/json' }));
-        document.getElementById('world-diagram').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer }));
-    });
-    await page.waitForFunction(() => window.bleFixture.editor.blocks.length === 4);
-    await connectFirstBlock(page);
-    await page.waitForFunction(() => window.bleMock.rate === 10);
-    await page.evaluate(() => { window.bleMock.emitTelemetry(); window.bleMock.emitBalance(); });
-    await page.waitForFunction(() => window.bleFixture.editor.blocks[3].plotElement.data?.[0]?.y.length === 1);
-    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks[3].plotElement.data.map(t => t.y[0])), [1.25, 1, -2.5, 0.25, -30, -30]);
-    assert.deepEqual(await page.evaluate(() => window.bleFixture.editor.blocks[2].plotElement.data.map(t => t.y[0])), [1, -2, 0, 9.80665, -4.903325, 0]);
-    assert.equal(await page.evaluate(() => window.bleMock.controls.filter(c => c.opcode === 4 && c.value === 10).length), 1);
-    assert.equal(await page.evaluate(() => window.bleMock.controls.some(c => c.opcode === 1 || c.opcode === 2)), false);
-    const saved = await page.evaluate(() => window.bleFixture.editor.blocks.map(b => b.makeObj()));
-    assert.equal(saved[1].ports[1].dataType.typeName, 'Balance');
-    assert.equal(JSON.stringify(saved).includes('attitude'), false);
-    await page.screenshot({ path: 'tmp/inverted-pendulum.png' });
-    await page.evaluate(() => window.bleFixture.connection.disconnect());
-    await page.waitForFunction(() => window.bleFixture.editor.blocks[1].balancePort.value === undefined);
-    await page.waitForFunction(() => window.bleFixture.editor.blocks[3].plotElement.data[0].y.length === 0);
-    await page.getByRole('button', { name: 'Clear', exact: true }).click();
     assert.equal(await page.locator('.diagram-plot').count(), 0);
 });
 

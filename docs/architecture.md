@@ -70,7 +70,7 @@ flowchart TD
 | `plot` | README・設定ファイルはあるが、調査時点では実装ソースがない | [README.md](../plot/README.md)、[package.json](../plot/package.json) |
 | 別リポジトリー`esp32/app/diagram-control` | DevKit V1／XIAO ESP32-S3 Sense／SuperMiniのBLE・Wi-Fi、角度／速度サーボ、IMU、Senseカメラ。PlatformIOで独立してビルド | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[platformio.ini](../../esp32/app/diagram-control/platformio.ini) |
 | 別リポジトリー`esp32/lib` | BLE・Wi-Fi・Protocol・Servo・IMU・Plotの共有C++ソース。uroaから分離して管理 | [ESP32教材ガイド](../../esp32/README.md)、[設計](../../esp32/docs/architecture.md) |
-| 旧倒立アプリ（運用対象外） | uroa内の旧ESP32フォルダーとともに廃止対象。別リポジトリーへ未移行。ブラウザーのBalance受信互換処理は残るが、diagram-controlは送信しない | [廃止範囲と互換機能](diagram/esp32-integration.md#旧フォルダーの廃止と残る互換機能) |
+| 旧倒立アプリ（運用対象外） | uroa内の旧ESP32フォルダーとともに廃止対象。別リポジトリーへ未移行。ブラウザーのBalance受信互換処理も削除済み | [廃止範囲](diagram/esp32-integration.md#旧フォルダーとbalance互換機能の廃止) |
 
 ### 数学・図形処理の主要な境界
 
@@ -153,7 +153,7 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 BLEの20バイトTelemetry version=1をlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として先頭ポートへ1回出力する（現行console.logはコメントアウト）。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度は出力しない。
 
-2026-10-27に[PlotTelemetry](../../esp32/lib/plot/README.md)の20byte通知version=2/schema=1に対応した。[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts)が角度・目標・角速度・誤差・左右速度指令を`Balance`構造体へ変換し、IMUBlockの2番目のbalanceポートへ出す。速度は実測値ではなく%指令。IMUとbalanceの購読で10Hz STREAMを共有し、両ポートの購読・値は削除・切断で解放する。既存JSONの先頭IMUポートは維持する。2026-10-30の旧倒立アプリ廃止方針後も受信互換処理と[inverted-pendulum.json](../public/diagram/data/inverted-pendulum.json)は残すが、現行diagram-controlはBalance通知を送らず、balance出力は未取得となる。
+2026-11-01に旧倒立アプリ向けのBalance通知version=2/schema=1の受信処理、型、IMUBlockの第2出力、専用サンプルと模擬テストを削除した。現行IMUBlockはgyro・accを持つ1個のStructPortを出力し、配置したブロックで10Hz STREAMを共有する。BLE・Wi-FiのIMU受信はversion=3のみ。旧balanceポートを含む保存JSONは非対応で、自動移行は行わない。通常の1ポートIMU図と汎用PlotBlockは維持する。
 
 Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単一の接続元をたどる。型が不明、接続元が複数、循環参照ならundefinedを返す。参照結果をdataTypeへ保存しないので、解除後に古い型を残さず、JSONには明示型だけを保存する。値の検証・描画・接続検査も有効な型を使う。subscribeConnections(listener)は配線更新後、両端へ{port, peer, connected}を同期通知し、返された関数で購読を解除する。重複接続・未接続の解除は通知しない。disconnectはどちらの端子からでも呼べ、disconnectAllとBlock.clearBlockで全配線を解除する。通知は当該ポートの接続変更に対するもので、ブロックをまたぐ式の型推論・型変更通知は未実装。
 

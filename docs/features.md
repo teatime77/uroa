@@ -1,6 +1,6 @@
 # 機能索引
 
-更新日: 2026-10-30（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
+更新日: 2026-11-01（日本時間）。目的の変更から、入口・主要関数・関連資産へたどるための索引。現行ソースを対象とし、dist、lib、node_modules、tmpの展開コピーは編集対象から除く。
 
 全体の依存関係は [architecture.md](architecture.md)、改善の順序は [improvement-plan.md](improvement-plan.md)、実際に確認した条件・結果は [現状確認](current-state.md) を参照する。この索引にソースが載っていることは、その機能を実行検証済みであることを意味しない。
 
@@ -57,7 +57,7 @@ planeはmovieからも利用される。all_functions.tsはnamespaceからモジ
 | DIAGRAM-11 | 音声を認識して文字列で出力する | [speech-recognition.ts](../diagram/ts/ai/speech-recognition.ts): SpeechRecognitionBlock、[speech-client.ts](../diagram/ts/ai/speech-client.ts): recognizeSpeech | Startで日本語の単発認識、セッション終了後にTextPortへ出力。「認識終了」と全体Stop、30秒タイムアウト。言語設定のみ保存。サンプルは [speech-ai-chat.json](../public/diagram/data/speech-ai-chat.json)。実音声・Androidは別途確認 |
 | DIAGRAM-05 | BLEサーボ指令・旧センサー連携を変える | [servo.ts](../diagram/ts/hardware/servo.ts): ServoMotorBlock、[ble.ts](../diagram/ts/ble-wifi/ble.ts): BLEConnection、[diagram_util.ts](../diagram/ts/diagram_util.ts): 旧sendData | サーボは角度／速度を選び、明示ARM後に角度60～120°をMOVE、速度−100～100%をSET_SPEED。モード変更は無効化。DISABLE/STOP、停止時の待機指令取消。旧センサーはPOST /send_data、定期取得はdiy_sbc=false |
 | DIAGRAM-06 | BLE機器を選択して接続・切断する | [ble.ts](../diagram/ts/ble-wifi/ble.ts): BLEConnectionBlock、BLEConnection、diagramBLE | ツールボックスから配置。canvasのButton、接続状態・端末名・エラー表示、INFOのACK・PING。実機検証とは区別する |
-| DIAGRAM-07 | IMUと互換用Balance通知を構造体で出力する | [imu.ts](../diagram/ts/hardware/imu.ts): IMUBlock、[ble.ts](../diagram/ts/ble-wifi/ble.ts): parseIMUSample、subscribeSamples、[plot_telemetry.ts](../diagram/ts/plot/plot_telemetry.ts) | 先頭ポートはgyro・acc。10Hz STREAMを共有しPlotBlockで表示。第2のbalance出力は旧倒立教材向けの受信互換機能で、現行diagram-controlは送信しない |
+| DIAGRAM-07 | IMU通知を構造体で出力する | [imu.ts](../diagram/ts/hardware/imu.ts): IMUBlock.readStatus、[ble.ts](../diagram/ts/ble-wifi/ble.ts): sampleChanged、retainIMUStream | version=3の通知からgyro・accを1個のポートへ出力。10Hz STREAMを共有しPlotBlockで表示。旧Balance受信と第2出力は削除済み |
 | DIAGRAM-08 | ポートに構造体の型と値を指定する | [data_type.ts](../diagram/ts/data_type.ts): Struct、Field、DataType、[port.ts](../diagram/ts/port.ts): StructPort、getDataType、subscribeConnections | 入れ子検証、複製・freeze、型一致、型参照の保存・復元。型未指定の入力は単一接続元を参照。配線変更後に両端へ通知。CalcBlockの構造体評価は未実装 |
 | DIAGRAM-09 | 数値・構造体を時系列グラフにする | [plot.ts](../diagram/ts/plot/plot.ts): PlotBlock、[plot_data.ts](../diagram/ts/plot/plot_data.ts): PlotHistory、getPlotGroups | Structの数値Fieldを列挙し、入れ子を横並びパネルに表示。IMUならgyro・acc、x/y/zはRGB。直近30秒、1秒ごとにμ±3σで軸更新。Plotlyを遅延読込。単位・3D表示は後続 |
 
@@ -128,7 +128,7 @@ ESP32の現行ソースは別リポジトリーの`D:\usr\prj\esp32`。uroa内�
 | ROBOT-02 | BLE接続・サーボ操作 | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[ble.ts](../../robot/esp32-ble-lab/web/src/ble.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | ARM/MOVE/STOP/DISABLE、ACK、直列化、切断。uroaの接続はDIAGRAM-06、ServoMotorBlockのBLE操作はDIAGRAM-05 |
 | ROBOT-03 | IMU表示・グラフ・CSV | [main.ts](../../robot/esp32-ble-lab/web/src/main.ts)、[protocol.ts](../../robot/esp32-ble-lab/web/src/protocol.ts) | 加速度・角速度。姿勢角やサーボ実測角度ではない |
 | ROBOT-04 | ESP32のBLE／Wi-Fiサーボ・IMU・XIAOカメラ | [アプリREADME](../../esp32/app/diagram-control/README.md)、[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、[共通C++クラス](../../esp32/README.md)、[通信仕様](../../esp32/app/diagram-control/docs/protocol.md) | 別リポジトリーのdiagram-controlとlibで管理する。DevKit／XIAO／SuperMiniに対応し、カメラはSenseのみ。操作・保存・認証は[Wi-Fiガイド](diagram/esp32-ble-lab-wifi.md)。ビルド・模擬確認・実機報告を区別する |
-| ROBOT-05 | 旧FS90R倒立アプリ（運用対象外） | [廃止範囲と残る互換機能](diagram/esp32-integration.md#旧フォルダーの廃止と残る互換機能)、[PlotTelemetry形式](../../esp32/lib/plot/README.md) | 旧倒立アプリは廃止対象で、別リポジトリーへ未移行。WebのBalance受信・サンプル・模擬テストは残る。現行diagram-controlはBalanceを送らない。実車の倒立成立は未確認 |
+| ROBOT-05 | 旧FS90R倒立アプリ（運用対象外） | [廃止範囲](diagram/esp32-integration.md#旧フォルダーとbalance互換機能の廃止) | 旧倒立アプリは廃止対象で、別リポジトリーへ未移行。WebのBalance受信・第2出力・専用サンプル・模擬テストも削除済み。実車の倒立成立は未確認 |
 | ROBOT-05 | DCモーター・エンコーダーの診断 | [main.cpp](../../robot/esp32_recovery/src/main.cpp) | 別ファームウェア。シリアル指令、IMU、手動停止と2秒経過停止 |
 
 ## 更新するとき

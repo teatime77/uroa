@@ -247,11 +247,10 @@ export class RobotWifi {
         if (this.closed) return;
         const bytes = decodeHex(value);
         const status = bytes.length === 12 && bytes[0] === 1;
-        const balance = bytes.length === 20 && bytes[0] === 2;
         const telemetry = bytes[0] === DeviceTelemetryVersion && bytes.length >= DeviceTelemetryHeaderLength &&
             bytes.length <= DeviceTelemetryMaxLength &&
             (bytes.length - DeviceTelemetryHeaderLength) % IMU6AxisRecordLength === 0;
-        if (!status && !balance && !telemetry) {
+        if (!status && !telemetry) {
             throw new Error("機器の通知形式が正しくありません。");
         }
         this.onPacket(new DataView(bytes.buffer));

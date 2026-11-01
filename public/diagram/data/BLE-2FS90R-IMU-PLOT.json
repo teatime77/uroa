@@ -15,18 +15,10 @@
       {
         "idx": 0,
         "destinations": [
-          2
+          1
         ],
         "dataType": {
           "typeName": "IMU",
-          "dimensions": []
-        }
-      },
-      {
-        "idx": 1,
-        "destinations": [],
-        "dataType": {
-          "typeName": "Balance",
           "dimensions": []
         }
       }
@@ -39,7 +31,7 @@
     "y": 527,
     "ports": [
       {
-        "idx": 2,
+        "idx": 1,
         "destinations": []
       }
     ]
@@ -51,7 +43,7 @@
     "y": 201,
     "ports": [
       {
-        "idx": 3,
+        "idx": 2,
         "destinations": [],
         "dataType": {
           "typeName": "number",
@@ -70,9 +62,9 @@
     "y": 104,
     "ports": [
       {
-        "idx": 4,
+        "idx": 3,
         "destinations": [
-          3
+          2
         ],
         "dataType": {
           "typeName": "number",
@@ -90,9 +82,9 @@
     "y": 100,
     "ports": [
       {
-        "idx": 5,
+        "idx": 4,
         "destinations": [
-          6
+          5
         ],
         "dataType": {
           "typeName": "number",
@@ -110,7 +102,7 @@
     "y": 220,
     "ports": [
       {
-        "idx": 6,
+        "idx": 5,
         "destinations": [],
         "dataType": {
           "typeName": "number",

@@ -1,6 +1,6 @@
 # diagramの機能とブロック実装ガイド
 
-更新日: 2026-10-30（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識・端末カメラ追加を反映した。2026-10-30にESP32側の参照先と旧倒立アプリの廃止範囲を更新した。変更ごとの検証条件・結果は [build-and-test.md](../build-and-test.md) を参照する。
+更新日: 2026-11-01（日本時間）。初版調査時のHEAD: `db3f4d2`。今後ブロックを追加するAI・開発者向けに、現行ソースの構造、呼び出し順、拡張箇所、制約をまとめる。初版はソースの静的調査で作成し、その後の音声認識・端末カメラ追加を反映した。2026-10-30にESP32側の参照先と旧倒立アプリの廃止範囲を更新し、2026-11-01にBalance互換機能の削除を反映した。変更ごとの検証条件・結果は [build-and-test.md](../build-and-test.md) を参照する。
 
 ## 1. 着手時に決めること
 
@@ -91,7 +91,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | CalcBlock／CompareBlock | 数値入力、数値の式評価。比較結果は0/1 | calcは明示的な呼出し。構造体の式評価・一般的な自動計算スケジューラーは未実装 |
 | BLEConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
 | ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度60～120°、速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
-| IMUBlock | 先頭imuはgyro・accのvec3、2番目balanceは姿勢・左右速度指令%のStructPort | 配置したブロックで10Hz STREAMを共有。balanceのversion=2/schema=1受信は旧倒立教材向けの互換機能として残るが、現行diagram-controlは送信しない。従来JSONの先頭ポートを維持。両出力とも切断・計測停止で消去。現行console.logはコメントアウト |
+| IMUBlock | imuはgyro・accのvec3を持つ1個のStructPort | 配置したブロックで10Hz STREAMを共有。version=3をreadStatusで読み、切断・計測停止で出力を消去。旧balance受信・第2出力は削除済みで、そのポートを含む保存JSONは非対応。現行console.logはコメントアウト |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
 | SpeechRecognitionBlock | 入力なし、TextPort出力。Startで単発の発話とセッション終了を待つ | ja-JPが既定。Web Speech API／webkit接頭辞を機能検出。30秒タイムアウト、権限・無音・空結果・通信失敗で後続を止める。実音声・Androidは別途確認 |

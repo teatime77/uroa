@@ -1,6 +1,6 @@
 # diagramとESP32の連携
 
-更新日: 2026-10-31（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
+更新日: 2026-11-01（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
 
 ## 現行の参照先
 
@@ -38,11 +38,11 @@ BLE・Wi-Fiとも、8バイトのヘッダー（version=3・flags・sequence・m
 
 通知長は8＋13×IMU数で、IMU1個は21バイト。ESP32の通知容量は268バイト、希望ATT MTUは271とする。実際に必要なのは通知長＋3以上の合意MTUであり、1個なら最低24、2個なら37が必要。不足時はSTREAMをRANGEエラーで拒否し、必要値をシリアルへ出す。Web BluetoothからMTUを直接指定する処理や分割通知は追加していない。希望値を設定しても、相手が必要な値へ対応する保証ではない。
 
-`sampleChanged()`はversion=3の長さ・種別を全件確認して各IMUBlockの`readStatus()`へ渡す。旧`parseIMUSample()`・購読APIとESP32の旧20バイト生成処理は削除済み。配置されたIMUBlockは`retainIMUStream()`で10HzのSTREAMを共有し、削除時に利用を解除する。Command／Statusのversion=1と倒立プロットのversion=2は維持する。送信形式の詳細は[protocol.md](../../../esp32/app/diagram-control/docs/protocol.md)を参照する。
+`sampleChanged()`はversion=3の長さ・種別を全件確認して各IMUBlockの`readStatus()`へ渡す。旧`parseIMUSample()`・購読APIとESP32の旧20バイト生成処理は削除済み。配置されたIMUBlockは`retainIMUStream()`で10HzのSTREAMを共有し、削除時に利用を解除する。Command／Statusのversion=1は維持し、旧倒立プロットのversion=2受信は削除した。送信形式の詳細は[protocol.md](../../../esp32/app/diagram-control/docs/protocol.md)を参照する。
 
 Wi-Fiも最大268バイトの可変長通知を扱い、HTTPでは最新IMU通知を1件だけ保持する。DeviceInfoのWi-Fi転送は未実装で、一覧の変更にはBLEでの再接続が必要。
 
-旧形式削除前には模擬試験15件で新旧の受信経路とDeviceInfo送信を確認した。旧形式削除以降はユーザー指定により模擬テストを実行しない。今回の変更は差分と参照を静的確認し、公開／C++ビルド、Upload、ブラウザー操作、MTU交渉、実BLE／Wi-Fi通信は未確認。
+2026-10-31の旧IMU形式削除前には模擬試験15件で新旧の受信経路とDeviceInfo送信を確認した。旧形式削除以降はユーザー指定により模擬テストを実行しない。2026-11-01のBalance互換機能削除後は`npm.cmd run verify`と参照・差分の静的確認が成功した。C++ビルド、Upload、ブラウザー操作、MTU交渉、実BLE／Wi-Fi通信は未確認。
 
 ## ビルドの分担
 
@@ -77,13 +77,13 @@ pio run --project-dir app/diagram-control -e supermini_esp32s3
 
 指令のACKは受付結果であり、サーボの実角度・動作完了を示さない。通知APIの成功もブラウザーの受信・描画を保証しない。ESP32の取得時刻とブラウザーの到着時刻は別であり、両者を同期した時計として扱わない。
 
-## 旧フォルダーの廃止と残る互換機能
+## 旧フォルダーとBalance互換機能の廃止
 
 2026-10-30にユーザーがuroa内の`esp32/`と`esp32-ble-lab/`を削除する方針を決定した。この文書更新は削除前の準備で、フォルダーの削除そのものは行わない。以後、現行のビルド・書き込み・通信仕様の参照先には使わない。
 
 旧BLE Labと倒立アプリのビルド・書き込みは運用対象外。倒立アプリは別リポジトリーへ移行しておらず、diagram-controlにも含まれない。削除前のソースや当時の仕様が必要な場合は、uroaのGit履歴で該当時点を参照する。旧ファームウェアの構造の説明は[履歴資料](esp32-ble-lab-firmware.md)、当時の確認結果は[build-and-test.md](../build-and-test.md)に残す。
 
-ブラウザー側のBalance型・version=2/schema=1受信パーサー・IMUBlockの第2出力・模擬テスト・サンプル図は、この文書更新では削除しない。通信形式は別リポジトリーの[PlotTelemetry](../../../esp32/lib/plot/README.md)を参照する。**現行diagram-controlはgyro・accのIMU通知を送り、Balance通知は送らない**ため、balance出力は未取得のままとなる。ブラウザーに互換処理が残っていることは、倒立アプリの提供・運用や実車の倒立成立を意味しない。
+2026-11-01にブラウザー側のBalance型・version=2/schema=1受信パーサー・購読API・IMUBlockの第2出力・専用模擬テスト・`inverted-pendulum.json`を削除した。Wi-Fi側もversion=2を受け付けない。`BLE-2FS90R-IMU-PLOT.json`は未接続だったBalanceポートを除き、IMUとサーボの図として維持する。**現行diagram-controlはgyro・accのIMU通知version=3を送る**ため、この削除で現行IMUの受信経路は変更しない。旧balanceポートを含む保存JSONは非対応で、自動移行は行わない。
 
 ## 確認範囲
 

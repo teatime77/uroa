@@ -16,7 +16,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
 - ESP32ファームウェアの現行ソースは別リポジトリーの`D:\usr\prj\esp32`。教材は[app/diagram-control](../esp32/app/diagram-control/README.md)、共有C++ソースは[lib](../esp32/README.md)。ESP32側を変更する場合は[同リポジトリーのAGENTS.md](../esp32/AGENTS.md)を読む。PlatformIOで独立してビルドし、npmの`verify`には含めない。仕様・配線・送受信タイミング・ビルドの参照先は[連携ガイド](docs/diagram/esp32-integration.md)にまとめる。
-- uroa内の`esp32/`と`esp32-ble-lab/`は2026-10-30に削除方針が決まった旧構成。現行の作業先・仕様の根拠にしない。旧倒立アプリは運用対象外で、別リポジトリーへ移行していない。ブラウザーに残るBalance受信・サンプル・模擬テストは互換機能で、diagram-controlはBalance通知を送らない。
+- uroa内の`esp32/`と`esp32-ble-lab/`は2026-10-30に削除方針が決まった旧構成。現行の作業先・仕様の根拠にしない。旧倒立アプリは運用対象外で、別リポジトリーへ移行していない。ブラウザーのBalance受信・型・第2出力・専用サンプル・模擬テストは2026-11-01に削除した。現行diagram-controlはIMU通知version=3を使う。
 - ESP32のWi-Fi設定・NVS・mDNS・通信は別リポジトリーの`lib/wifi/`・`lib/ble/`、教材設定・XIAOカメラは`app/diagram-control/src/network.cpp`・`camera.cpp`。Web側は`diagram/ts/ble-wifi/robot-wifi.ts`・`robot-wifi-dialog.ts`・`diagram/ts/camera/camera-feed.ts`。操作・保存・認証・制約は[Wi-Fiガイド](docs/diagram/esp32-ble-lab-wifi.md)。過去のビルド・実機報告を現行ファームウェアの再検証結果として扱わない。
 - 旧13サブモジュールはすべてuroaの通常フォルダーとして管理する。変更・コミットはuroaで行う。履歴統合・検証結果は [docs/monorepo-migration.md](docs/monorepo-migration.md)、algebraの先行移行は [docs/algebra-monorepo.md](docs/algebra-monorepo.md) に記録する。
 - `dist/`、各モジュールの `lib/`、`node_modules/` は主な編集対象のソースではない。`tmp/zip/`には過去の展開コピーがある。
@@ -29,7 +29,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 
 - `diagram/ts/ai/speech-recognition.ts`のSpeechRecognitionBlockはStartで単発の音声認識を待ち、セッション終了後に確定文字列をTextPortへ出力する。認識終了は結果を待つstop、全体Stopはabort。30秒タイムアウト、言語設定のみ保存し、復元で認識を始めない。ブラウザーの認識サービスに依存し、実音声・Androidの確認と模擬確認を区別する。
 
-- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockで現行ESP32のdiagram-controlへ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは角度／速度モードを選び、90°または速度0%で明示的に有効化する。角度は60～120°のMOVE、速度は−100～100%のSET_SPEEDを送る。モード変更ではCHを無効化し、再有効化する。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockが先頭StructPortからgyro・accを出力し、配置されたIMUBlockが10HzのSTREAMを共有する。2番目balanceの受信処理は残るが、diagram-controlは送信しない。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
+- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockで現行ESP32のdiagram-controlへ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは角度／速度モードを選び、90°または速度0%で明示的に有効化する。角度は60～120°のMOVE、速度は−100～100%のSET_SPEEDを送る。モード変更ではCHを無効化し、再有効化する。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockは1個のStructPortからgyro・accを出力し、配置されたIMUBlockが10HzのSTREAMを共有する。旧balance出力は削除済み。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
 - `diagram/ts/index.ts`の `diy_sbc = false` により旧HTTPセンサーの定期取得は無効。旧カメラ・センサーのHTTP `POST /send_data`は残るが、ServoMotorBlockはBLEを使う。BLEのIMU通知受信は独立している。
 - plotには実装ソースがない。lessonの `@let` は未実装。mediaのCanvas動画録画・音声合成部分はコメントアウトされている。
 - planeの旧図形JSON保存・復元とmovie内のスライド・クイズ機能は廃止済み。図形の追加時は操作記録による生成・再生を確認する。diagram・FirebaseのJSON保存、独立した `lesson/ts/` は別機能として残る。

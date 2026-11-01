@@ -1,7 +1,7 @@
 import { assert, Vec2, Vec3 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramBLE, type BLEConnectionState } from "../ble-wifi/ble";
-import { imuStruct, balanceStruct, type IMUValue, Vec3Value } from "../data_type";
+import { imuStruct, type IMUValue, Vec3Value } from "../data_type";
 import { PortType, theCanvas } from "../diagram_util";
 import { StructPort } from "../port";
 import type { Attr } from "../ui";
@@ -9,25 +9,18 @@ import type { Attr } from "../ui";
 /** Like the distance sensor block, this block pushes one received measurement. */
 export class IMUBlock extends FunctionBlock {
     readonly outputPort = new StructPort(this, PortType.outputPort, imuStruct, "imu");
-    readonly balancePort = new StructPort(this, PortType.outputPort, balanceStruct, "balance");
     private releaseState?: () => void;
     private releaseStream?: () => void;
-    private releaseBalance?: () => void;
     private removed = false;
 
     constructor(data: Attr) {
         super(data);
         this.deviceType = DeviceType.IMU6Axis;
-        this.ports = [this.outputPort, this.balancePort]; // 既存JSONの先頭IMUポートを維持。
+        this.ports = [this.outputPort];
         this.setBoxSize();
         if (!this.inToolbox) {
             this.releaseState = diagramBLE.subscribe(state => this.connectionChanged(state));
             this.releaseStream = diagramBLE.retainIMUStream();
-            this.releaseBalance = diagramBLE.subscribeBalanceSamples(sample => {
-                if (this.removed) return;
-                this.balancePort.setPortValue(sample.value);
-                theCanvas?.requestUpdateCanvas();
-            });
         }
     }
 
@@ -67,7 +60,6 @@ export class IMUBlock extends FunctionBlock {
     private connectionChanged(state: BLEConnectionState): void {
         if (state.phase !== "connected" || !state.imuAvailable || !state.streaming) {
             this.outputPort.setPortValue(undefined);
-            this.balancePort.setPortValue(undefined);
         }
         theCanvas?.requestUpdateCanvas();
     }
@@ -103,7 +95,6 @@ export class IMUBlock extends FunctionBlock {
             ctx.font = "14px sans-serif";
             ctx.fillText("gyro：角速度 °/s", this.position.x + 16, this.position.y + 66);
             ctx.fillText("acc：加速度 m/s²", this.position.x + 16, this.position.y + 86);
-            ctx.fillText("balance：姿勢 °・角速度 °/s・速度指令 %", this.position.x + 16, this.position.y + 106);
         }
         ctx.restore();
     }
@@ -111,11 +102,10 @@ export class IMUBlock extends FunctionBlock {
     clearBlock(): void {
         this.removed = true;
         this.releaseStream?.();
-        this.releaseBalance?.();
         this.releaseState?.();
-        this.releaseStream = this.releaseState = this.releaseBalance = undefined;
+        this.releaseStream = undefined;
+        this.releaseState = undefined;
         this.outputPort.setPortValue(undefined);
-        this.balancePort.setPortValue(undefined);
         super.clearBlock();
     }
 }
