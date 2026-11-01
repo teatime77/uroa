@@ -83,6 +83,8 @@ node --test --test-name-pattern='Balance telemetry|multiple IMU|IMU absence|IMU 
 
 作業ディレクトリはuroa。PowerShellでは `npm.cmd` を使う。
 
+`tests/`以下の`.mjs`はローカル専用のテストスクリプトとしてGitの追跡対象から外し、`.gitignore`で除外する。既存のローカルファイルは保持するが、新規cloneには含まれない。以下の`.mjs`を使うテスト手順は、対象スクリプトをローカルに持つ環境で実行する。公開ビルドの静的確認に使う`scripts/check-dist.mjs`とアイコン生成用の`scripts/generate-diagram-icons.mjs`は引き続きGitで管理する。
+
 | コマンド | 処理 |
 |---|---|
 | `npm.cmd ci` | ロックファイルに従ってnpm依存を準備 |
