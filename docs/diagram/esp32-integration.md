@@ -40,6 +40,8 @@ BLE・Wi-Fiとも、8バイトのヘッダー（version=3・flags・sequence・m
 
 `sampleChanged()`はversion=3の長さ・種別を全件確認して各IMUBlockの`readStatus()`へ渡す。旧`parseIMUSample()`・購読APIとESP32の旧20バイト生成処理は削除済み。配置されたIMUBlockは`retainIMUStream()`で10HzのSTREAMを共有し、削除時に利用を解除する。Command／Statusのversion=1は維持し、旧倒立プロットのversion=2受信は削除した。送信形式の詳細は[protocol.md](../../../esp32/app/diagram-control/docs/protocol.md)を参照する。
 
+ヘッダーのoffset=4にあるmillisは`getUint32(4, true)`で読み、`readStatus(time, data, offset)`のtimeへミリ秒単位で渡す。同じ通知内の全IMUレコードは同じ時刻を持ち、IMUBlockは`{ time, gyro, acc }`を出力する。PlotBlockは最上位の数値型timeを横軸へ使い、最初のサンプルからの経過秒で表示する。ブラウザーへの到着間隔は横軸に影響しない。機器再起動やmillisの桁あふれ等で時刻が巻き戻ると履歴を消去し、0秒から計時し直す。
+
 Wi-Fiも最大268バイトの可変長通知を扱い、HTTPでは最新IMU通知を1件だけ保持する。DeviceInfoのWi-Fi転送は未実装で、一覧の変更にはBLEでの再接続が必要。
 
 2026-10-31の旧IMU形式削除前には模擬試験15件で新旧の受信経路とDeviceInfo送信を確認した。旧形式削除以降はユーザー指定により模擬テストを実行しない。2026-11-01のBalance互換機能削除後は`npm.cmd run verify`と参照・差分の静的確認が成功した。C++ビルド、Upload、ブラウザー操作、MTU交渉、実BLE／Wi-Fi通信は未確認。

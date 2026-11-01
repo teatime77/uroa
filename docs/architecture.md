@@ -151,7 +151,7 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 [imu.ts](../diagram/ts/hardware/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
 
-BLEの20バイトTelemetry version=1をlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。1通知を完成したIMU構造体として先頭ポートへ1回出力する（現行console.logはコメントアウト）。sequenceとESP32 uptimeはIMUSampleの付加情報とし、IMUのgyro・accへ混ぜない。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度は出力しない。
+現行のTelemetry version=3をlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。ヘッダーのESP32起動後ミリ秒を`readStatus(time, data, offset)`へ渡し、各IMUBlockは`{ time, gyro, acc }`を1つの値として出力する（現行console.logはコメントアウト）。timeはIMUValueと実行時のimuStructの両方にnumber型で定義する。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度と受信番号は出力しない。
 
 2026-11-01に旧倒立アプリ向けのBalance通知version=2/schema=1の受信処理、型、IMUBlockの第2出力、専用サンプルと模擬テストを削除した。現行IMUBlockはgyro・accを持つ1個のStructPortを出力し、配置したブロックで10Hz STREAMを共有する。BLE・Wi-FiのIMU受信はversion=3のみ。旧balanceポートを含む保存JSONは非対応で、自動移行は行わない。通常の1ポートIMU図と汎用PlotBlockは維持する。
 
@@ -159,7 +159,7 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 [plot.ts](../diagram/ts/plot/plot.ts)のPlotBlockは1つの型未指定入力Portを持ち、接続元のStruct.membersを読み取って数値Fieldをグラフ化する。IMUValue・imuStructへの依存はなく、number、直接の数値Fieldを持つStruct、入れ子のStructを扱う。各構造体の直接の数値Fieldを1つのパネルにし、入れ子はパス名をタイトルとして横に並べる。IMUならgyro・accの2パネル、x/y/zはred/green/blueとなる。文字列Fieldは描画しない。Fieldへの単位情報はまだ追加しない。
 
-[plot_data.ts](../diagram/ts/plot/plot_data.ts)はFieldの列挙と履歴・統計を担当する。ブラウザー受信時刻を別途保持し、直近30秒、最大6000サンプルを保存する。データ受信時に線を更新し、初回取得と以後1秒ごとに系列ごとの平均・母標準偏差を計算する。各パネルは全系列のμ±3σの下限・上限をまとめ、1/2/5系の目盛りへ外側に丸める。σ=0では最小幅を設ける。3σ外の値は画面外になる場合がある。入力未取得・解除・配線変更で履歴を消し、受信待ちへ戻す。
+[plot_data.ts](../diagram/ts/plot/plot_data.ts)はFieldの列挙と履歴・統計を担当する。入力型の最上位にnumber型のtimeがあればミリ秒時刻として優先し、timeは縦軸の系列から除外する。それ以外はブラウザー受信時刻を使う。最初のサンプルを0秒とする横軸で直近30秒、最大6000サンプルを保存し、時刻が巻き戻ったら履歴と時刻の起点をリセットする。データ受信時に線を更新し、初回取得と以後1秒ごとに系列ごとの平均・母標準偏差を計算する。各パネルは全系列のμ±3σの下限・上限をまとめ、1/2/5系の目盛りへ外側に丸める。σ=0では最小幅を設ける。3σ外の値は画面外になる場合がある。入力未取得・解除・配線変更で履歴を消し、受信待ちへ戻す。
 
 グラフはcanvasの枠内へ位置を合わせたdivにPlotly.jsで描き、移動・画面リサイズへ追従する。見出し・ポート・枠は従来のcanvasで扱う。Plotly.reactは要求をまとめて直列実行し、削除時はタイマー・ResizeObserver・購読・描画予約を解除してpurgeとDOM削除を行う。ライブラリはdiagramのnpm依存plotly.js-gl3d-dist-min 4.1.2を初回配置時に遅延読込する。scatterと将来の3Dに必要な種類を含む配布版だが、今回のPlotBlockは2D時系列表示のみ。Viteの開発・公開ビルド双方でローカル資産として配信する。[公式配布構成](https://github.com/plotly/plotly.js/blob/main/dist/README.md)、[Plotly API](https://plotly.com/javascript/plotlyjs-function-reference/)
 

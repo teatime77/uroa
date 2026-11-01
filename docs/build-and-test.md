@@ -2,6 +2,12 @@
 
 更新日: 2026-11-01。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## Telemetry時刻をPlotの横軸へ反映（2026-11-01）
+
+ユーザーが追加したTelemetryの時刻引数・IMUValue.timeを確認し、ヘッダーのmillis読み取りをリトルエンディアンへ修正し、実行時のimuStructにもnumber型timeを追加した。PlotHistoryは最上位の数値型time（ミリ秒）を横軸へ使い、最初のサンプルを0秒とする。time自体は縦軸の系列から除き、数値型timeがない入力は従来どおりブラウザー受信時刻を使う。時刻が巻き戻った場合は履歴と起点をリセットする。保持範囲は直近30秒、最大6000件のまま。
+
+`npm.cmd run verify`が成功し、TypeScript参照ビルド、Vite公開ビルド（201モジュール）、5アプリの入口と92件のWebGPU資産の静的確認を完了した。既存gameの動的／静的import併用の警告2件は継続。ローカル専用の既存テストデータもtime付きの形式に合わせたが、ユーザー指定によりテストは実行していない。今回の変更後のブラウザー操作、実BLE／Wi-Fi通信・実機での時刻表示は未確認。
+
 ## 旧Balance受信互換機能の削除（2026-11-01）
 
 BLE・Wi-Fiのversion=2通知受信、`parseBalanceSample()`、Balance関連型と購読API、IMUBlockの第2出力を削除した。専用サンプル`inverted-pendulum.json`とパーサー／ブラウザーのBalance専用模擬テストも削除し、`BLE-2FS90R-IMU-PLOT.json`はIMUの1ポート形式へ更新した。現行IMU通知version=3、10Hz STREAM共有、汎用PlotBlockの経路は維持する。旧balanceポート付き保存JSONの自動移行は行わない。

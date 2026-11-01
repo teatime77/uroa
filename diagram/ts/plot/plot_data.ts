@@ -1,5 +1,5 @@
 /** 入力型からの系列構成、時系列履歴の保持、縦軸用の統計計算を行う。 */
-import type { DataType } from "../data_type";
+import type { DataType, StructValue } from "../data_type";
 
 /** 1本の折れ線に対応する名前・入力値内の参照経路・表示色。 */
 export interface PlotSeries {
@@ -17,7 +17,7 @@ export interface PlotGroup {
 
 /** 1回の受信で記録する経過時間と全系列の値。 */
 export interface PlotSample {
-    /** 最初の受信からの経過秒数。 */
+    /** 最初のサンプルからの経過秒数。入力のtimeがあれば、その時刻を基準にする。 */
     readonly time: number;
     /** PlotHistory.seriesと同じ順序で並ぶ数値。 */
     readonly values: readonly number[];
@@ -42,6 +42,7 @@ const axisColors: Record<string, string> = { x: "red", y: "green", z: "blue" };
 
 /**
  * 入力型を再帰的にたどり、数値フィールドを構造体ごとのパネルへまとめる。
+ * 最上位の数値型timeは横軸用のミリ秒時刻として扱い、系列から除く。
  * @param type グラフへ入力する値の型。
  * @returns パネル名と各系列の参照経路を持つグループ一覧。
  * @throws 配列型を走査した場合。
@@ -68,7 +69,8 @@ export function getPlotGroups(type: DataType): PlotGroup[] {
         if (!struct) {
             return;
         }
-        const fields = struct.members.filter(field => field.type.typeName === "number" && !field.type.dimensions.length);
+        const fields = struct.members.filter(field => field.type.typeName === "number" &&
+            !field.type.dimensions.length && (path.length > 0 || field.name !== "time"));
         if (fields.length) {
             groups.push({
                 name: path.join(".") || struct.name,
@@ -139,8 +141,12 @@ export class PlotHistory {
     /** 全パネルの系列を表示順に並べた一覧。 */
     readonly series: readonly PlotSeries[];
     readonly samples: PlotSample[] = [];
-    /** 最初のサンプルの受信時刻。単位はミリ秒。 */
+    /** 最上位の数値型timeを横軸に使うかどうか。 */
+    private readonly hasInputTime: boolean;
+    /** 最初のサンプルの時刻。単位はミリ秒。 */
     private origin?: number;
+    /** 時刻の巻き戻りを検出するための直前の時刻。単位はミリ秒。 */
+    private previousTime?: number;
 
     /**
      * 入力型からパネルと系列を構成する。
@@ -151,18 +157,26 @@ export class PlotHistory {
     constructor(readonly type: DataType, readonly windowSeconds = 30, readonly maximumSamples = 6000) {
         this.groups = getPlotGroups(type);
         this.series = this.groups.flatMap(group => [...group.series]);
+        this.hasInputTime = type.struct?.members.some(field => field.name === "time" &&
+            field.type.typeName === "number" && !field.type.dimensions.length) ?? false;
     }
 
     /**
      * 値を検証して各系列の数値を記録し、保持範囲外の履歴を削除する。
+     * 数値型timeがあれば優先し、機器再起動や時刻の桁あふれで巻き戻ったら履歴を消す。
      * @param value 入力型に従う受信値。
-     * @param now 受信時刻。performance.now()と同じ単調増加するミリ秒単位の値。
+     * @param now 入力に数値型timeがない場合の受信時刻。performance.now()のミリ秒値。
      * @throws 受信値が入力型に適合しない場合。
      */
     append(value: unknown, now: number): void {
         this.type.validateValue(value);
-        this.origin ??= now;
-        const time = (now - this.origin) / 1000;
+        const timestamp = this.hasInputTime ? (value as StructValue).time as number : now;
+        if (this.previousTime !== undefined && timestamp < this.previousTime) {
+            this.clear();
+        }
+        this.origin ??= timestamp;
+        this.previousTime = timestamp;
+        const time = (timestamp - this.origin) / 1000;
         const values = this.series.map(series => {
             let current: unknown = value;
             for (const name of series.path) {
@@ -176,7 +190,7 @@ export class PlotHistory {
 
     /**
      * 指定時刻から見て古いサンプルと、最大件数を超えた古いサンプルを削除する。
-     * @param time 最初の受信からの経過秒数。
+     * @param time 最初のサンプルからの経過秒数。
      */
     prune(time: number): void {
         const first = this.samples.findIndex(sample => sample.time >= time - this.windowSeconds);
@@ -195,6 +209,7 @@ export class PlotHistory {
     clear(): void {
         this.samples.length = 0;
         this.origin = undefined;
+        this.previousTime = undefined;
     }
 
     /**

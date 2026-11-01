@@ -2,7 +2,13 @@
 export type StructValue = { readonly [field: string]: DataValue };
 export type DataValue = number | string | StructValue;
 export interface Vec3Value extends StructValue { readonly x: number; readonly y: number; readonly z: number; }
-export interface IMUValue extends StructValue { readonly gyro: Vec3Value; readonly acc: Vec3Value; }
+/** 同じTelemetryから取得した時刻・角速度・加速度。 */
+export interface IMUValue extends StructValue {
+    /** ESP32起動後の経過時間。単位はミリ秒。 */
+    readonly time: number;
+    readonly gyro: Vec3Value;
+    readonly acc: Vec3Value;
+}
 
 const structs = new Map<string, Struct>();
 
@@ -111,5 +117,9 @@ export const numberType = new DataType("number");
 export const stringType = new DataType("string");
 export const vec3Struct = new Struct("vec3", ["x", "y", "z"].map(name => new Field(name, numberType)));
 export const vec3Type = new DataType("vec3");
-export const imuStruct = new Struct("IMU", [new Field("gyro", vec3Type), new Field("acc", vec3Type)]);
+export const imuStruct = new Struct("IMU", [
+    new Field("time", numberType),
+    new Field("gyro", vec3Type),
+    new Field("acc", vec3Type)
+]);
 export const imuType = new DataType("IMU");

@@ -34,10 +34,18 @@ export class IMUBlock extends FunctionBlock {
         return offset + 1;
     }
 
-    readStatus(data: DataView, offset : number) : number {
+    /**
+     * IMUレコードを物理量へ変換し、Telemetryの時刻とともに出力する。
+     * @param time ESP32起動後の経過時間。単位はミリ秒。
+     * @param data Telemetry全体のバイナリ。
+     * @param offset IMUレコードの開始位置。
+     * @returns 次のレコードの開始位置。
+     */
+    readStatus(time: number, data: DataView, offset: number): number {
         assert(data.getInt8(offset) == this.deviceType);
 
         const value = {
+            time: time,
             acc:{
                 x: data.getInt16(offset + 1, true) / 16384 * 9.80665, 
                 y: data.getInt16(offset + 3, true) / 16384 * 9.80665, 

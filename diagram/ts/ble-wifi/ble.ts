@@ -282,6 +282,8 @@ export class BLEConnection {
                 if (value.byteLength !== expectedLength) {
                     throw new Error("機器別Telemetryの長さと登録センサー数が一致しません。");
                 }
+                // ヘッダーの時刻はESP32起動後のミリ秒。数値はリトルエンディアン。
+                const time = value.getUint32(4, true);
                 // 全レコードを検証してからポートへ反映する。
                 let offset = DeviceTelemetryHeaderLength;
                 for (const sensor of sensors) {
@@ -292,7 +294,7 @@ export class BLEConnection {
                 }
                 offset = DeviceTelemetryHeaderLength;
                 for (const sensor of sensors) {
-                    offset = sensor.readStatus(value, offset);
+                    offset = sensor.readStatus(time, value, offset);
                 }
                 return;
             }

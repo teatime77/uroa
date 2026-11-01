@@ -28,7 +28,7 @@ export class PlotBlock extends FunctionBlock {
     readonly inputPort = new Port(this, PortType.inputPort, "a");
     /** Canvasに重ねて配置するPlotlyの描画先。ツールボックスでは作成しない。 */
     readonly plotElement?: HTMLDivElement;
-    /** 現在の入力型に対応する系列と受信履歴。 */
+    /** 現在の入力型に対応する系列と時刻付きの履歴。 */
     private history?: PlotHistory;
     /** パネルごとに統計から求めた縦軸の範囲と目盛り。 */
     private scales: PlotScale[] = [];
@@ -127,7 +127,7 @@ export class PlotBlock extends FunctionBlock {
     }
 
     /**
-     * 受信値を履歴へ追加する。未定義値では履歴と統計更新をリセットする。
+     * 入力のtime（ミリ秒）を優先して履歴へ追加し、未定義値では履歴と統計更新をリセットする。
      * @returns 受信値の反映が完了したことを示すPromise。
      */
     async valueChanged(): Promise<void> {

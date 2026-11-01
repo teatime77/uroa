@@ -23,11 +23,11 @@ PlotBlockはIMUValue・imuStructを参照せず、DataType.structとStruct.membe
 - CalcBlockの式で構造体・フィールドの参照、数値計算、構造体の生成を扱う。if文・whileループは追加しない。
 - 汎用構造体・計算の完成は2026-10-16のデモに必須ではない。ただしIMU取得・グラフ・今後のポート変更はこの設計を前提にする。
 
-対象の構造体は次のとおり。時刻・受信番号を必要とする場合も、このIMU定義に勝手にフィールドを追加せず、サンプルの付加情報として別に扱う。
+2026-11-01のユーザー指定により、IMUにはTelemetryのミリ秒時刻timeを追加する。実行時のimuStructにも同じnumber型フィールドを登録し、ポートの検証・コピーで時刻を保持する。受信番号は出力しない。PlotBlockは最上位の数値型timeを横軸に使い、縦軸系列からは除く。timeがない入力は従来どおりブラウザー受信時刻を使い、どちらも最初のサンプルを0秒とする。
 
 ```text
 struct vec3 { x: number; y: number; z: number; }
-struct IMU { gyro: vec3; acc: vec3; }
+struct IMU { time: number; gyro: vec3; acc: vec3; }
 ```
 
 ## 現行ソースと制約
@@ -114,7 +114,7 @@ makeInputValueMapもTypedValueの環境を作る処理へ変更する。最終�
 | b = a.gyro.x | IMU | numberを取り出す |
 | b = 2 * a.acc.x + a.acc.y | IMU | フィールドを使う数値計算 |
 | b = vec3(a.acc.x, a.acc.y, a.acc.z) | IMU | vec3を生成する |
-| b = IMU(a.gyro, vec3(2*a.acc.x, 2*a.acc.y, 2*a.acc.z)) | IMU | 計算結果を入れた新しいIMUを生成する |
+| b = IMU(a.time, a.gyro, vec3(2*a.acc.x, 2*a.acc.y, 2*a.acc.z)) | IMU | 時刻を引き継ぎ、計算結果を入れた新しいIMUを生成する |
 
 ドット参照は、通常の演算引数を評価する前に特別扱いする。先頭のaだけを入力環境で解決し、以降のgyro・xはStruct.membersのフィールド名として順に解決する。gyroやxを独立した変数として入力環境から探さない。登録されていないフィールドへのアクセスは拒否する。
 

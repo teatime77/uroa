@@ -347,7 +347,14 @@ export abstract class FunctionBlock extends Block {
         throw new MyError();
     }
 
-    readStatus(data: DataView, offset : number) : number {
+    /**
+     * Telemetry内のセンサーレコードを読み取り、次のレコード位置を返す。
+     * @param time 機器起動後の経過時間。単位はミリ秒。
+     * @param data Telemetry全体のバイナリ。
+     * @param offset このセンサーのレコード開始位置。
+     * @returns 次のレコードの開始位置。
+     */
+    readStatus(time: number, data: DataView, offset: number): number {
         throw new MyError();
     }
 
