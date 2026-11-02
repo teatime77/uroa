@@ -20,7 +20,7 @@ export class IMUBlock extends FunctionBlock {
         this.setBoxSize();
         if (!this.inToolbox) {
             this.releaseState = diagramBLE.subscribe(state => this.connectionChanged(state));
-            this.releaseStream = diagramBLE.retainIMUStream();
+            this.releaseStream = diagramBLE.retainSensorStream(this);
         }
     }
 
@@ -98,7 +98,19 @@ export class IMUBlock extends FunctionBlock {
         ctx.fillText("IMU", this.position.x + 16, this.position.y + 14);
         if (!this.inToolbox) {
             const state = diagramBLE.state;
-            const label = state.phase !== "connected" ? "機器未接続" : !state.imuAvailable ? "IMU未検出" : state.streaming ? `計測中：10 Hz (${state.transport === "wifi" ? "Wi-Fi" : "BLE"})` : "計測開始中";
+            let label: string;
+            if (state.phase !== "connected") {
+                label = "機器未接続";
+            }
+            else if (!diagramBLE.isSensorRegistered(this)) {
+                label = "再接続して機器を登録";
+            }
+            else if (!state.imuAvailable) {
+                label = "IMU未検出";
+            }
+            else {
+                label = state.streaming ? `計測中：10 Hz (${state.transport === "wifi" ? "Wi-Fi" : "BLE"})` : "計測開始中";
+            }
             ctx.fillText(label, this.position.x + 16, this.position.y + 40);
             ctx.font = "14px sans-serif";
             ctx.fillText("gyro：角速度 °/s", this.position.x + 16, this.position.y + 66);

@@ -46,10 +46,10 @@
 4. 「以前接続したSSID」から選ぶか、「Wi-Fiを検索」でSSIDを選択するか手入力し、パスワードを入力する。オープンネットワークは「パスワードなし」を明示する。
 5. 「Wi-Fiへ接続」を押す。機器の選択は不要で、BLE接続中の基板へ設定を送る。Wi-Fi接続とサーバー開始の成功後、SSID・パスワードをNVSへ保存する。失敗時は以前の保存値を上書きしない。
 6. 基板固有ID、mDNS名、現在のIP、ポートをBLEで取得し、教材用固定キーに対応したファームウェアか確認する。接続キーの入力は不要。diagramはWi-Fi側の認証・INFO ACKを確認し、ESP32はBLE接続・広告を停止する。
-7. ServoMotorBlockでモードに応じて改めて「90°で有効化」または「0%で有効化」を押す。切り替え前の有効状態は引き継がない。IMUBlockがあれば共有10Hz通知を再開する。
+7. ServoMotorBlockでモードに応じて改めて「90°で有効化」または「0%で有効化」を押す。切り替え前の有効状態は引き継がない。登録済みのIMUBlockまたはUltrasonicDistanceSensorBlockがあれば共有10Hz通知を再開する。
 8. CameraBlockを配置すると、既定の取得元「XIAO」でJPEG取得・表示を開始する。実装時の追加待ち1秒は、後続のユーザー変更により現在0ms。実際の更新間隔は撮影・通信・画像読み込みなどの時間に依存する。XIAOを選択した複数CameraBlockは1台の共通画像を表示する。「端末のカメラ」を選び「開始」を押すとPC／Android自身のカメラへ切り替えられる。端末カメラはESP32への接続不要で、HTTPS／localhostとブラウザーのカメラ許可が必要。選択設定だけを保存し、読込では端末カメラを起動しない。操作・停止条件は[diagram実装ガイド](diagram-implementation.md)を参照する。2026-10-15の追加はビルドまでの確認で、ブラウザー・Android・実機確認はユーザーが行う。顔検出処理は追加していない。
 
-Wi-Fi設定中はサーボ停止・STREAM=0を送信し、BLEハートビートを一時停止する。設定を閉じてBLEに戻る場合はハートビートとIMU購読を再開する。サーボは自動有効化しない。
+Wi-Fi設定中はサーボ停止・STREAM=0を送信し、BLEハートビートを一時停止する。設定を閉じてBLEに戻る場合はハートビートとセンサー購読を再開する。サーボは自動有効化しない。
 
 ## 保存と次回
 
@@ -76,15 +76,15 @@ ChromeへのWi-Fiパスワード保存はチェック欄で選ぶ。保存要求
 
 BLEサービスのUUIDは既存のまま。設定Write `f3641404`、結果Read `f3641405`を追加する。文字列JSONは先頭1バイトの0（初期化）・1（続き）・2（確定）を使い、各Writeを20バイト以下に分割する。要求は384バイト未満、結果は512バイト以下。`scan`、`list`（ページ）、`configure`、`info`、`forget`を扱う。結果Readの`key`には教材用固定キーを返し、diagramが対応ファームウェアかを確認する。設定の読み書きには従来どおり暗号化・MITM認証済みBLE接続が必要。通常のサーボBLE通信とは別のCharacteristicを使う。
 
-HTTPポート80は`/info`、`/claim`、`/command`、`/events`、`/release`、WebSocketは81、JPEGの`/capture`は82。接続キーはWi-Fi上で送らず、Web Crypto／mbedTLSのHMAC-SHA256でchallenge・基板ID・Originを認証する。セッションID、要求番号と署名で指令・画像取得要求を検証し、要求番号の再使用を拒否する。制御応答・IMU通知も署名を検証する。1台につきWi-Fi制御は1セッション。
+HTTPポート80は`/info`、`/claim`、`/command`、`/events`、`/release`、WebSocketは81、JPEGの`/capture`は82。接続キーはWi-Fi上で送らず、Web Crypto／mbedTLSのHMAC-SHA256でchallenge・基板ID・Originを認証する。セッションID、要求番号と署名で指令・画像取得要求を検証し、要求番号の再使用を拒否する。制御応答・センサー通知も署名を検証する。1台につきWi-Fi制御は1セッション。
 
-localhostのHTTP開発版はWebSocketを先に試し、接続失敗時はHTTPへ切り替える。HTTPS画面はローカルHTTPを使用する。HTTPでは通知を100ms間隔で取得し、IMUは新しいサンプルだけを出力する。CORSはHTTPSまたはlocalhost／127.0.0.1のOriginへ返す。Chromeのローカルネットワークアクセス権限によるHTTPのmixed-content例外を使い、`ws://`へ同じ例外が適用されるとは扱わない。[Chrome公式説明](https://developer.chrome.com/blog/local-network-access)。ブラウザーがローカルHTTPを許可しない場合、この直接接続方式は利用できない。mDNS・端末間通信も利用環境で確認する。
+localhostのHTTP開発版はWebSocketを先に試し、接続失敗時はHTTPへ切り替える。HTTPS画面はローカルHTTPを使用する。HTTPでは通知を100ms間隔で取得し、センサーは最新通知を出力する。CORSはHTTPSまたはlocalhost／127.0.0.1のOriginへ返す。Chromeのローカルネットワークアクセス権限によるHTTPのmixed-content例外を使い、`ws://`へ同じ例外が適用されるとは扱わない。[Chrome公式説明](https://developer.chrome.com/blog/local-network-access)。ブラウザーがローカルHTTPを許可しない場合、この直接接続方式は利用できない。mDNS・端末間通信も利用環境で確認する。
 
 通信全体のTLS暗号化は今回実装していない。HMACは認証・指令の改変／再送防止に使い、JPEG自体の暗号化は行わない。NVS暗号化とTLSは別途対応する。
 
 CORS応答では、`Access-Control-Allow-Origin`の値をHTTP送信完了まで要求ごとの`CorsHeaders`オブジェクトに保持する。ESP-IDFの`httpd_resp_set_hdr()`は送信時にも値の文字列が有効であることを要求するため、設定用の関数だけで一時的に保持しない。[ESP-IDFのAPI説明](https://docs.espressif.com/projects/esp-idf/en/v4.4.7/esp32/api-reference/protocols/esp_http_server.html#_CPPv418httpd_resp_set_hdrP11httpd_req_tPKcPKc)。`Access-Control-Allow-Origin`が空というエラーが出た場合、修正版ファームウェアをUploadしてからdiagramへ再接続する。
 
-diagramは1.5秒周期のPING、個別ACKを最大2.5秒待つ。ESP32は5秒の指令期限超過・接続世代変更・切断・キュー飽和でサーボ／IMUを停止する。全体Stopはサーボ停止でIMU通知を維持する。古いARM/MOVEを新しい接続へ適用せず、再接続で手動ARMを要求する。Clear・図読込・最後の接続所有ブロック削除・タブ非表示・pagehide・破棄で設定画面・待機・接続・カメラ取得を解除する。カメラ未検出・画像取得失敗は画像の表示へ通知し、制御接続とは別に扱う。
+diagramは1.5秒周期のPING、個別ACKを最大2.5秒待つ。ESP32は5秒の指令期限超過・接続世代変更・切断・キュー飽和でサーボ／センサー通知を停止する。全体Stopはサーボ停止でIMU・距離通知を維持する。古いARM/MOVEを新しい接続へ適用せず、再接続で手動ARMを要求する。Clear・図読込・最後の接続所有ブロック削除・タブ非表示・pagehide・破棄で設定画面・待機・接続・カメラ取得を解除する。カメラ未検出・画像取得失敗は画像の表示へ通知し、制御接続とは別に扱う。
 
 ## ビルドと検証記録
 
@@ -96,3 +96,5 @@ npm.cmd run build
 ```
 
 ブラウザー側の結果は[uroaのbuild-and-test.md](../build-and-test.md)、ファームウェア側の結果は[ESP32の検証記録](../../../esp32/docs/build-and-test.md)に記録する。2026-10-30の参照先整理では文書のみを変更し、ビルド・Upload・通信・実機確認を再実行していない。OSペアリング・Chrome保存／自動入力・Wi-Fi・mDNS・切り替え・サーボ停止・IMU・カメラ・Android・公開HTTPSの過去の報告は実施時点を区別する。
+
+距離レコードを含むversion=3通知はBLEと共通の`device-telemetry.ts`で検証する。単に長さが13の倍数かを調べず、種別ごとの長さと距離範囲を全件確認してからDeviceInfo順へ割り当てる。距離はmm単位の数値、0xFFFFはundefined。詳細は[超音波距離ガイド](diagram-ultrasonic.md)を参照する。

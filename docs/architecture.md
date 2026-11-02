@@ -135,9 +135,9 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
 - 現在は `diy_sbc = false` によりキュー初期化・旧センサーの定期取得が無効。
 
-2026-10-12に [ble.ts](../diagram/ts/ble-wifi/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、現行diagram-controlと共通のサービス・Command／Status／Telemetryのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボ有効化・IMU計測開始を送信しない。
+2026-10-12に [ble.ts](../diagram/ts/ble-wifi/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、現行diagram-controlと共通のサービス・Command／Status／Telemetryのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボを有効化しない。利用可能な登録済みIMU・距離ブロックがあれば、共有10Hz STREAMを要求する。
 
-同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、UltrasonicDistanceSensorBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
 
 2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/hardware/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）または速度指令（%）。CH0～15と角度の移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
 
@@ -149,9 +149,13 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 続いて同日に [data_type.ts](../diagram/ts/data_type.ts) へ既存のVariable・Field・Struct・DataTypeを移し、vec3とIMU（gyro: vec3、acc: vec3）を登録した。PortTypeの接続方向とは別にPort.dataTypeを追加した。StructPortは入出力双方で構造体を検証・複製・深いfreezeを行い、1つの値として伝播する。NumberPort・TextPortは値の型を指定し、既知の型同士の不一致を接続時に拒否する。型未指定の既存Portは互換のため維持する。型参照は既存のポートJSONへ任意のdataTypeとして保存・復元し、ライブの計測値は保存しない。CalcBlock・CompareBlockは現段階では数値型で、構造体のフィールド計算は未実装。
 
-[imu.ts](../diagram/ts/hardware/imu.ts)のIMUBlockはUltrasonicDistanceSensorBlockと同じく、受信値をポートへ設定するFunctionBlock。配置済みIMUBlockと接続済みBLEのIMU正常フラグを条件にSTREAM=10を送信する。複数ブロックの受信を共有し、最後のIMUBlock削除ではSTREAM=0を送る。BLE接続のみでは計測を開始しない。接続の所有者にIMUBlockも加わるため、BLEConnectionBlockを削除してもIMUBlockが残れば接続を保持する。Clear・非表示・pagehide・破棄では従来どおり切断する。
+[imu.ts](../diagram/ts/hardware/imu.ts)のIMUBlockと[ultrasonic.ts](../diagram/ts/hardware/ultrasonic.ts)のUltrasonicDistanceSensorBlockは、受信値を出力するFunctionBlock。`retainSensorStream(this)`で登録済みのブロックが共有10Hz STREAMを要求し、最後の利用者の削除で0にする。IMUは検出フラグを確認し、距離だけの構成ではIMUを必要としない。両ブロックは接続所有者にもなる。接続後に追加したブロックは再接続でDeviceInfoへ登録する。削除したブロックのレコード位置は保持し、後続の登録先へ誤って割り当てない。
 
 現行のTelemetry version=3をlittle endianで解析し、加速度をraw/16384×9.80665 m/s²、角速度をraw/131 °/sへ変換する。ヘッダーのESP32起動後ミリ秒を`readStatus(time, data, offset)`へ渡し、各IMUBlockは`{ time, gyro, acc }`を1つの値として出力する（現行console.logはコメントアウト）。timeはIMUValueと実行時のimuStructの両方にnumber型で定義する。未受信・切断・IMU異常・計測停止では出力をundefinedへ戻し、旧値を正常値として保持しない。温度と受信番号は出力しない。
+
+距離は種別2＋uint16の3バイトを読み、20〜4000mmのNumberPort出力にする。未測定・失敗の0xFFFF、切断・計測停止では出力をundefinedに戻す。`block.ts`からhardware/ultrasonic.tsへ移し、クラス名・ツール番号16・1出力は維持する。測定値は保存・コピーしない。操作と制約は[超音波距離ガイド](diagram/diagram-ultrasonic.md)を参照する。
+
+BLE・Wi-Fiの共通`device-telemetry.ts`が、version=3の8バイトヘッダーとIMU13バイト／距離3バイトの可変長レコードを全件検査する。BLEConnectionはDeviceInfoの件数・種別順を照合してから各readStatus()へ渡す。サーボは含めない。最大268バイト・20レコードで、不正な距離値・未対応種別・途中で切れたレコードは部分反映せず接続エラーにする。IMUの時刻付きStruct出力と、距離の受信時刻による数値プロットは区別する。
 
 2026-11-01に旧倒立アプリ向けのBalance通知version=2/schema=1の受信処理、型、IMUBlockの第2出力、専用サンプルと模擬テストを削除した。現行IMUBlockはgyro・accを持つ1個のStructPortを出力し、配置したブロックで10Hz STREAMを共有する。BLE・Wi-FiのIMU受信はversion=3のみ。旧balanceポートを含む保存JSONは非対応で、自動移行は行わない。通常の1ポートIMU図と汎用PlotBlockは維持する。
 
@@ -309,7 +313,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの旧カメラ・センサー処理 | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体ポートへ出力し、汎用PlotBlockへ配線してgyro・accを表示（console.logはコメントアウト） |
+| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・UltrasonicDistanceSensorBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体、距離をmm単位のNumberPortへ出力し、汎用PlotBlockへ配線して表示（IMUのconsole.logはコメントアウト） |
 | 別リポジトリーesp32/app/diagram-control | diagramとBLE／Wi-Fiで通信する現行ESP32アプリ。uroa内の旧BLE Labは廃止対象 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |

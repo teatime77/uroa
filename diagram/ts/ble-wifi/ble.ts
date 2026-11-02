@@ -1,4 +1,4 @@
-import { MyError, Vec2 } from "@i18n";
+import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { Button, type Attr, type UI } from "../ui";
 import { theCanvas } from "../diagram_util";
@@ -6,12 +6,9 @@ import { BLEWifiSetup, RobotWifi, type RobotEndpoint } from "./robot-wifi";
 import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
 import { theEditor } from "../json-util";
+import { DeviceInfoMaxLength, parseDeviceTelemetry } from "./device-telemetry";
 
-const DeviceInfoMaxLength = 20;
 const DeviceInfoWriteTimeoutMs = 2500;
-const DeviceTelemetryVersion = 3;
-const DeviceTelemetryHeaderLength = 8;
-const IMU6AxisRecordLength = 13;
 
 // GATT service shared with esp32/app/diagram-control.
 export const BLE_UUID = {
@@ -88,7 +85,7 @@ const servoOperations: Partial<Record<BLEOpcode, string>> = {
 export class BLEConnection {
     state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
     private listeners = new Set<(state: BLEConnectionState) => void>();
-    private imuStreamUsers = 0;
+    private sensorStreamUsers = new Set<FunctionBlock>();
     private requestedRate = 0;
     private device?: BLEDevice;
     private tx?: BLECharacteristic;
@@ -217,9 +214,9 @@ export class BLEConnection {
         };
     }
 
-    /** 配置されたIMUブロックのSTREAM利用を登録し、解除関数を返す。 */
-    retainIMUStream(): () => void {
-        this.imuStreamUsers++;
+    /** 配置されたセンサーブロックの共有10Hz STREAM利用を登録し、解除関数を返す。 */
+    retainSensorStream(sensor: FunctionBlock): () => void {
+        this.sensorStreamUsers.add(sensor);
         this.updateStream();
         let released = false;
         return () => {
@@ -227,14 +224,22 @@ export class BLEConnection {
                 return;
             }
             released = true;
-            this.imuStreamUsers--;
+            this.sensorStreamUsers.delete(sensor);
             this.updateStream();
         };
     }
 
+    /** 接続時に送ったDeviceInfoの受信先として登録されているか調べる。 */
+    isSensorRegistered(sensor: FunctionBlock): boolean {
+        return this.sensors.includes(sensor);
+    }
+
     private updateStream(): void {
         if (this.state.phase !== "connected" || this.provisioning) return;
-        const rate = this.imuStreamUsers && this.state.imuAvailable ? 10 : 0;
+        const available = this.sensors.some(sensor => this.sensorStreamUsers.has(sensor) &&
+            (sensor.deviceType === DeviceType.UltrasonicDistanceSensor ||
+                (sensor.deviceType === DeviceType.IMU6Axis && this.state.imuAvailable)));
+        const rate = available ? 10 : 0;
         if (rate === this.requestedRate) return;
         this.requestedRate = rate;
         const generation = this.generation;
@@ -272,36 +277,30 @@ export class BLEConnection {
     }
 
     private sampleChanged = (event: Event): void => {
-        if (this.state.phase !== "connected" || !this.state.imuAvailable || !this.requestedRate) return;
+        if (this.state.phase !== "connected" || !this.state.streaming || !this.requestedRate) {
+            return;
+        }
         try {
             const value = (event.target as BLECharacteristic).value;
-            if (!value) throw new Error("IMUデータがありません。");
-            if (value.byteLength > 0 && value.getUint8(0) === DeviceTelemetryVersion) {
-                const sensors = this.sensors;
-                const expectedLength = DeviceTelemetryHeaderLength + sensors.length * IMU6AxisRecordLength;
-                if (value.byteLength !== expectedLength) {
-                    throw new Error("機器別Telemetryの長さと登録センサー数が一致しません。");
-                }
-                // ヘッダーの時刻はESP32起動後のミリ秒。数値はリトルエンディアン。
-                const time = value.getUint32(4, true);
-                // 全レコードを検証してからポートへ反映する。
-                let offset = DeviceTelemetryHeaderLength;
-                for (const sensor of sensors) {
-                    if (sensor.deviceType !== DeviceType.IMU6Axis || value.getUint8(offset) !== sensor.deviceType) {
-                        throw new MyError();
-                    }
-                    offset += IMU6AxisRecordLength;
-                }
-                offset = DeviceTelemetryHeaderLength;
-                for (const sensor of sensors) {
-                    offset = sensor.readStatus(time, value, offset);
-                }
-                return;
+            if (!value) {
+                throw new Error("センサーデータがありません。");
             }
-
-            throw new Error("未対応のIMUデータ形式です。");
+            const telemetry = parseDeviceTelemetry(value);
+            const sensors = this.sensors;
+            if (telemetry.records.length !== sensors.length) {
+                throw new Error("機器別Telemetryと登録センサー数が一致しません。");
+            }
+            // 全レコードと登録順を検証してから、ブロックへ反映する。
+            for (let index = 0; index < sensors.length; index++) {
+                if (telemetry.records[index].deviceType !== sensors[index].deviceType) {
+                    throw new Error("機器別Telemetryの種別と登録センサー順が一致しません。");
+                }
+            }
+            for (let index = 0; index < sensors.length; index++) {
+                sensors[index].readStatus(telemetry.time, value, telemetry.records[index].offset);
+            }
         } catch (error) {
-            this.close("error", error instanceof Error ? error.message : "IMUデータを受信できませんでした。");
+            this.close("error", error instanceof Error ? error.message : "センサーデータを受信できませんでした。");
             return;
         }
     };
@@ -408,7 +407,7 @@ export class BLEConnection {
             stage = "状態Characteristic取得";
             const status = await service.getCharacteristic(BLE_UUID.status);
             check();
-            stage = "IMU Characteristic取得";
+            stage = "センサーCharacteristic取得";
             const rx = await service.getCharacteristic(BLE_UUID.telemetry);
             check();
             stage = "機器情報Characteristic取得";
@@ -423,7 +422,7 @@ export class BLEConnection {
             stage = "状態通知登録";
             await status.startNotifications();
             check();
-            stage = "IMU通知登録";
+            stage = "センサー通知登録";
             await rx.startNotifications();
             check();
             stage = "初期状態取得";

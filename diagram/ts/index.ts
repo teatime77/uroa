@@ -1,5 +1,5 @@
 import { msg, assert, $, sleep, MyError } from "@i18n";
-import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, CameraBlock, FaceDetectionBlock, CalcBlock, UltrasonicDistanceSensorBlock, ConditionGate, InputBlock } from "./block";
+import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, CameraBlock, FaceDetectionBlock, CalcBlock, ConditionGate, InputBlock } from "./block";
 import { Canvas, Editor, getTopActions } from "./canvas";
 import { fetchImage, initUI, repaintCount, sendData, startButton, theCanvas, urlOrigin } from "./diagram_util";
 import { saveJson, theEditor, initDiagramOpen } from "./json-util";
@@ -8,6 +8,7 @@ import { Block } from "./block"
 import { Port } from "./port";
 import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble-wifi/ble";
 import { IMUBlock } from "./hardware/imu";
+import { UltrasonicDistanceSensorBlock } from "./hardware/ultrasonic";
 import { PlotBlock } from "./plot/plot";
 import { ServoMotorBlock } from "./hardware/servo";
 import { AIChatBlock } from "./ai/ai-chat";

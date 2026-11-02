@@ -1,3 +1,5 @@
+import { parseDeviceTelemetry } from "./device-telemetry";
+
 /** Wi-Fi transport and authenticated BLE provisioning. No live credentials are serialized. */
 export interface RobotEndpoint {
     id: string; name: string; host: string; ip: string;
@@ -8,11 +10,6 @@ export interface WifiNetwork { ssid: string; rssi: number; open: boolean; }
 export interface ConfigCharacteristic { readValue(): Promise<DataView>; writeValueWithResponse(value: Uint8Array): Promise<void>; }
 const encoder = new TextEncoder(), decoder = new TextDecoder();
 const ssidHistoryKey = "uroa-wifi-ssids-v1";
-const DeviceTelemetryVersion = 3;
-const DeviceTelemetryHeaderLength = 8;
-const IMU6AxisRecordLength = 13;
-const DeviceInfoMaxLength = 20;
-const DeviceTelemetryMaxLength = DeviceTelemetryHeaderLength + DeviceInfoMaxLength * IMU6AxisRecordLength;
 export function savedWifiSSIDs(): string[] {
     try {
         const data: unknown = JSON.parse(localStorage.getItem(ssidHistoryKey) || "[]");
@@ -247,13 +244,11 @@ export class RobotWifi {
         if (this.closed) return;
         const bytes = decodeHex(value);
         const status = bytes.length === 12 && bytes[0] === 1;
-        const telemetry = bytes[0] === DeviceTelemetryVersion && bytes.length >= DeviceTelemetryHeaderLength &&
-            bytes.length <= DeviceTelemetryMaxLength &&
-            (bytes.length - DeviceTelemetryHeaderLength) % IMU6AxisRecordLength === 0;
-        if (!status && !telemetry) {
-            throw new Error("機器の通知形式が正しくありません。");
+        const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        if (!status) {
+            parseDeviceTelemetry(data);
         }
-        this.onPacket(new DataView(bytes.buffer));
+        this.onPacket(data);
     }
     private async poll(): Promise<void> {
         try {

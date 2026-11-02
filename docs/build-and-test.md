@@ -2,6 +2,16 @@
 
 更新日: 2026-11-01。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## 超音波距離の混在Telemetry受信（2026-11-01）
+
+UltrasonicDistanceSensorBlockをhardware/ultrasonic.tsへ移し、距離mmのNumberPort出力、接続・登録・測定状態表示、状態購読・STREAM利用の解除を追加した。クラス名・ツール番号16・1出力は維持する。型メタデータのない旧JSONも読める構造とし、ライブ測定値は保存・コピーしない。
+
+BLE・Wi-Fiで共通のdevice-telemetry.tsを使い、version=3の8バイトヘッダーとIMU13バイト／距離3バイトの通知を全件検証する。距離は20〜4000mmのuint16 little endian、0xFFFFはundefined。DeviceInfoの件数と順序も照合してからポートへ渡す。IMU・距離の登録済みブロックが10Hz STREAMを共有し、距離だけならIMUの検出を必要としない。接続後に追加したブロックは再接続で登録する。操作・境界は[超音波距離ガイド](diagram/diagram-ultrasonic.md)を参照する。
+
+通常実行のnpm.cmd run verify／buildはNode.jsのメモリ確保エラーで停止した。実行環境の制限外で同じnpm.cmd run verifyを再実行し、TypeScript参照ビルド、Vite公開ビルド（204モジュール）、5アプリの入口と92件のWebGPU資産の静的確認が成功した。既存gameの動的／静的import併用の警告2件は継続。
+
+ユーザー指定によりテストは作成・実行していない。ブラウザー操作、JSON往復、実BLE／Wi-Fi通信、距離測定の表示・失敗・切断時の動作、MTU交渉は未確認。今回ESP32側は変更・再ビルド・Uploadしていない。
+
 ## PIDBlockの追加（2026-11-01）
 
 FunctionBlockとして[PIDBlock](../diagram/ts/control/pid.ts)を追加した。IMUValue入力のacc Yから求めた角度について、Start後の最初の計測を垂直基準とするP制御を行い、2個のNumberPortへモータ速度を出力する。モータごとの停止範囲を補正し、速度を−100～100%へ制限する。Kp・Ki・Kdと停止範囲をJSON・コピーで保持し、Ki・Kdは初版の計算には使わない。PID文字入りSVGとツールボックス登録、連続制御中の全体Stop、入力消失・配線変更・非表示・削除等の終了処理を追加した。操作と式は[PIDガイド](diagram/diagram-pid.md)を参照する。

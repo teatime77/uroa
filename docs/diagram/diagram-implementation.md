@@ -19,11 +19,13 @@
 
 ## 2. ソースの役割
 
-2026-10-15に機能別ソース14ファイルを5フォルダーへ整理した。`ai/`はAIチャット・音声認識、`ble-wifi/`はBLE接続・Wi-Fi設定と通信、`hardware/`はサーボ・IMU、`plot/`はグラフ・履歴・`plotly.d.ts`、`camera/`は端末／XIAOの画像取得を担当する。共通のブロック・ポート・型・実行管理は直下に残す。CameraBlockの定義は引き続き`block.ts`にあり、画像取得部分だけを`camera/`へ置く。移動に合わせてimport・テスト・文書のパスを変更し、処理内容・型番号・JSON形式は維持する。
+2026-10-15に機能別ソース14ファイルを5フォルダーへ整理した。`ai/`はAIチャット・音声認識、`ble-wifi/`はBLE接続・Wi-Fi設定と通信、`hardware/`はサーボ・IMU・超音波距離、`plot/`はグラフ・履歴・`plotly.d.ts`、`camera/`は端末／XIAOの画像取得を担当する。共通のブロック・ポート・型・実行管理は直下に残す。CameraBlockの定義は引き続き`block.ts`にあり、画像取得部分だけを`camera/`へ置く。移動に合わせてimport・テスト・文書のパスを変更し、処理内容・型番号・JSON形式は維持する。
 
-`hardware/`は今後の各種センサー・アクチュエータの機能も収めるための名称で、現在はサーボとIMUを置く。
+`hardware/`は今後の各種センサー・アクチュエータの機能も収めるための名称で、現在はサーボ・IMU・超音波距離を置く。
 
 `control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
+
+`python/`はESP32向けPython VMの準備用ソースを置く。共通`Token`を返す字句解析と、Python用構文木を作る構文解析を持ち、diagramの実行経路やESP32には未接続。API・対応範囲は[Python字句・構文解析](diagram-python.md)を参照する。
 
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 
@@ -46,6 +48,8 @@
 | [device-camera.ts](../../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
 | [servo.ts](../../diagram/ts/hardware/servo.ts) | 明示的な有効化、角度入力からのMOVE、CH・時間・停止操作 |
 | [imu.ts](../../diagram/ts/hardware/imu.ts) | IMUの受信購読と構造体出力 |
+| [ultrasonic.ts](../../diagram/ts/hardware/ultrasonic.ts) | HC-SR04のmm単位数値出力・共有STREAM・削除時の解放 |
+| [device-telemetry.ts](../../diagram/ts/ble-wifi/device-telemetry.ts) | IMU13バイト／距離3バイトの共通検証。UI・Blockへ依存しない |
 | [pid.ts](../../diagram/ts/control/pid.ts) | IMUの加速度YによるP制御、2個のモータ速度、ゲイン・停止範囲設定。詳細は[PIDガイド](diagram-pid.md) |
 | [plot.ts](../../diagram/ts/plot/plot.ts)、[plot_data.ts](../../diagram/ts/plot/plot_data.ts) | 汎用時系列グラフのDOM・Plotly管理と、型からの系列列挙・履歴・統計 |
 | [ai-chat.ts](../../diagram/ts/ai/ai-chat.ts)、[ai-client.ts](../../diagram/ts/ai/ai-client.ts) | 学習者のキー入力・一時保持、Google直接通信、応答解析・待機取消 |
@@ -95,7 +99,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | CalcBlock／CompareBlock | 数値入力、数値の式評価。比較結果は0/1 | calcは明示的な呼出し。構造体の式評価・一般的な自動計算スケジューラーは未実装 |
 | BLEConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
 | ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度60～120°、速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
-| IMUBlock | imuはtime（ミリ秒）・gyro・accのvec3を持つ1個のStructPort | 配置したブロックで10Hz STREAMを共有。version=3をreadStatus(time, data, offset)で読み、切断・計測停止で出力を消去。旧balance受信・第2出力は削除済みで、そのポートを含む保存JSONは非対応。現行console.logはコメントアウト |
+| IMUBlock | imuはtime（ミリ秒）・gyro・accのvec3を持つ1個のStructPort | 距離ブロックと10Hz STREAMを共有。version=3をreadStatus(time, data, offset)で読み、切断・計測停止で出力を消去。旧balance受信・第2出力は削除済みで、そのポートを含む保存JSONは非対応。現行console.logはコメントアウト |
 | PIDBlock | IMUValue入力、2個の速度NumberPort出力。Start後の最初のacc Yの角度を垂直とするP制御 | Kpのみ計算。Ki・Kdは設定・保存のみ。各モータの停止範囲を補正し−100～100%に制限。入力消失・接続変更・Stop等で停止し再開はStart。通信遅延補償・個別反転なし。[PIDガイド](diagram-pid.md) |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 最上位のnumber型time（ミリ秒）を横軸に使い、縦軸系列から除く。timeがなければ受信時刻。最初のサンプルを0秒とし、時刻の巻き戻りで履歴を消去。直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
@@ -106,7 +110,8 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | CameraBlock | 「端末のカメラ／XIAO」の選択、端末カメラの開始・停止、画像表示 | 既定はXIAO。端末は明示操作・カメラ権限とHTTPS／localhostが必要。画像のポート値伝播は未実装。物体検出はObjectDetectionBlockが画像を参照 |
 | ObjectDetectionBlock | Geminiへ画像を1枚送信し、日本語ラベル・矩形表示、ラベル・個数・先頭物体のStruct出力 | 手動1回／Startで1回。自分のAPIキーを一時保持。モデル名だけ保存。信頼度スコア・連続送信・学習は追加しない。[物体検出ガイド](diagram-gemini-object-detection.md) |
 | ImageCaptionBlock | Geminiへ画像を1枚送信し、日本語の短い説明文をTextPort出力 | 手動の「画像を説明」／Startで1回。Startでは説明取得後にTTSへ進める。モデル名だけ保存。[画像説明ガイド](diagram-image-caption.md) |
-| FaceDetectionBlock／UltrasonicDistanceSensorBlock | 旧顔領域・距離の表示と出力。顔表示の画像は接続したCameraBlockを参照 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。顔検出AIは未実装 |
+| UltrasonicDistanceSensorBlock | hardware/ultrasonic.tsのNumberPortから距離mmを出力 | 種別2＋uint16の3バイトをreadStatus()で受信。0xFFFF・切断・計測停止ではundefined。接続前に配置しDeviceInfoへ登録する。IMUと共有10Hz STREAM、最後の利用者で解除。クラス名・ツール番号16・1出力は維持。[超音波距離ガイド](diagram-ultrasonic.md) |
+| FaceDetectionBlock | 旧顔領域の表示と出力。顔表示の画像は接続したCameraBlockを参照 | 旧POST /send_data経路。diy_sbc=falseで定期取得は無効。顔検出AIは未実装 |
 | ConditionGate／TriggerGate | 条件・入出力ポートや枠を定義 | ConditionGateの値ルーティング、TriggerGateのrunは未実装。配置できることと実行できることは別 |
 
 モードによって`children()`へ追加するボタンは、初期モードで表示しない場合も描画コンテキストを設定する。ServoMotorBlockは`setContext2D()`で速度0ボタンも初期化し、モード変更後の描画・ヒット判定に使う。

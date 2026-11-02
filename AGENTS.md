@@ -12,7 +12,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 - 数学・教材: `algebra/ts/`、`plane/ts/`、`game/ts/`、`movie/ts/`、`lesson/ts/`。
 - 共通入口: `app/ts/main.ts`。URLによるアプリ選択と初期化順序を管理する。起動・停止・破棄の状態管理は `app/ts/lifecycle.ts`。
 - ブロック編集: `diagram/ts/`。`index.ts`はdiagramのUI初期化、`runtime.ts`はブロック実行・停止・キャンセル可能な待機を担当する。diagram・ESP32関連の文書は`docs/diagram/`に置く。ブロック追加時は [docs/diagram/diagram-implementation.md](docs/diagram/diagram-implementation.md) の機能・登録・ポート・実行・保存・後片付けの説明を参照する。
-- diagramの機能別ソース: `diagram/ts/ai/`はAIチャット・音声認識・Gemini物体検出・画像説明、`ble-wifi/`はBLE接続・Wi-Fi設定と通信、`hardware/`は各種センサー・アクチュエータ（現在はサーボ・IMU）、`plot/`はグラフ・履歴・Plotly型定義、`camera/`は端末／XIAOの画像取得。CameraBlock本体は`block.ts`、共通型は`data_type.ts`に置く。
+- diagramの機能別ソース: `diagram/ts/ai/`はAIチャット・音声認識・Gemini物体検出・画像説明、`ble-wifi/`はBLE接続・Wi-Fi設定と通信、`hardware/`は各種センサー・アクチュエータ（現在はサーボ・IMU・超音波距離）、`plot/`はグラフ・履歴・Plotly型定義、`camera/`は端末／XIAOの画像取得。CameraBlock本体は`block.ts`、共通型は`data_type.ts`に置く。
 - GPU処理: `webgpu/ts/`、`webgpu/public/wgsl/`、`webgpu/public/engines/physics/`。定義の作成用ソースは `webgpu/build/sims/`。
 - 保存・認証: `firebase/ts/`。録音: `media/ts/`。
 - ESP32ファームウェアの現行ソースは別リポジトリーの`D:\usr\prj\esp32`。教材は[app/diagram-control](../esp32/app/diagram-control/README.md)、共有C++ソースは[lib](../esp32/README.md)。ESP32側を変更する場合は[同リポジトリーのAGENTS.md](../esp32/AGENTS.md)を読む。PlatformIOで独立してビルドし、npmの`verify`には含めない。仕様・配線・送受信タイミング・ビルドの参照先は[連携ガイド](docs/diagram/esp32-integration.md)にまとめる。
@@ -29,7 +29,7 @@ uroaは数式処理、平面図形編集、教材アニメーション、算数�
 
 - `diagram/ts/ai/speech-recognition.ts`のSpeechRecognitionBlockはStartで単発の音声認識を待ち、セッション終了後に確定文字列をTextPortへ出力する。認識終了は結果を待つstop、全体Stopはabort。30秒タイムアウト、言語設定のみ保存し、復元で認識を始めない。ブラウザーの認識サービスに依存し、実音声・Androidの確認と模擬確認を区別する。
 
-- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockで現行ESP32のdiagram-controlへ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは角度／速度モードを選び、90°または速度0%で明示的に有効化する。角度は60～120°のMOVE、速度は−100～100%のSET_SPEEDを送る。モード変更ではCHを無効化し、再有効化する。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockは1個のStructPortからgyro・accを出力し、配置されたIMUBlockが10HzのSTREAMを共有する。旧balance出力は削除済み。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
+- `diagram/ts/ble-wifi/ble.ts`のBLEConnectionBlockで現行ESP32のdiagram-controlへ接続する。`diagram/ts/hardware/servo.ts`のServoMotorBlockは角度／速度モードを選び、90°または速度0%で明示的に有効化する。角度は60～120°のMOVE、速度は−100～100%のSET_SPEEDを送る。モード変更ではCHを無効化し、再有効化する。CH・移動時間、個別DISABLE・全体STOPを操作できる。再接続では自動有効化しない。`diagram/ts/hardware/imu.ts`のIMUBlockは1個のStructPortからgyro・accを出力し、登録済みIMUBlockと`diagram/ts/hardware/ultrasonic.ts`のUltrasonicDistanceSensorBlockが10HzのSTREAMを共有する。距離はmm単位のNumberPortで、未測定・失敗（0xFFFF）・切断時はundefinedにする。BLE・Wi-Fiとも`diagram/ts/ble-wifi/device-telemetry.ts`でIMU13バイト／距離3バイトの通知を全件検証してから反映する。操作・保存・制約は[超音波距離ガイド](docs/diagram/diagram-ultrasonic.md)を参照する。旧balance出力は削除済み。現行console.logはコメントアウトされている。`diagram/ts/plot/plot.ts`の汎用PlotBlockがStructの数値Fieldを読んで時系列グラフを表示する。構造体のCalcBlock評価は未実装。実機確認と模擬確認は区別する。
 - `diagram/ts/index.ts`の `diy_sbc = false` により旧HTTPセンサーの定期取得は無効。旧カメラ・センサーのHTTP `POST /send_data`は残るが、ServoMotorBlockはBLEを使う。BLEのIMU通知受信は独立している。
 - plotには実装ソースがない。lessonの `@let` は未実装。mediaのCanvas動画録画・音声合成部分はコメントアウトされている。
 - planeの旧図形JSON保存・復元とmovie内のスライド・クイズ機能は廃止済み。図形の追加時は操作記録による生成・再生を確認する。diagram・FirebaseのJSON保存、独立した `lesson/ts/` は別機能として残る。

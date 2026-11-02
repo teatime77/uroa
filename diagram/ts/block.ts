@@ -2,7 +2,7 @@
 
 import { assert, msg, MyError, sum, Vec2 } from "@i18n";
 import { Term, Rational, ConstNum, RefVar, App, parseMath, SyntaxError } from "@parser";
-import { cameraIcon, cameraImg, distanceSensorIcon, notchRadius, PortType, theCanvas } from "./diagram_util";
+import { cameraIcon, cameraImg, notchRadius, PortType, theCanvas } from "./diagram_util";
 import { nest_h1, sendData } from "./diagram_util";
 import { tab, UI, Attr, Button } from "./ui";
 import { NumberPort, Port, TextPort } from "./port";
@@ -871,39 +871,6 @@ export class JoyStickBlock extends FunctionBlock {
     }
 }
 
-export class UltrasonicDistanceSensorBlock extends FunctionBlock {
-    constructor(data : Attr){
-        super(data);
-        this.deviceType = DeviceType.UltrasonicDistanceSensor;
-        this.ports = [ 
-            new Port(this, PortType.outputPort) 
-        ];
-    }
-
-    isSensor() : boolean {
-        return true;
-    }
-
-    writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
-        bytes[offset] = this.deviceType!;
-
-        return offset + 1;
-    }
-
-    setBoxSize() : void {
-        this.boxSize = new Vec2(200, 50);
-    }
-
-    setDistance(distance : number){
-        this.ports[0].setPortValue(distance);
-    }
-
-    draw(): void {
-        super.draw();
-        this.drawIcon(distanceSensorIcon);
-    }
-}
-
 function  calcTerm(map : Map<string, number>, term : Term) : number {
     let value : number;
 
@@ -1067,7 +1034,6 @@ export function makeFunctionBlockByTypeName(typeName : string) : FunctionBlock |
     case CameraBlock.name:                   return new CameraBlock({});
     case FaceDetectionBlock.name:            return new FaceDetectionBlock({});
     case JoyStickBlock.name:                 return new JoyStickBlock({});
-    case UltrasonicDistanceSensorBlock.name: return new UltrasonicDistanceSensorBlock({});
     case CalcBlock.name:                     return new CalcBlock({});
     case CompareBlock.name:                  return new CompareBlock({});
     case ConditionGate.name:                 return new ConditionGate({});
