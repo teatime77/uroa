@@ -1,6 +1,6 @@
 # ESP32向けPython VMのバイトコード
 
-2026-11-03: [bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`が、以下の命令・疑似指示をテキストで生成する。`generateBytecode(module: Module): Uint8Array`は同じ命令列から文字列を含まないバイナリを生成する。BLE送信、ESP32のローダー・VMは未実装。CALL／RETは[実装方針](codex-bytecode-instructions.md)に従ってフレーム管理を含む契約へ拡張したもので、ESP32側に実装済みという意味ではない。
+2026-11-03: [bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`が、以下の命令・疑似指示をテキストで生成する。`generateBytecode(module: Module): Uint8Array`は同じ命令列から文字列を含まないバイナリを生成する。[BLE転送](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)とESP32の形式検証・RAM保持まで実装し、ESP32の[VM](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)が24命令を実行する。CALL／RETのフレーム操作は以下の契約に従う。
 
 ## バイトコードの説明
 
@@ -82,7 +82,7 @@ opcodeはuint8で、オペランドは直後へ置く。長さはopcodeを含む
 
 受信側ローダーは、識別子・version・予約領域・開始PC・長さの一致と上限、関数範囲の順序・連続性、各命令の番号と長さを全件検証してから実行する。CALL先は関数入口への一致、分岐先は所属範囲内の命令先頭への一致、変数位置は大域変数数または関数フレームの範囲内であることを検査する。局所変数のスロット0・1は管理用なのでLOAD_L／STORE_Lの対象にせず、モジュール本体からの局所変数アクセスも拒否する。整数・浮動小数点の読み出しは非整列アドレスを許す方法で行う。
 
-実行時にはスタックの上限・下限と未初期化値も検査する。これらのローダー・VM処理、BLEのCharacteristic・分割転送・完了確認は今回実装していない。このバイナリを既存のサーボ制御やDeviceInfoのCharacteristicへ送る形式ではない。
+ESP32の受信器がCOMMIT時に上記の形式を検証する。実行時のスタック上限・下限と未初期化値の検査はVMで行う。BLEは[専用のCharacteristic・分割転送・受付結果](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)を使い、サーボ制御やDeviceInfoのCharacteristicへは送らない。
 
 ## 各命令の動作
 
@@ -154,7 +154,7 @@ SUB
 MUL
 DIV
 ```
-右辺、左辺の順に2個popして、`左辺 op 右辺`の結果を1個pushする。式の生成は左辺、右辺の順に行う。DIVは整数同士でもPythonの`/`に相当する除算とする。四則演算の対象は数値で、None等への演算は実行時エラーにする。整数演算のオーバーフローや0除算の詳細はVM実装時に確定する。
+右辺、左辺の順に2個popして、`左辺 op 右辺`の結果を1個pushする。式の生成は左辺、右辺の順に行う。DIVは整数同士でもPythonの`/`に相当する除算とする。四則演算の対象は数値で、None等への演算は実行時エラーにする。整数のADD・SUB・MULはint64で中間計算し、int32範囲超過で停止する。0除算と非有限floatの結果も実行エラーにする。
 
 ### EQ, NE, LT, LE, GT, GE
 
@@ -211,7 +211,7 @@ Pythonには変数宣言がないので、ソースコードで代入されて�
 
 大域変数では大域変数用の領域に確保し、関数内の局所変数はスタックに領域を確保する。
 
-関数内のif・whileやreturn以降も事前走査する。同名は1領域にまとめ、ブロックごとの領域は作らない。代入先に現れた名前は関数全体で局所変数、その他の参照は大域変数となる。大域変数も未初期化の印で確保する。実際のフレーム確保・未初期化検査・戻り値の受渡しは、この契約に従う将来のVMの責務。
+関数内のif・whileやreturn以降も事前走査する。同名は1領域にまとめ、ブロックごとの領域は作らない。代入先に現れた名前は関数全体で局所変数、その他の参照は大域変数となる。大域変数も未初期化の印で確保する。実際のフレーム確保・未初期化検査・戻り値の受渡しは、この契約に従うVMの責務。
 
 ## 使用例と生成範囲
 

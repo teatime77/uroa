@@ -2,6 +2,18 @@
 
 更新日: 2026-11-03。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## ESP32のPythonサブセットVM（2026-11-03）
+
+別リポジトリーesp32のdiagram-controlへBytecodeVMを追加し、正常COMMIT後に24命令を実行するようにした。関数フレーム・再帰・数値・None・分岐・実行時エラーを扱い、1周128命令まで実行する。STOP・切断・通信期限切れでは停止し、自動再開しない。[VM仕様](../../esp32/app/diagram-control/src/bytecode_vm.cpp)を参照する。
+
+ユーザー指定に従いDevKit（esp32dev）のみをPlatformIOでビルドし、最終版の成功を確認した。テスト・他ボードのビルド・npmビルド・Upload・実機実行は行っていない。受信ACKはRAM保持までの結果であり、VMの実行結果はシリアルで確認する。
+
+## バイトコードのBLE送受信（2026-11-03）
+
+`diagramBLE.sendBytecode()`とBLE接続ブロックの「a.pyを送信」を追加した。専用のWrite／Read窓口で分割転送し、フレームごとの受付とCRC32を照合する。ESP32のBytecodeReceiverは接続世代・順序・CRC・バイナリの構造を検証し、正常なCOMMITだけをRAMへ確定する。VM・Flash保存は実装していない。操作・データ形式・取消は[転送仕様](../diagram/ts/ble-wifi/bytecode-transfer.ts)を参照する。
+
+作業途中のTypeScript参照ビルドと、SuperMini／DevKit向けのPlatformIOビルドは成功した。その後のSTOP優先・確定直前の接続世代再照合を含む最終変更のビルド、公開ビルド全体、XIAO向けの完了結果、実BLE・実機動作は未確認。ユーザーから処理時間の短縮とテスト不要の指定があり、追加ビルド・検証を停止した。模擬・単体・ブラウザーテストとUploadは行っていない。
+
 ## Pythonバイナリバイトコード生成（2026-11-03）
 
 [bytecode.ts](../diagram/ts/python/bytecode.ts)に`generateBytecode(module: Module): Uint8Array`を追加した。アセンブリと共通の命令列から変数名をスロット番号、CALL先を絶対PC、分岐先を所属範囲内のバイト位置へ解決する。数値ヘッダー・関数表・命令列のみを格納し、名前・ラベル・原文・コメントは含めない。version=1の配置・opcode番号・上限を[バイトコード仕様](diagram/python/bytecode.md)へ記載し、開発用testPythonへバイト数と16進表示を追加した。

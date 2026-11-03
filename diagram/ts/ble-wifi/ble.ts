@@ -7,10 +7,26 @@ import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
 import { theEditor } from "../json-util";
 import { DeviceInfoMaxLength, parseDeviceTelemetry } from "./device-telemetry";
+import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeReceipt } from "./bytecode-transfer";
+import { parsePython } from "../python/parser.js";
+import { generateBytecode } from "../python/bytecode.js";
 
 const DeviceInfoWriteTimeoutMs = 2500;
 
 // GATT service shared with esp32/app/diagram-control.
+/**
+ * @remarks
+ * ## GATT
+ *
+ * Serviceは`f3641400-00b0-4240-ba50-05ca45bf8abc`。UUIDの残り部分はServiceと同じ。
+ *
+ * | Characteristic | UUID先頭 | Properties | サイズ |
+ * |---|---|---|---|
+ * | Bytecode | f3641407 | Write with response | 10〜20 bytes |
+ * | Bytecode Result | f3641408 | Read | 20 bytes |
+ *
+ * Command・Status・Telemetry・DeviceInfoとは別の窓口。既定ATT MTU=23で扱える20バイト以内とし、Writeは必ずresponse付きにする。ただしGATTの受付だけではプログラムの受信完了とせず、各Writeの後に専用ResultをReadして、ESP32のloop()による受付結果を確認する。
+ */
 export const BLE_UUID = {
     service: "f3641400-00b0-4240-ba50-05ca45bf8abc",
     command: "f3641401-00b0-4240-ba50-05ca45bf8abc",
@@ -19,6 +35,8 @@ export const BLE_UUID = {
     wifiConfig: "f3641404-00b0-4240-ba50-05ca45bf8abc",
     wifiResult: "f3641405-00b0-4240-ba50-05ca45bf8abc",
     deviceInfo: "f3641406-00b0-4240-ba50-05ca45bf8abc",
+    bytecode: "f3641407-00b0-4240-ba50-05ca45bf8abc",
+    bytecodeResult: "f3641408-00b0-4240-ba50-05ca45bf8abc",
 } as const;
 
 // Structural types keep this browser-only module independent of the robot build.
@@ -105,6 +123,9 @@ export class BLEConnection {
     private wifiDialog?: RobotWifiDialog;
     private provisioning = false;
     private closing = false;
+    /** 更新はsendBytecode()だけが行う。別転送とWi-Fi設定の開始を抑止する。 */
+    bytecodeSending = false;
+    private bytecodeTransferId = 0;
     private sensors   : FunctionBlock[] = [];
     private actuators : FunctionBlock[] = [];
 
@@ -462,6 +483,9 @@ export class BLEConnection {
     }
 
     async openWifi(): Promise<void> {
+        if (this.bytecodeSending) {
+            return;
+        }
         if (this.wifiDialog || ["selecting", "connecting"].includes(this.state.phase) || this.wifi?.connected) return;
         if (!this.service || !this.device?.gatt?.connected) {
             this.state = { ...this.state, message: "先に「接続」でESP32へBLE接続してから、Wi-Fi設定を開いてください。" }; this.notify();
@@ -585,6 +609,100 @@ export class BLEConnection {
         return task;
     }
 
+    /** 既存のGATTキューへ1操作を追加し、期限切れ・取消時は未完了の接続を閉じる。 */
+    private bytecodeOperation<T>(operation: () => Promise<T>, check: () => void,
+        generation: number, signal?: AbortSignal): Promise<T> {
+        const task = this.tail.catch(() => {}).then(async () => {
+            check();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            let abort: (() => void) | undefined;
+            try {
+                const timeout = new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => reject(new Error("バイトコード転送の応答がありません。再接続してください。")),
+                        bytecodeTransfer.timeoutMs);
+                    abort = () => reject(signal?.reason ?? new DOMException("転送を取り消しました。", "AbortError"));
+                    signal?.addEventListener("abort", abort, { once: true });
+                });
+                const result = await Promise.race([operation(), timeout]);
+                check();
+                return result;
+            }
+            catch (error) {
+                if (generation === this.generation) {
+                    this.close("error", error instanceof Error ? error.message : "バイトコードを送信できませんでした。");
+                }
+                throw error;
+            }
+            finally {
+                clearTimeout(timer);
+                if (abort !== undefined) {
+                    signal?.removeEventListener("abort", abort);
+                }
+            }
+        });
+        this.tail = task;
+        return task;
+    }
+
+    /** バイナリ全体をBLEで分割転送し、ESP32の検証・RAM保持の完了を待つ。
+     *
+     * @remarks
+     * ```typescript
+     * import { diagramBLE } from "./ble-wifi/ble.js";
+     * import { parsePython } from "./python/parser.js";
+     * import { generateBytecode } from "./python/bytecode.js";
+     *
+     * const bytes = generateBytecode(parsePython(source));
+     * const receipt = await diagramBLE.sendBytecode(bytes, signal);
+     * // receipt.byteLengthとreceipt.crc32はESP32が保持完了を返した内容。
+     * ```
+     *
+     * BLE接続済みでWi-Fi設定・切替中でない場合に利用できる。送信元の配列は最初にコピーし、呼出元の後続変更を転送へ反映させない。同時に複数の転送は行わない。切断・ページ離脱・非表示・ブロック削除では未完了転送を取り消す。APIのAbortSignalでも取り消せる。処理中のネイティブGATT操作は取消できないため、取消・応答期限超過・送受信エラーでは接続を閉じる。
+     *
+     * 旧ファームウェアとの通常接続は維持する。バイトコードの専用Characteristicは送信時に取得し、未対応なら送信エラーにする。Wi-Fi経由の転送は実装していない。
+     */
+    async sendBytecode(bytes: Uint8Array, signal?: AbortSignal): Promise<BytecodeReceipt> {
+        if (this.bytecodeSending) {
+            throw new Error("バイトコードを送信中です。");
+        }
+        checkBytecodeTransfer(bytes);
+        const payload = bytes.slice();
+        const generation = this.generation;
+        const service = this.service;
+        const check = () => {
+            signal?.throwIfAborted();
+            if (generation !== this.generation || service !== this.service || !service
+                || this.state.phase !== "connected" || !this.device?.gatt?.connected
+                || this.wifi?.connected || this.provisioning) {
+                throw new Error("バイトコード送信には現在のESP32へのBLE接続が必要です。");
+            }
+        };
+        check();
+        this.bytecodeSending = true;
+        this.state = { ...this.state, message: "バイトコードを送信しています…" };
+        this.notify();
+        try {
+            const run = <T>(operation: () => Promise<T>) => this.bytecodeOperation(operation, check, generation, signal);
+            const write = await run(() => service!.getCharacteristic(BLE_UUID.bytecode));
+            const result = await run(() => service!.getCharacteristic(BLE_UUID.bytecodeResult));
+            this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
+            const receipt = await uploadBytecode(payload, this.bytecodeTransferId, write, result, run, check);
+            check();
+            this.state = { ...this.state, message: `${receipt.byteLength}バイトをESP32で受信しました。` };
+            return receipt;
+        }
+        catch (error) {
+            if (generation === this.generation) {
+                this.close("error", error instanceof Error ? error.message : "バイトコード送信に失敗しました。");
+            }
+            throw error;
+        }
+        finally {
+            this.bytecodeSending = false;
+            this.notify();
+        }
+    }
+
     /** センサー、アクチュエータの順に機器情報を1回のBLE書き込みで送る。 */
     private async sendDeviceInfo(): Promise<void> {
         const sensors = theEditor.blocks.filter(x => x instanceof FunctionBlock && x.isSensor()) as FunctionBlock[];
@@ -649,6 +767,8 @@ export function initBLE(signal: AbortSignal): void {
 export class BLEConnectionBlock extends FunctionBlock {
     readonly button: Button;
     readonly wifiButton: Button;
+    readonly bytecodeButton: Button;
+    private bytecodeAbort?: AbortController;
     private unsubscribe?: () => void;
     private removed = false;
 
@@ -662,7 +782,11 @@ export class BLEConnectionBlock extends FunctionBlock {
         this.wifiButton = new Button({ text: "Wi-Fi設定／接続", click: () => {
             if (!this.removed && !this.inToolbox) return diagramBLE.openWifi();
         } });
+        this.bytecodeButton = new Button({ text: "a.pyを送信", click: () => this.sendPythonFile() });
         if (!this.inToolbox) this.unsubscribe = diagramBLE.subscribe(() => {
+            if (diagramBLE.state.phase !== "connected" || diagramBLE.state.transport === "wifi") {
+                this.bytecodeAbort?.abort();
+            }
             this.updateButton();
             theCanvas?.requestUpdateCanvas();
         });
@@ -670,8 +794,45 @@ export class BLEConnectionBlock extends FunctionBlock {
         this.updateButton();
     }
 
-    children(): UI[] { return [this.button, this.wifiButton]; }
-    setBoxSize(): void { this.boxSize = new Vec2(280, this.inToolbox ? 60 : 246); }
+    children(): UI[] { return [this.button, this.wifiButton, this.bytecodeButton]; }
+    setBoxSize(): void { this.boxSize = new Vec2(280, this.inToolbox ? 60 : 302); }
+
+    /** 開発用Pythonファイルを生成器へ渡し、現在のBLE接続へ手動送信する。
+     *
+     * @remarks
+     * ## 操作とAPI
+     *
+     * ESP32へ対応ファームウェアを書き込み、diagramのBLE接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析・バイナリ生成・BLE転送を行う。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。このファイルは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
+     */
+    private async sendPythonFile(): Promise<void> {
+        if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending) {
+            return;
+        }
+        const controller = new AbortController();
+        this.bytecodeAbort = controller;
+        this.updateButton();
+        theCanvas?.requestUpdateCanvas();
+        try {
+            const response = await fetch("/diagram/python/a.py", { signal: controller.signal, cache: "no-store" });
+            if (!response.ok) {
+                throw new Error(`a.pyを読み込めません: HTTP ${response.status}`);
+            }
+            const source = await response.text();
+            controller.signal.throwIfAborted();
+            await diagramBLE.sendBytecode(generateBytecode(parsePython(source)), controller.signal);
+        }
+        catch (error) {
+            if (!controller.signal.aborted && !this.removed) {
+                diagramBLE.state = { ...diagramBLE.state,
+                    message: error instanceof Error ? error.message : "Pythonを送信できませんでした。" };
+            }
+        }
+        finally {
+            this.bytecodeAbort = undefined;
+            this.updateButton();
+            theCanvas?.requestUpdateCanvas();
+        }
+    }
 
     copy(): BLEConnectionBlock {
         const block = new BLEConnectionBlock({});
@@ -696,6 +857,8 @@ export class BLEConnectionBlock extends FunctionBlock {
         this.button.boxSize = new Vec2(248, 48);
         this.wifiButton.setPosition(this.position.add(new Vec2(16, 182)));
         this.wifiButton.boxSize = new Vec2(248, 48);
+        this.bytecodeButton.setPosition(this.position.add(new Vec2(16, 238)));
+        this.bytecodeButton.boxSize = new Vec2(248, 48);
     }
 
     private updateButton(): void {
@@ -703,6 +866,10 @@ export class BLEConnectionBlock extends FunctionBlock {
         this.button.text = phase === "connected" ? "切断" : phase === "error" ? "再接続" : "接続";
         this.button.disabled = this.removed || this.inToolbox || (diagramBLE.state.transport !== "wifi" && !!diagramBLE.availabilityMessage()) || phase === "selecting" || phase === "connecting";
         this.wifiButton.disabled = this.removed || this.inToolbox || !window.isSecureContext || phase === "selecting" || phase === "connecting" || diagramBLE.state.transport === "wifi";
+        this.wifiButton.disabled ||= diagramBLE.bytecodeSending || this.bytecodeAbort !== undefined;
+        this.bytecodeButton.text = this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending ? "送信中…" : "a.pyを送信";
+        this.bytecodeButton.disabled = this.removed || this.inToolbox || phase !== "connected"
+            || diagramBLE.state.transport === "wifi" || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending;
     }
 
     draw(): void {
@@ -742,16 +909,20 @@ export class BLEConnectionBlock extends FunctionBlock {
             this.updateButton();
             this.button.draw();
             this.wifiButton.draw();
+            this.bytecodeButton.draw();
         }
         ctx.restore();
     }
 
     clearBlock(): void {
         this.removed = true;
+        this.bytecodeAbort?.abort();
         diagramBLE.cancelWifiSetup();
         this.button.disabled = true;
         this.button.pressed = false;
         this.wifiButton.disabled = true; this.wifiButton.pressed = false;
+        this.bytecodeButton.disabled = true;
+        this.bytecodeButton.pressed = false;
         this.unsubscribe?.();
         this.unsubscribe = undefined;
         super.clearBlock();

@@ -1,6 +1,12 @@
 # diagramとESP32の連携
 
-更新日: 2026-11-01（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
+更新日: 2026-11-03（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
+
+## PythonバイトコードのBLE転送
+
+BLE接続ブロックの「a.pyを送信」は、`/diagram/python/a.py`を解析・バイナリ化して専用のBytecode Characteristic（f3641407）へ分割送信する。受付結果はBytecode Result（f3641408）のReadで確認する。APIは`diagramBLE.sendBytecode(bytes, signal?)`。送信上限は全体128KiBで、既定MTUでも使える20バイト以内のフレーム、CRC32、ID・sequence・位置の照合を使う。
+
+ESP32はBLEコールバックから専用キューへコピーし、loop()のBytecodeReceiverが形式・命令境界等を検証してRAMへ保持する。切断・不正・期限切れでは未完了分を破棄し、以前の確定データを残す。受信済みデータは再起動で消え、正常COMMIT後にVMを開始し、STOP・切断・通信期限切れで停止する。Flash保存は未実装。フレーム・取消・操作の詳細は[転送仕様](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、データ本体は[バイナリ仕様](python/bytecode.md)を参照する。実機での送受信はビルドとは別に確認する。
 
 ## 現行の参照先
 

@@ -25,7 +25,7 @@
 
 `control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
 
-`python/`はESP32向けPython VMの準備用ソースを置く。共通`Token`を返す字句解析、Python用構文木を作る構文解析、構文木の`toString()`によるPythonソース生成を持つ。`bytecode.ts`の`generateAssembly()`は構文木から代入・分岐・while・関数呼出し等のアセンブリを生成し、`generateBytecode()`は変数位置・命令アドレスを数値化したUint8Arrayを生成する。API・対応範囲は[Python字句・構文解析](python/parser.md)と[バイトコード仕様](python/bytecode.md)を参照する。BLE転送・VM実行・専用ブロックの画面への組込みは未実装。
+`python/`はESP32向けPython VMの準備用ソースを置く。共通`Token`を返す字句解析、Python用構文木を作る構文解析、構文木の`toString()`によるPythonソース生成を持つ。`bytecode.ts`の`generateAssembly()`は構文木から代入・分岐・while・関数呼出し等のアセンブリを生成し、`generateBytecode()`は変数位置・命令アドレスを数値化したUint8Arrayを生成する。API・対応範囲は[Python字句・構文解析](python/parser.md)と[バイトコード仕様](python/bytecode.md)を参照する。BLE接続ブロックの「a.pyを送信」と`diagramBLE.sendBytecode()`が[分割BLE転送](../../diagram/ts/ble-wifi/bytecode-transfer.ts)を行い、ESP32が検証後にRAMへ保持する。ESP32のVMが正常受信後に実行する。専用Pythonブロックは未実装。
 
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 

@@ -1,6 +1,6 @@
 # ESP32向けPython VMの字句・構文解析
 
-[lex.ts](../../../diagram/ts/python/lex.ts)の`lexicalAnalysis(text: string): Token[]`は、Pythonサブセットのソース文字列から[共通のToken](../../../parser/ts/lex.ts)の配列を作る。[parser.ts](../../../diagram/ts/python/parser.ts)はその配列からPython用の構文木を作る。構文木はPythonソースの再生成に加え、[bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`と`generateBytecode(module: Module): Uint8Array`へ渡せる。生成の対応範囲・バイナリ形式・関数フレーム契約は[バイトコード仕様](bytecode.md)を参照する。VM・ESP32への転送や実行には接続していない。
+[lex.ts](../../../diagram/ts/python/lex.ts)の`lexicalAnalysis(text: string): Token[]`は、Pythonサブセットのソース文字列から[共通のToken](../../../parser/ts/lex.ts)の配列を作る。[parser.ts](../../../diagram/ts/python/parser.ts)はその配列からPython用の構文木を作る。構文木はPythonソースの再生成に加え、[bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`と`generateBytecode(module: Module): Uint8Array`へ渡せる。生成の対応範囲・バイナリ形式・関数フレーム契約は[バイトコード仕様](bytecode.md)を参照する。ESP32への送信・形式検証・RAM保持は[BLE転送](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)で行い、ESP32のVMで数値・分岐・関数呼出しを実行する。
 
 ## 字句解析の対応範囲
 
