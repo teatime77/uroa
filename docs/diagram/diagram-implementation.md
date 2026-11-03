@@ -25,7 +25,7 @@
 
 `control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
 
-`python/`はESP32向けPython VMの準備用ソースを置く。共通`Token`を返す字句解析と、Python用構文木を作る構文解析を持ち、diagramの実行経路やESP32には未接続。API・対応範囲は[Python字句・構文解析](diagram-python.md)を参照する。
+`python/`はESP32向けPython VMの準備用ソースを置く。共通`Token`を返す字句解析、Python用構文木を作る構文解析、構文木の`toString()`によるPythonソース生成を持つ。API・対応範囲は[Python字句・構文解析](python/parser.md)を参照する。
 
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 

@@ -19,6 +19,7 @@ import { PIDBlock } from "./control/pid";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
+import { testPython } from "./python/parser";
 
 export function stopDiagram(): void {
     stopProcedures();
@@ -224,6 +225,7 @@ async function startProcedures() {
 }
 
 export async function initDiagram(_signal?: AbortSignal){
+    await testPython()
     initUI();
     initBLE(listeners.signal);
     
