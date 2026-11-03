@@ -469,4 +469,6 @@ export class Domain extends AbstractSyntaxNode {
 }
 
 export class Module extends Domain {
+    /** charPosに対応する元のPythonソース。parsePythonで設定する。 */
+    source: string | undefined;
 }

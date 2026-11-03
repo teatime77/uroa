@@ -1,0 +1,718 @@
+import {
+    AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
+    IfStatement, Module, RefVar, ReturnStatement, Statement, Term,
+    WhileStatement, isAssignmentToken
+} from "./syntax.js";
+
+/** バイナリ形式version=1の命令番号。全命令のopcodeは1バイト。 */
+export enum BytecodeOpcode {
+    LOAD_L = 0x01,
+    LOAD_G = 0x02,
+    PUSH_INT = 0x03,
+    PUSH_FLOAT = 0x04,
+    STORE_L = 0x05,
+    STORE_G = 0x06,
+    JUMP = 0x07,
+    JUMP_IF_FALSE = 0x08,
+    JUMP_IF_TRUE = 0x09,
+    ADD = 0x0A,
+    SUB = 0x0B,
+    MUL = 0x0C,
+    DIV = 0x0D,
+    EQ = 0x0E,
+    NE = 0x0F,
+    LT = 0x10,
+    LE = 0x11,
+    GT = 0x12,
+    GE = 0x13,
+    CALL = 0x14,
+    RET = 0x15,
+    PUSH_NONE = 0x16,
+    POP = 0x17,
+    HALT = 0x18
+}
+
+/** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
+export const bytecodeSignature = 0xB1C0;
+export const bytecodeVersion = 1;
+export const bytecodeHeaderLength = 16;
+export const bytecodeFunctionRecordLength = 8;
+
+type Opcode = keyof typeof BytecodeOpcode;
+
+/** オペランドなしの命令は登録しない。複数バイト値は全てlittle endian。 */
+const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> = {
+    LOAD_L: "u16",
+    LOAD_G: "u16",
+    PUSH_INT: "i32",
+    PUSH_FLOAT: "f32",
+    STORE_L: "u16",
+    STORE_G: "u16",
+    JUMP: "u16",
+    JUMP_IF_FALSE: "u16",
+    JUMP_IF_TRUE: "u16",
+    CALL: "u16"
+};
+
+const arithmetic: Readonly<Record<string, Opcode>> = {
+    "+": "ADD",
+    "-": "SUB",
+    "*": "MUL",
+    "/": "DIV"
+};
+
+const comparisons: Readonly<Record<string, Opcode>> = {
+    "==": "EQ",
+    "!=": "NE",
+    "<": "LT",
+    "<=": "LE",
+    ">": "GT",
+    ">=": "GE"
+};
+
+/** 変数の番号は、大域領域または管理領域2個を含むBPからのスロット位置。 */
+interface Scope {
+    fn: Fn | undefined;
+    block: BlockStatement;
+    variables: Map<string, number>;
+}
+
+/** 関数名がundefinedならモジュール本体。ラベルのアドレス解決に使う。 */
+interface SourceLocation {
+    /** 元ソースのUTF-16位置。対応するノードのない自動生成命令は-1。 */
+    charPos: number;
+    owner: string | undefined;
+}
+
+/** 実行命令と疑似指示・ラベルを区別し、アセンブリ文字列への依存を避ける。 */
+type AssemblyEntry = SourceLocation & (
+    { kind: "instruction"; opcode: Opcode; operand: string | undefined }
+    | { kind: "label"; name: string }
+    | { kind: "globals"; count: number }
+    | { kind: "function"; name: string; args: number; locals: number }
+);
+
+type InstructionEntry = Extract<AssemblyEntry, { kind: "instruction" }>;
+type FunctionEntry = Extract<AssemblyEntry, { kind: "function" }>;
+
+/** 名前はコンパイル時だけ保持し、バイナリには数値のPCだけを書き込む。 */
+interface LabelAddress {
+    pc: number;
+    owner: string | undefined;
+}
+
+/** 元の構文木を変更せず、名前の収集・検査と命令生成を順に行う。 */
+class BytecodeGenerator {
+    private readonly functions = new Map<string, Scope>();
+    private readonly entries: AssemblyEntry[] = [];
+    private readonly loops: { start: string; end: string }[] = [];
+    private labelCount = 0;
+    private readonly globalScope: Scope;
+    private readonly sourceLines: string[];
+    private readonly lineStarts = [0];
+    private scope: Scope;
+
+    constructor(private readonly module: Module) {
+        this.globalScope = { fn: undefined, block: module.block, variables: new Map() };
+        this.scope = this.globalScope;
+        this.sourceLines = module.source?.split(/\r\n|\r|\n/) ?? [];
+        if (module.source !== undefined) {
+            for (const match of module.source.matchAll(/\r\n|\r|\n/g)) {
+                this.lineStarts.push(match.index + match[0].length);
+            }
+        }
+    }
+
+    private fail(node: AbstractSyntaxNode, message: string): never {
+        throw new SyntaxError(`${message} (charPos=${node.charPos})`);
+    }
+
+    private location(node?: AbstractSyntaxNode): SourceLocation {
+        return { charPos: node?.charPos ?? -1, owner: this.scope.fn?.name };
+    }
+
+    /** 先頭に連続するdefを登録し、実行するモジュール本体から分離する。 */
+    private collectFunctions(): void {
+        const statements: Statement[] = [];
+        let executable = false;
+        for (const statement of this.module.block.statements) {
+            if (statement instanceof Fn) {
+                if (executable) {
+                    this.fail(statement, "関数定義はモジュール先頭にまとめてください");
+                }
+                if (this.functions.has(statement.name)) {
+                    this.fail(statement, `関数が重複しています: ${statement.name}`);
+                }
+                const scope: Scope = { fn: statement, block: statement.block, variables: new Map() };
+                for (const argument of statement.args) {
+                    if (scope.variables.has(argument.name)) {
+                        this.fail(argument, `仮引数が重複しています: ${argument.name}`);
+                    }
+                    this.addVariable(scope, argument.name, argument);
+                }
+                this.functions.set(statement.name, scope);
+            }
+            else {
+                executable = true;
+                statements.push(statement);
+            }
+        }
+        this.scope.block = new BlockStatement(statements);
+    }
+
+    /** 関数内のif・whileにも同じスコープを使い、内側のdefには入らない。 */
+    private walkStatements(
+        block: BlockStatement,
+        visit: (statement: Statement, loopDepth: number) => void,
+        loopDepth = 0
+    ): void {
+        const walk = (statement: Statement): void => {
+            visit(statement, loopDepth);
+            if (statement instanceof IfStatement) {
+                this.walkStatements(statement.ifBlock, visit, loopDepth);
+                if (statement.elseIf !== undefined) {
+                    walk(statement.elseIf);
+                }
+                if (statement.elseBlock !== undefined) {
+                    this.walkStatements(statement.elseBlock, visit, loopDepth);
+                }
+            }
+            else if (statement instanceof WhileStatement) {
+                this.walkStatements(statement.block, visit, loopDepth + 1);
+            }
+        };
+        for (const statement of block.statements) {
+            walk(statement);
+        }
+    }
+
+    private addVariable(scope: Scope, name: string, node: AbstractSyntaxNode): void {
+        if (["True", "False", "None"].includes(name)) {
+            this.fail(node, `予約された名前には代入できません: ${name}`);
+        }
+        if (!scope.variables.has(name)) {
+            const slot = scope.variables.size + (scope.fn === undefined ? 0 : 2);
+            if (slot > 0xFFFF) {
+                this.fail(node, "変数の位置がuint16の範囲を超えています");
+            }
+            scope.variables.set(name, slot);
+        }
+    }
+
+    private assignment(statement: CallStatement): App | undefined {
+        const app = statement.app;
+        return app instanceof App && isAssignmentToken(app.fncName) ? app : undefined;
+    }
+
+    private collectVariables(scope: Scope): void {
+        this.walkStatements(scope.block, statement => {
+            if (statement instanceof CallStatement) {
+                const assignment = this.assignment(statement);
+                if (assignment !== undefined) {
+                    const target = assignment.args[0];
+                    if (assignment.args.length !== 2 || !(target instanceof RefVar)) {
+                        this.fail(assignment, "代入先は単一の変数に限ります");
+                    }
+                    this.addVariable(scope, target.name, target);
+                }
+            }
+        });
+    }
+
+    private variableKind(reference: RefVar, scope: Scope): "L" | "G" {
+        if (scope.fn !== undefined && scope.variables.has(reference.name)) {
+            return "L";
+        }
+        if (this.globalScope.variables.has(reference.name)) {
+            return "G";
+        }
+        this.fail(reference, `変数が定義されていません: ${reference.name}`);
+    }
+
+    /** -2147483648は正の子リテラルを先に検査せず、符号を含めて判定する。 */
+    private numberLiteral(term: Term): { opcode: Opcode; operand: string } | undefined {
+        let number: ConstNum;
+        let negative = false;
+        if (term instanceof ConstNum) {
+            number = term;
+        }
+        else if (term instanceof App && term.fncName === "-" && term.args.length === 1
+            && term.args[0] instanceof ConstNum) {
+            number = term.args[0];
+            negative = true;
+        }
+        else {
+            return undefined;
+        }
+        const operand = `${negative ? "-" : ""}${number.text}`;
+        const value = Number(operand);
+        if (/[.eE]/.test(number.text)) {
+            if (!Number.isFinite(value) || !Number.isFinite(Math.fround(value))) {
+                this.fail(term, "数値を有限のfloat32で表現できません");
+            }
+            return { opcode: "PUSH_FLOAT", operand };
+        }
+        if (!Number.isInteger(value) || value < -0x80000000 || value > 0x7FFFFFFF) {
+            this.fail(term, "整数がint32の範囲を超えています");
+        }
+        return { opcode: "PUSH_INT", operand };
+    }
+
+    /** 対応する演算命令か、静的に解決した関数呼出しを返す。 */
+    private operation(app: App, scope: Scope): Opcode {
+        const name = app.fncName;
+        if (app.args.length === 1 && (name === "+" || name === "-")) {
+            return name === "+" ? "ADD" : "SUB";
+        }
+        if (app.args.length === 2 && Object.hasOwn(arithmetic, name)) {
+            return arithmetic[name];
+        }
+        if (name === "<compare>" && app.args.length === 2
+            && app.comparisonOperators.length === 1
+            && Object.hasOwn(comparisons, app.comparisonOperators[0])) {
+            return comparisons[app.comparisonOperators[0]];
+        }
+        const fn = this.functions.get(name)?.fn;
+        if (fn === undefined) {
+            this.fail(app, `未対応の演算または未定義の関数です: ${name}`);
+        }
+        if (scope.variables.has(name)) {
+            this.fail(app, `変数を関数として呼び出せません: ${name}`);
+        }
+        if (fn.args.length !== app.args.length) {
+            this.fail(app, `関数${name}の引数は${fn.args.length}個必要です`);
+        }
+        return "CALL";
+    }
+
+    private validateExpression(term: Term, scope: Scope): void {
+        if (this.numberLiteral(term) !== undefined) {
+            return;
+        }
+        if (term instanceof RefVar) {
+            if (!["True", "False", "None"].includes(term.name)) {
+                this.variableKind(term, scope);
+            }
+            return;
+        }
+        if (term instanceof App) {
+            this.operation(term, scope);
+            for (const argument of term.args) {
+                this.validateExpression(argument, scope);
+            }
+            return;
+        }
+        this.fail(term, "この式のアセンブリ生成には対応していません");
+    }
+
+    private validateScope(scope: Scope): void {
+        // 全関数・全変数を集めた後で、相互再帰や前方の大域参照も解決する。
+        this.walkStatements(scope.block, (statement, loopDepth) => {
+            if (statement instanceof CallStatement) {
+                const assignment = this.assignment(statement);
+                if (assignment === undefined) {
+                    this.validateExpression(statement.app, scope);
+                }
+                else {
+                    if (assignment.fncName !== "="
+                        && !["+=", "-=", "*=", "/="].includes(assignment.fncName)) {
+                        this.fail(assignment, `未対応の複合代入です: ${assignment.fncName}`);
+                    }
+                    this.validateExpression(assignment.args[1], scope);
+                }
+            }
+            else if (statement instanceof IfStatement || statement instanceof WhileStatement) {
+                this.validateExpression(statement.condition, scope);
+            }
+            else if (statement instanceof ReturnStatement) {
+                if (scope.fn === undefined) {
+                    this.fail(statement, "returnは関数内でのみ使えます");
+                }
+                if (statement.value !== undefined) {
+                    this.validateExpression(statement.value, scope);
+                }
+            }
+            else if (statement.keyword === "break" || statement.keyword === "continue") {
+                if (loopDepth === 0) {
+                    this.fail(statement, `${statement.keyword}はwhile内でのみ使えます`);
+                }
+            }
+            else if (statement.keyword !== "pass") {
+                this.fail(statement, "この文のアセンブリ生成には対応していません");
+            }
+        });
+    }
+
+    private emit(opcode: Opcode, node?: AbstractSyntaxNode, operand?: string): void {
+        this.entries.push({ kind: "instruction", opcode, operand, ...this.location(node) });
+    }
+
+    private label(name: string, node: AbstractSyntaxNode): void {
+        this.entries.push({ kind: "label", name, ...this.location(node) });
+    }
+
+    private newLabel(prefix: string): string {
+        // $はPythonの識別子に使えないので、ユーザーの関数名と衝突しない。
+        return `$${prefix}_${this.labelCount++}`;
+    }
+
+    private expression(term: Term): void {
+        const literal = this.numberLiteral(term);
+        if (literal !== undefined) {
+            this.emit(literal.opcode, term, literal.operand);
+        }
+        else if (term instanceof RefVar) {
+            if (term.name === "None") {
+                this.emit("PUSH_NONE", term);
+            }
+            else if (term.name === "True" || term.name === "False") {
+                this.emit("PUSH_INT", term, term.name === "True" ? "1" : "0");
+            }
+            else {
+                this.emit(`LOAD_${this.variableKind(term, this.scope)}`, term, term.name);
+            }
+        }
+        else if (term instanceof App) {
+            const opcode = this.operation(term, this.scope);
+            const unary = term.args.length === 1 && (term.fncName === "+" || term.fncName === "-");
+            if (unary) {
+                this.emit("PUSH_INT", term, "0");
+            }
+            for (const argument of term.args) {
+                this.expression(argument);
+            }
+            this.emit(opcode, term, opcode === "CALL" ? term.fncName : undefined);
+        }
+        else {
+            this.fail(term, "この式のアセンブリ生成には対応していません");
+        }
+    }
+
+    private block(block: BlockStatement): void {
+        for (const statement of block.statements) {
+            this.statement(statement);
+        }
+    }
+
+    private statement(statement: Statement): void {
+        if (statement instanceof CallStatement) {
+            const assignment = this.assignment(statement);
+            if (assignment === undefined) {
+                this.expression(statement.app);
+                this.emit("POP", statement);
+            }
+            else {
+                const target = assignment.args[0] as RefVar;
+                const kind = this.variableKind(target, this.scope);
+                if (assignment.fncName !== "=") {
+                    this.emit(`LOAD_${kind}`, target, target.name);
+                }
+                this.expression(assignment.args[1]);
+                if (assignment.fncName !== "=") {
+                    this.emit(arithmetic[assignment.fncName[0]], assignment);
+                }
+                this.emit(`STORE_${kind}`, target, target.name);
+            }
+        }
+        else if (statement instanceof IfStatement) {
+            const otherwise = this.newLabel("if_else");
+            const end = this.newLabel("if_end");
+            this.expression(statement.condition);
+            this.emit("JUMP_IF_FALSE", statement, otherwise);
+            this.block(statement.ifBlock);
+            this.emit("JUMP", statement, end);
+            this.label(otherwise, statement);
+            if (statement.elseIf !== undefined) {
+                this.statement(statement.elseIf);
+            }
+            if (statement.elseBlock !== undefined) {
+                this.block(statement.elseBlock);
+            }
+            this.label(end, statement);
+        }
+        else if (statement instanceof WhileStatement) {
+            const start = this.newLabel("while_test");
+            const end = this.newLabel("while_end");
+            this.label(start, statement);
+            this.expression(statement.condition);
+            this.emit("JUMP_IF_FALSE", statement, end);
+            this.loops.push({ start, end });
+            this.block(statement.block);
+            this.loops.pop();
+            this.emit("JUMP", statement, start);
+            this.label(end, statement);
+        }
+        else if (statement instanceof ReturnStatement) {
+            if (statement.value === undefined) {
+                this.emit("PUSH_NONE", statement);
+            }
+            else {
+                this.expression(statement.value);
+            }
+            this.emit("RET", statement);
+        }
+        else if (statement.keyword === "break" || statement.keyword === "continue") {
+            const loop = this.loops[this.loops.length - 1];
+            this.emit("JUMP", statement, statement.keyword === "break" ? loop.end : loop.start);
+        }
+        else if (statement.keyword !== "pass") {
+            this.fail(statement, "この文のアセンブリ生成には対応していません");
+        }
+    }
+
+    private format(entry: AssemblyEntry): string {
+        switch (entry.kind) {
+            case "instruction":
+                return entry.operand === undefined ? entry.opcode : `${entry.opcode} ${entry.operand}`;
+            case "label":
+                return `${entry.name}:`;
+            case "globals":
+                return `.globals ${entry.count}`;
+            case "function":
+                return `.function ${entry.name} ${entry.args} ${entry.locals}`;
+        }
+    }
+
+    /** charPosを元ソースの行番号（0始まり）へ変換する。自動生成は-1。 */
+    private sourceLine(charPos: number): number {
+        if (charPos < 0) {
+            return -1;
+        }
+        let low = 0;
+        let high = this.lineStarts.length;
+        while (low < high) {
+            const middle = Math.floor((low + high) / 2);
+            if (this.lineStarts[middle] <= charPos) {
+                low = middle + 1;
+            }
+            else {
+                high = middle;
+            }
+        }
+        return low - 1;
+    }
+
+    /** 同じPython行に対応する連続した命令には、先頭にだけコメントを付ける。 */
+    private formatAssembly(): string {
+        const lines: string[] = [];
+        let previousLine = -2;
+        for (const entry of this.entries) {
+            if (this.sourceLines.length > 0 && (entry.kind === "instruction" || entry.kind === "label")) {
+                const line = this.sourceLine(entry.charPos);
+                if (line !== previousLine) {
+                    lines.push(line < 0 ? "; 自動生成" : `; ${line + 1}: ${this.sourceLines[line]}`);
+                    previousLine = line;
+                }
+            }
+            lines.push(this.format(entry));
+        }
+        return `${lines.join("\n")}\n`;
+    }
+
+    /** アセンブリとバイナリで共通の命令列・変数表・関数表を作る。 */
+    private compile(): void {
+        this.collectFunctions();
+        const globalScope = this.scope;
+        const scopes = [globalScope, ...this.functions.values()];
+        for (const scope of scopes) {
+            this.collectVariables(scope);
+        }
+        for (const scope of scopes) {
+            for (const name of scope.variables.keys()) {
+                if (this.functions.has(name)) {
+                    this.fail(scope.fn ?? this.module, `変数と関数に同じ名前は使えません: ${name}`);
+                }
+            }
+            this.validateScope(scope);
+        }
+
+        this.entries.push({ kind: "globals", count: globalScope.variables.size, ...this.location() });
+        for (const scope of this.functions.values()) {
+            const fn = scope.fn!;
+            this.entries.push({
+                kind: "function", name: fn.name, args: fn.args.length,
+                locals: scope.variables.size - fn.args.length, charPos: fn.charPos, owner: fn.name
+            });
+        }
+        this.block(globalScope.block);
+        this.emit("HALT");
+        for (const scope of this.functions.values()) {
+            const fn = scope.fn!;
+            this.scope = scope;
+            this.label(fn.name, fn);
+            this.block(scope.block);
+            // 末尾まで到達したときも必ず戻り値を1個返す。
+            this.emit("PUSH_NONE");
+            this.emit("RET");
+        }
+    }
+
+    private instructionLength(entry: InstructionEntry): number {
+        const encoding = operandEncoding[entry.opcode];
+        if (encoding === undefined) {
+            return 1;
+        }
+        return encoding === "u16" ? 3 : 5;
+    }
+
+    private binaryError(location: SourceLocation, message: string): never {
+        throw new RangeError(`${message} (charPos=${location.charPos})`);
+    }
+
+    private uint16(value: number, location: SourceLocation, description: string): number {
+        if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) {
+            this.binaryError(location, `${description}がuint16の範囲を超えています: ${value}`);
+        }
+        return value;
+    }
+
+    private labelAddress(
+        name: string | undefined,
+        labels: ReadonlyMap<string, LabelAddress>,
+        location: SourceLocation
+    ): LabelAddress {
+        const address = name === undefined ? undefined : labels.get(name);
+        if (address === undefined) {
+            this.binaryError(location, `命令アドレスを解決できません: ${name}`);
+        }
+        return address;
+    }
+
+    /** 変数名・関数名・分岐ラベルをuint16オペランドへ解決する。 */
+    private addressOperand(entry: InstructionEntry, labels: ReadonlyMap<string, LabelAddress>): number {
+        const name = entry.operand;
+        let value: number | undefined;
+        switch (entry.opcode) {
+            case "LOAD_G":
+            case "STORE_G":
+                value = name === undefined ? undefined : this.globalScope.variables.get(name);
+                break;
+            case "LOAD_L":
+            case "STORE_L": {
+                const scope = entry.owner === undefined ? undefined : this.functions.get(entry.owner);
+                value = name === undefined ? undefined : scope?.variables.get(name);
+                break;
+            }
+            case "CALL":
+                if (name === undefined || !this.functions.has(name)) {
+                    this.binaryError(entry, "CALL先の関数情報がありません");
+                }
+                value = this.labelAddress(name, labels, entry).pc;
+                break;
+            case "JUMP":
+            case "JUMP_IF_FALSE":
+            case "JUMP_IF_TRUE": {
+                const target = this.labelAddress(name, labels, entry);
+                if (target.owner !== entry.owner) {
+                    this.binaryError(entry, "所属関数の外へは分岐できません");
+                }
+                const base = entry.owner === undefined ? 0 : this.labelAddress(entry.owner, labels, entry).pc;
+                value = target.pc - base;
+                break;
+            }
+        }
+        if (value === undefined) {
+            this.binaryError(entry, `オペランドを解決できません: ${name}`);
+        }
+        return this.uint16(value, entry, "オペランド");
+    }
+
+    /** 1回目でPCを決め、2回目で固定長ヘッダー・関数表・実行命令を書き込む。 */
+    private encodeBinary(): Uint8Array {
+        const labels = new Map<string, LabelAddress>();
+        const functions: FunctionEntry[] = [];
+        const moduleLocation = this.location(this.module);
+        let codeLength = 0;
+        for (const entry of this.entries) {
+            if (entry.kind === "instruction") {
+                codeLength += this.instructionLength(entry);
+                if (codeLength > 0x10000) {
+                    this.binaryError(entry, "命令列は65536バイト以内にしてください");
+                }
+            }
+            else if (entry.kind === "label") {
+                labels.set(entry.name, { pc: codeLength, owner: entry.owner });
+            }
+            else if (entry.kind === "function") {
+                functions.push(entry);
+            }
+        }
+
+        const globals = this.uint16(this.globalScope.variables.size, moduleLocation, "大域変数の個数");
+        const functionCount = this.uint16(functions.length, moduleLocation, "関数の個数");
+        const codeOffset = bytecodeHeaderLength + functionCount * bytecodeFunctionRecordLength;
+        const bytes = new Uint8Array(codeOffset + codeLength);
+        const view = new DataView(bytes.buffer);
+        view.setUint16(0, bytecodeSignature, true);
+        view.setUint16(2, bytecodeVersion, true);
+        view.setUint16(4, globals, true);
+        view.setUint16(6, functionCount, true);
+        view.setUint32(8, codeLength, true);
+        view.setUint16(12, 0, true);
+        view.setUint16(14, 0, true);
+
+        for (const [index, fn] of functions.entries()) {
+            const start = this.labelAddress(fn.name, labels, fn).pc;
+            const next = functions[index + 1];
+            const end = next === undefined ? codeLength : this.labelAddress(next.name, labels, next).pc;
+            const offset = bytecodeHeaderLength + index * bytecodeFunctionRecordLength;
+            view.setUint16(offset, this.uint16(start, fn, "関数の入口PC"), true);
+            view.setUint16(offset + 2, this.uint16(end - start, fn, "関数の命令列の長さ"), true);
+            view.setUint16(offset + 4, this.uint16(fn.args, fn, "仮引数の個数"), true);
+            view.setUint16(offset + 6, this.uint16(fn.locals, fn, "追加の局所変数の個数"), true);
+        }
+
+        let offset = codeOffset;
+        for (const entry of this.entries) {
+            if (entry.kind !== "instruction") {
+                continue;
+            }
+            view.setUint8(offset, BytecodeOpcode[entry.opcode]);
+            switch (operandEncoding[entry.opcode]) {
+                case "u16":
+                    view.setUint16(offset + 1, this.addressOperand(entry, labels), true);
+                    break;
+                case "i32":
+                    view.setInt32(offset + 1, Number(entry.operand), true);
+                    break;
+                case "f32":
+                    view.setFloat32(offset + 1, Number(entry.operand), true);
+                    break;
+            }
+            offset += this.instructionLength(entry);
+        }
+        return bytes;
+    }
+
+    generateAssembly(): string {
+        this.compile();
+        return this.formatAssembly();
+    }
+
+    generateBytecode(): Uint8Array {
+        this.compile();
+        return this.encodeBinary();
+    }
+}
+
+/**
+ * Python構文木を検査し、変数名・ラベルを保持したアセンブラソースを生成する。
+ * @param module parsePythonが返すModule。元の木とtoStringのキャッシュは変更しない。
+ * @returns 疑似指示と命令を改行で区切った文字列（末尾改行付き）。Module.sourceが
+ * 設定されている場合は、対応するPythonの行番号と原文をコメントで付ける。
+ * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
+ */
+export function generateAssembly(module: Module): string {
+    return new BytecodeGenerator(module).generateAssembly();
+}
+
+/**
+ * Python構文木から、文字列を含まないESP32向けバイナリを生成する。
+ * @param module parsePythonが返すModule。対応範囲はgenerateAssemblyと共通。
+ * @returns 数値ヘッダー・関数情報・命令列を持つUint8Array。複数バイト値はlittle endian。
+ * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
+ * @throws RangeError 命令列長、アドレス、変数数・関数数等の形式上限の超過。
+ */
+export function generateBytecode(module: Module): Uint8Array {
+    return new BytecodeGenerator(module).generateBytecode();
+}

@@ -6,6 +6,7 @@ import {
     ForStatement, IfStatement, Module, RefVar, ReturnStatement, Statement,
     Str, Term, Variable, WhileStatement, indexOpr, isAssignmentToken
 } from "./syntax.js";
+import { generateAssembly, generateBytecode } from "./bytecode.js";
 
 /** 改行を保持し、Pythonサブセットを再帰下降で解析する。 */
 export class Parser {
@@ -479,12 +480,21 @@ export class Parser {
 
 /** ソース文字列からPython用Moduleを作る入口。 */
 export function parsePython(text: string): Module {
-    return new Parser(lexicalAnalysis(text)).parseSource();
+    const module = new Parser(lexicalAnalysis(text)).parseSource();
+    module.source = text;
+    return module;
 }
 
 export async function testPython(){
     const text = await fetchText("/diagram/python/a.py")
     msg(`python:${text}`)
     const mod = parsePython(text);
-    msg(`  module:${mod.block}`)
+    msg(`  module:\n${mod.block}`);
+
+    const asm = generateAssembly(mod);
+    msg(`  asm:\n${asm}`);
+
+    const bytecode = generateBytecode(mod);
+    const hex = Array.from(bytecode, value => value.toString(16).padStart(2, "0")).join(" ");
+    msg(`  bytecode (${bytecode.byteLength} bytes):\n${hex}`);
 }

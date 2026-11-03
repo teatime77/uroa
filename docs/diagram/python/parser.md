@@ -1,6 +1,6 @@
 # ESP32向けPython VMの字句・構文解析
 
-[lex.ts](../../../diagram/ts/python/lex.ts)の`lexicalAnalysis(text: string): Token[]`は、Pythonサブセットのソース文字列から[共通のToken](../../../parser/ts/lex.ts)の配列を作る。[parser.ts](../../../diagram/ts/python/parser.ts)はその配列からPython用の構文木を作る。現段階では字句・構文解析と構文木からのソース生成までで、VM・ESP32への転送や実行には接続していない。
+[lex.ts](../../../diagram/ts/python/lex.ts)の`lexicalAnalysis(text: string): Token[]`は、Pythonサブセットのソース文字列から[共通のToken](../../../parser/ts/lex.ts)の配列を作る。[parser.ts](../../../diagram/ts/python/parser.ts)はその配列からPython用の構文木を作る。構文木はPythonソースの再生成に加え、[bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`と`generateBytecode(module: Module): Uint8Array`へ渡せる。生成の対応範囲・バイナリ形式・関数フレーム契約は[バイトコード仕様](bytecode.md)を参照する。VM・ESP32への転送や実行には接続していない。
 
 ## 字句解析の対応範囲
 
@@ -20,6 +20,8 @@
 ## 構文解析のAPIと対応範囲
 
 入口は`parsePython(text: string): Module`。既に字句解析した配列には`new Parser(tokens, tokenPos = 0).parseSource()`を使う。WebGPUの[Parser](../../../webgpu/ts/parser.ts)を参考にした再帰下降解析で、Pythonの改行とINDENT／DEDENTを保持する。エラーは現在のTokenの`charPos`を含む`SyntaxError`とする。
+
+`parsePython()`は返すModuleの`source`に入力文字列を保持する。アセンブリ生成時の行番号・原文コメントに使い、`toString()`のキャッシュとは分ける。Token配列だけから`Parser.parseSource()`を呼ぶ場合は元ソースを持たず、`source`はundefinedとなる。構文木を手動変更した場合の原文・位置の追従は行わない。
 
 - 式文、単一の変数・属性・添字への代入と複合代入。
 - `if`／`elif`／`else`、`while`、単一の変数を束縛先にする`for ... in ...`、`break`／`continue`／`pass`。
@@ -50,7 +52,7 @@
 | `ForStatement` | `initializer: Variable`に単一の束縛先、`list: Term`に反復対象、`block`に本体 |
 | `Variable`／`Fn` | 仮引数・forの束縛先、関数名・仮引数列・本体。`Fn`は文として定義位置を保持 |
 
-Pythonの変数は代入で束縛するため、代入を宣言文へ置き換えたり、ブロックごとの変数スコープを作ったりしない。名前の解決、クロージャ、型・値の検査、文字列エスケープの解釈、importするモジュールの提供、短絡評価・連鎖比較の実行、組み込み関数や機器APIは今後のVM側の担当。`range`・`Pin`等の呼出しを解析できても、ESP32で実行できることは意味しない。
+Pythonの変数は代入で束縛するため、代入を宣言文へ置き換えたり、ブロックごとの変数スコープを作ったりしない。名前の静的な解決・数値リテラルの範囲検査はアセンブリ生成器が担当する。クロージャ、実行時の型・値の検査、文字列エスケープの解釈、importするモジュールの提供、短絡評価・連鎖比較の実行、組み込み関数や機器APIは今後の対応とする。`range`・`Pin`等の呼出しを解析できても、生成器が受理することやESP32で実行できることは意味しない。
 
 ```typescript
 import { parsePython } from "./python/parser.js";

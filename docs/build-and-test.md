@@ -1,6 +1,24 @@
 # ビルドと回帰テスト
 
-更新日: 2026-11-01。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-11-03。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## Pythonバイナリバイトコード生成（2026-11-03）
+
+[bytecode.ts](../diagram/ts/python/bytecode.ts)に`generateBytecode(module: Module): Uint8Array`を追加した。アセンブリと共通の命令列から変数名をスロット番号、CALL先を絶対PC、分岐先を所属範囲内のバイト位置へ解決する。数値ヘッダー・関数表・命令列のみを格納し、名前・ラベル・原文・コメントは含めない。version=1の配置・opcode番号・上限を[バイトコード仕様](diagram/python/bytecode.md)へ記載し、開発用testPythonへバイト数と16進表示を追加した。
+
+`npm.cmd run build:all`は成功した。生成JavaScriptの構文、opcode定義24件と仕様表24件の一致、関連5文書のローカルリンク109件（欠落0件）、差分を静的確認した。続けて起動した`npm.cmd run verify`はVite変換開始まで確認できたが、会話への追加入力に伴うツール中断で終了結果を取得できず、verify全体の成否は未確認とする。
+
+ユーザーの従来の指定に従い、テストは作成・実行していない。バイナリ生成APIの実行、ブラウザー出力、BLE転送・分割・ACK、ESP32のローダー・VMでの解釈と実機動作は未確認。今回BLE転送・ESP32側は実装していない。以下のアセンブリ生成時の記録は、それぞれの段階の検証範囲を示す。
+
+## Python構文木からのアセンブリ生成（2026-11-03）
+
+[bytecode.ts](../diagram/ts/python/bytecode.ts)に`generateAssembly(module: Module): string`を追加した。変数・関数を事前収集して対応範囲と名前・引数個数を検査し、代入、四則・単独の比較、if／while、関数呼出し・return等のアセンブリを生成する。関数ごとの仮引数数・追加の局所変数数も疑似指示で出力する。[バイトコード仕様](diagram/python/bytecode.md)にCALL／RETのフレーム契約、POP・PUSH_NONE・HALT等を反映した。
+
+`npm.cmd run verify`のTypeScript参照ビルドは成功したが、Vite公開ビルドは変換中にNode.jsのメモリ確保エラーで停止した。実行環境の制限外でも再現し、`NODE_OPTIONS=--max-old-space-size=1024 --max-semi-space-size=4`を今回のシェルだけに設定した再実行でも停止した。verify全体の成功や最新distの検証完了とは扱わない。
+
+生成JavaScriptの`node --check`、関連5文書のローカルリンク108件（欠落0件）、変更差分を静的確認した。ユーザーの従来の指定に従い、テストは作成・実行していない。生成例の実行やVMによるスタック動作、ブラウザー操作、BLE送信、ESP32実機の実行は未確認。バイナリ出力・VM・画面への組込みは今回の実装対象外。
+
+同日追記: `parsePython()`が元ソースを`Module.source`に保持し、アセンブリ生成器が命令・ラベルの直前に対応するPythonの行番号・原文をコメント出力するようにした。連続する同一行はコメントをまとめ、HALT・暗黙returnは自動生成と表示する。`npm.cmd run build:all`は成功した。この追記では公開ビルドと実行テストは行っていない。
 
 ## 超音波距離の混在Telemetry受信（2026-11-01）
 
