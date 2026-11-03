@@ -803,6 +803,8 @@ export class BLEConnectionBlock extends FunctionBlock {
      * ## 操作とAPI
      *
      * ESP32へ対応ファームウェアを書き込み、diagramのBLE接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析・バイナリ生成・BLE転送を行う。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。このファイルは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
+     *
+     * バイナリ化とBLE送受信まで実装した。既存BLE接続ブロックの「a.pyを送信」から手動送信し、ESP32のVMが受信後に実行する。専用Pythonブロックの画面への組込みは次の段階とする。
      */
     private async sendPythonFile(): Promise<void> {
         if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending) {
