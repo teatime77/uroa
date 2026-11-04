@@ -83,7 +83,8 @@
  * アドレス解決・命令長・文字列定数表はアセンブリと共通。範囲外のスロット・PC・IDや
  * 形式上限の超過は切り詰めず拒否する。bytecodeVersion等の既存公開定数は従来の
  * version=2用として維持し、version=3にはbytecodeApiVersion等の別定数を用意する。
- * BLE転送・受信器・ESP32の新しい形式と命令の実行は今回の範囲に含めない。
+ * BLE転送と受信形式検証はble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppが
+ * 対応する。ABI・nativeIdのファームウェアのスタブ表との照合と新形式のVM実行は後続。
  *
  * ## 文字列定数の生成（2026-11-04）
  *
@@ -190,7 +191,7 @@ export const bytecodeSignature = 0xB1C0;
 export const bytecodeVersion = 2;
 export const bytecodeHeaderLength = 24;
 export const bytecodeFunctionRecordLength = 8;
-/** 意味解析付きの生成で使用する形式。既存BLE転送の対応形式は変更しない。 */
+/** 意味解析付きの生成で使用する形式。転送側も版ごとに対応する定数を参照する。 */
 export const bytecodeApiVersion = 3;
 export const bytecodeApiHeaderLength = 56;
 export const bytecodeApiFunctionRecordLength = 12;

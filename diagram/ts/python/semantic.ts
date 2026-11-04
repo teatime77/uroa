@@ -39,7 +39,7 @@
  * 元の構文木、parent、charPos、toString()のキャッシュは変更しない。
  * parser.tsの開発用入口とble-wifi/ble.tsの送信前処理が構文解析後に呼び出す。
  * アセンブリ・version=3のバイトコード生成はbytecode.tsがこの結果を利用する。
- * 新形式のBLE転送とESP32側の呼出し・構造体の実行は後続の範囲。
+ * 新形式のBLE転送・受信形式検証はble-wifi側が担当し、ESP32のVM実行は後続の範囲。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,

@@ -655,8 +655,8 @@ export class BLEConnection {
      * import { generateBytecode } from "./python/bytecode.js";
      *
      * const module = parsePython(source);
-     * await analyzePython(module, signal);
-     * const bytes = generateBytecode(module);
+     * const analysis = await analyzePython(module, signal);
+     * const bytes = generateBytecode(module, analysis);
      * const receipt = await diagramBLE.sendBytecode(bytes, signal);
      * // receipt.byteLengthとreceipt.crc32はESP32が保持完了を返した内容。
      * ```
@@ -806,9 +806,9 @@ export class BLEConnectionBlock extends FunctionBlock {
      * @remarks
      * ## 操作とAPI
      *
-     * ESP32へ対応ファームウェアを書き込み、diagramのBLE接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析、semantic.tsによるdevice-api.jsonの読込み・名前解決・型推論、バイナリ生成、BLE転送を行う。意味解析の仕様はsemantic.ts先頭を参照する。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。a.pyは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。API呼出し・属性・f文字列のバイトコード化は引き続き未対応。
+     * ESP32へ対応ファームウェアを書き込み、diagramのBLE接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析、semantic.tsによるdevice-api.jsonの読込み・名前解決・型推論、その結果を使うversion=3のバイナリ生成、BLE転送を行う。意味解析の仕様はsemantic.ts先頭を参照する。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。a.pyは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
      *
-     * バイナリ化とBLE送受信まで実装した。「a.pyを送信」はversion=2を生成し、ESP32で検証してRAMへ保持する。現行VMはversion=1のみ対応し、version=2の開始は形式エラーになる。文字列のVM実行と専用Pythonブロックの画面への組込みは後続の範囲とする。
+     * バイナリ化とBLE送受信まで実装し、構造体・ネイティブ呼出し・f文字列を含むversion=3をESP32で形式検証してRAMへ保持する。受信の共通仕様とVM・ABI照合の境界はbytecode-transfer.ts先頭を参照する。現行VMはversion=1のみ対応し、version=2・3の開始は形式エラーになる。新形式のVM実行と専用Pythonブロックの画面への組込みは後続の範囲とする。
      */
     private async sendPythonFile(): Promise<void> {
         if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending) {
@@ -826,8 +826,8 @@ export class BLEConnectionBlock extends FunctionBlock {
             const source = await response.text();
             controller.signal.throwIfAborted();
             const module = parsePython(source);
-            await analyzePython(module, controller.signal);
-            await diagramBLE.sendBytecode(generateBytecode(module), controller.signal);
+            const analysis = await analyzePython(module, controller.signal);
+            await diagramBLE.sendBytecode(generateBytecode(module, analysis), controller.signal);
         }
         catch (error) {
             if (!controller.signal.aborted && !this.removed) {

@@ -2,6 +2,14 @@
 
 更新日: 2026-11-04。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## Pythonバイナリversion=3のBLE転送・受信（2026-11-04）
+
+diagramの「a.pyを送信」を意味解析付きのバイナリ生成へ接続し、[転送チェック](../diagram/ts/ble-wifi/bytecode-transfer.ts)とESP32の[BytecodeReceiver](../../esp32/app/diagram-control/src/bytecode_receiver.cpp)を更新した。通信・検証・保持とVMの境界はそれぞれの先頭コメントを参照する。VM本体は変更していない。
+
+uroaは`npm.cmd run verify`、ESP32は`app/diagram-control`でPlatformIOの`supermini_esp32s3`・`esp32dev`・`xiao_esp32s3`を明示してビルドする。書込みを行う`bin/build.ps1`は今回使わない。テスト・Upload・実BLE・実機実行は行わない。
+
+`npm.cmd run verify`とESP32の3環境のビルドは成功した。初回のPlatformIOはユーザーキャッシュの書込み制限で停止し、権限を付けた再実行で完了した。既存gameの動的／静的import併用の警告2件は継続。ビルド成功を実BLE通信やVM実行の確認とは扱わない。
+
 ## 構造体・機器APIのバイトコード生成（2026-11-04）
 
 [bytecode.ts](../diagram/ts/python/bytecode.ts)へ意味解析結果を指定したバイナリ生成を追加した。開発用の`testPython()`はアセンブリとバイナリの16進表示までを行う。入口・形式・命令・制約はbytecode.ts先頭コメントを参照する。

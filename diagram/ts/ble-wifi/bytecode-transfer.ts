@@ -2,15 +2,19 @@
  * @remarks
  * # PythonバイトコードのBLE転送
  *
- * バイナリversion=1・2をdiagramから現行ESP32のdiagram-controlへ送り、検証後にRAMへ保持する。
+ * バイナリversion=1・2・3をdiagramから現行ESP32のdiagram-controlへ送り、検証後にRAMへ保持する。
  * バイナリ形式の仕様はpython/bytecode.ts先頭、受信側の検証はESP32のbytecode_receiver.cppを参照。
  * 転送version=1とバイナリversionは区別し、専用UUID・20バイトパケット・受付結果は維持する。
  * version=1は16バイトヘッダー、version=2は24バイトヘッダーと文字列表・UTF-8データを持つ。
+ * version=3は56バイトヘッダーと12バイト関数表を使い、呼出し規約・API形式の版はともに2。
+ * 戻り値スロット数・関数予約領域も検査する。32バイトのABI指紋はCRC対象に含めて送る。
  * 送信前にヘッダー・全体長・文字列表の連続性と範囲・UTF-8を検証し、命令検証は受信側で行う。
  * CRCは文字列表・UTF-8データも含む全体で計算し、DATAは文字・レコードの途中で分割してよい。
  * 空文字列・埋め込みNULを許可し、文字列は明示的なバイト長で扱う。
  * readyは検証とRAM保持の完了を表す。main.cppはCOMMIT後にVMの開始を試みるが、
- * 現行VMはversion=1のみ対応し、version=2は形式エラーになる。文字列のVM実行は後続の範囲。
+ * 現行VMはversion=1のみ対応し、version=2・3は形式エラーになる。新形式のVM実行は後続の範囲。
+ * ABI指紋のファームウェアとの一致、nativeIdのスタブ表内の存在・引数型は、この転送層では
+ * 照合しない。生成スタブとVMの対応時に実装する。readyはAPIの互換性の保証を含まない。
  * Flash保存は実装しない。
  *
  * ## 確認範囲
@@ -18,6 +22,7 @@
  * 模擬・単体・ブラウザーテストはユーザーの従来の指定により作成・実行しない。型ビルド・公開ビルド、PlatformIOの各ボードのビルド結果は[検証記録](../../../docs/build-and-test.md)を参照する。実BLE転送、タイムアウト・切断時の実動作、空きRAM、Uploadと実機での保持はビルドとは別の確認とする。
  */
 import {
+    bytecodeApiFunctionRecordLength, bytecodeApiHeaderLength, bytecodeApiVersion,
     bytecodeFunctionRecordLength, bytecodeHeaderLength, bytecodeMaxLength,
     bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion
 } from "../python/bytecode.js";
@@ -93,21 +98,33 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const version = view.getUint16(2, true);
-    const headerLength = version === 1 ? legacyHeaderLength : bytecodeHeaderLength;
-    if ((version !== 1 && version !== bytecodeVersion) || bytes.byteLength < headerLength) {
+    const apiFormat = version === bytecodeApiVersion;
+    const headerLength = version === 1 ? legacyHeaderLength : apiFormat ? bytecodeApiHeaderLength : bytecodeHeaderLength;
+    const functionRecordLength = apiFormat ? bytecodeApiFunctionRecordLength : bytecodeFunctionRecordLength;
+    if ((version !== 1 && version !== bytecodeVersion && !apiFormat) || bytes.byteLength < headerLength) {
         throw new Error("バイトコードのversionまたはヘッダー長が不正です。");
     }
     const codeLength = view.getUint32(8, true);
     const stringCount = version === 1 ? 0 : view.getUint16(16, true);
     const dataLength = version === 1 ? 0 : view.getUint32(20, true);
-    const tableOffset = headerLength + view.getUint16(6, true) * bytecodeFunctionRecordLength + codeLength;
+    const functionCount = view.getUint16(6, true);
+    const codeOffset = headerLength + functionCount * functionRecordLength;
+    const tableOffset = codeOffset + codeLength;
     const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
     if (view.getUint16(0, true) !== bytecodeSignature
-        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 0
-        || (version !== 1 && view.getUint16(18, true) !== 0)
+        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== (apiFormat ? 2 : 0)
+        || (version !== 1 && view.getUint16(18, true) !== (apiFormat ? 2 : 0))
         || codeLength < 1 || codeLength > 65536
         || bytes.byteLength !== dataOffset + dataLength) {
         throw new Error("バイトコードのヘッダーまたは長さが不正です。");
+    }
+    if (apiFormat) {
+        for (let index = 0; index < functionCount; index++) {
+            const recordOffset = headerLength + index * functionRecordLength;
+            if (view.getUint16(recordOffset + 8, true) === 0 || view.getUint16(recordOffset + 10, true) !== 0) {
+                throw new Error("バイトコードの関数表の戻り値スロット数または予約領域が不正です。");
+            }
+        }
     }
     const decoder = new TextDecoder("utf-8", { fatal: true });
     let expectedOffset = 0;
