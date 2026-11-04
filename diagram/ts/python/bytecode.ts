@@ -7,13 +7,33 @@
  *
  * `bytecode.md`に本ファイルに記したCALL／RET拡張と追加命令、関数情報、未初期化値の扱いを反映した。VMはこの契約に従って実装した。
  *
+ * ## 文字列のアセンブリ生成（2026-11-04）
+ *
+ * generateAssembly()はsyntax.tsのStrを定数として登録し、`.string ID "値"`と
+ * `PUSH_STRING ID`を出力する。同じ実行時の値は関数をまたいで共有する。
+ * IDは0始まりで、モジュール本体、次いで関数の定義順に命令生成した初出順。
+ * 定数は最大65535個。疑似指示は.globalsの直後にID順で置き、命令PCを進めない。
+ *
+ * Str.textは原文なので、生成時にエスケープを解釈して値へ変換する。対応するのは
+ * バックスラッシュ・両引用符、a/b/f/n/r/t/v、xの2桁・uの4桁・Uの8桁の16進表記、
+ * 1〜3桁で値が0〜255の8進表記、バックスラッシュ直後のLF/CRLF/CRによる行継続。
+ * 未知のエスケープ・桁数不足・Unicodeスカラー値でない文字はcharPos付きで拒否する。
+ * 変換済み値をキャッシュし、構文木・Str.text・toString()のキャッシュは変更しない。
+ * .stringの値は二重引用符・バックスラッシュ・制御文字・行区切りをエスケープして
+ * 1行に出力する。空文字列・日本語・BMP外文字・埋め込みNULも値として保持する。
+ *
+ * 今回はアセンブリ文字列のみを拡張する。PUSH_STRINGの数値opcode・文字列領域の
+ * バイナリ化は未実装。generateBytecode()は文字列を明示的に拒否し、version=1の
+ * ヘッダー・命令番号・数値プログラムの符号化は維持する。BLE転送側とESP32側は未変更。
+ * parser.tsのf文字列（関数名f"）・@formatのアセンブリ生成と実行も後続の範囲とする。
+ *
  * ### 実装時の確認方針（当時の記録）
  *
  * 実行確認時の観点は、演算の評価順、両側の分岐、whileの入れ子、仮引数への再代入、条件内で代入する局所変数、式中の関数呼出し、再帰、戻り値の破棄とスタックの増減。ユーザーの従来の指定に従い、今回テストは作成・実行せず、ビルドと静的確認のみ行う。BLE・VM・実機での実行確認とは分けて報告する。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
-    IfStatement, Module, RefVar, ReturnStatement, Statement, Term,
+    IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
 
@@ -52,6 +72,9 @@ export const bytecodeHeaderLength = 16;
 export const bytecodeFunctionRecordLength = 8;
 
 type Opcode = keyof typeof BytecodeOpcode;
+
+/** PUSH_STRINGはアセンブリ専用。数値opcodeはバイナリ対応時に追加する。 */
+type AssemblyOpcode = Opcode | "PUSH_STRING";
 
 /** オペランドなしの命令は登録しない。複数バイト値は全てlittle endian。 */
 const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> = {
@@ -103,7 +126,7 @@ interface SourceLocation {
  * 命令は内部では「命令名・オペランド・元の`charPos`」として保持する。これにより、後から同じ命令列へアドレス解決とバイナリ出力を追加できる。構文木の`toString()`やキャッシュは変更しない。
  */
 type AssemblyEntry = SourceLocation & (
-    { kind: "instruction"; opcode: Opcode; operand: string | undefined }
+    { kind: "instruction"; opcode: AssemblyOpcode; operand: string | undefined }
     | { kind: "label"; name: string }
     | { kind: "globals"; count: number }
     | { kind: "function"; name: string; args: number; locals: number }
@@ -125,7 +148,7 @@ interface LabelAddress {
  *
  * `parsePython()`が返す`Module`を入力に、変数名とラベルを使ったアセンブラソースを出力する。対象は変数への代入、四則演算、単独の比較、`if`／`elif`／`else`、`while`、関数定義・位置引数による呼出し・`return`。`pass`は命令を出さず、`break`／`continue`は所属するwhileのラベルへの分岐にする。
  *
- * `for`、構造体・クラス、属性・添字、文字列・コンテナ、import、クロージャ、関数を値として扱う処理は後回しにする。論理演算・連鎖比較や仕様にない演算子も最初は拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
+ * 通常文字列はアセンブリ生成のみ対応する。`for`、構造体・クラス、属性・添字、f文字列・コンテナ、import、クロージャ、関数を値として扱う処理は後回しにする。論理演算・連鎖比較や仕様にない演算子も拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
  *
  * ## 処理を2段階に分ける
  *
@@ -138,13 +161,15 @@ class BytecodeGenerator {
     private readonly functions = new Map<string, Scope>();
     private readonly entries: AssemblyEntry[] = [];
     private readonly loops: { start: string; end: string }[] = [];
+    private readonly stringValues = new Map<Str, string>();
+    private readonly stringIds = new Map<string, number>();
     private labelCount = 0;
     private readonly globalScope: Scope;
     private readonly sourceLines: string[];
     private readonly lineStarts = [0];
     private scope: Scope;
 
-    constructor(private readonly module: Module) {
+    constructor(private readonly module: Module, private readonly target: "assembly" | "binary") {
         this.globalScope = { fn: undefined, block: module.block, variables: new Map() };
         this.scope = this.globalScope;
         this.sourceLines = module.source?.split(/\r\n|\r|\n/) ?? [];
@@ -306,9 +331,99 @@ class BytecodeGenerator {
         return { opcode: "PUSH_INT", operand };
     }
 
+    /** 原文を1回だけ値へ変換する。エスケープの対応範囲はファイル先頭を参照する。 */
+    private stringLiteral(term: Str): string {
+        if (this.target === "binary") {
+            this.fail(term, "文字列のバイナリ生成には対応していません");
+        }
+        const cached = this.stringValues.get(term);
+        if (cached !== undefined) {
+            return cached;
+        }
+        const escapes: Readonly<Record<string, string>> = {
+            "\\": "\\", "'": "'", "\"": "\"", a: "\x07", b: "\b",
+            f: "\f", n: "\n", r: "\r", t: "\t", v: "\v"
+        };
+        const text = term.text;
+        let value = "";
+        let position = 0;
+        while (position < text.length) {
+            if (text[position] !== "\\") {
+                const codePoint = text.codePointAt(position)!;
+                if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
+                    this.fail(term, "文字列に単独のサロゲートは使用できません");
+                }
+                value += String.fromCodePoint(codePoint);
+                position += codePoint > 0xFFFF ? 2 : 1;
+                continue;
+            }
+            position++;
+            if (position === text.length) {
+                this.fail(term, "文字列のエスケープが完結していません");
+            }
+            const escape = text[position];
+            position++;
+            if (Object.hasOwn(escapes, escape)) {
+                value += escapes[escape];
+            }
+            else if (escape === "\n" || escape === "\r") {
+                if (escape === "\r" && text[position] === "\n") {
+                    position++;
+                }
+            }
+            else if (escape === "x" || escape === "u" || escape === "U") {
+                const length = escape === "x" ? 2 : escape === "u" ? 4 : 8;
+                const digits = text.slice(position, position + length);
+                if (digits.length !== length || !/^[0-9A-Fa-f]+$/.test(digits)) {
+                    this.fail(term, "文字列の16進エスケープの桁数または数字が不正です");
+                }
+                const codePoint = Number.parseInt(digits, 16);
+                if (codePoint > 0x10FFFF || (codePoint >= 0xD800 && codePoint <= 0xDFFF)) {
+                    this.fail(term, "文字列のエスケープがUnicodeスカラー値の範囲外です");
+                }
+                value += String.fromCodePoint(codePoint);
+                position += length;
+            }
+            else if (/[0-7]/.test(escape)) {
+                const start = position - 1;
+                while (position - start < 3 && /[0-7]/.test(text[position] ?? "")) {
+                    position++;
+                }
+                const codePoint = Number.parseInt(text.slice(start, position), 8);
+                if (codePoint > 0xFF) {
+                    this.fail(term, "文字列の8進エスケープは0〜255にしてください");
+                }
+                value += String.fromCodePoint(codePoint);
+            }
+            else {
+                this.fail(term, `未対応の文字列エスケープです: \\${escape}`);
+            }
+        }
+        this.stringValues.set(term, value);
+        return value;
+    }
+
+    /** 値を共有して文字列定数IDを割り当てる。登録順は命令生成の初出順。 */
+    private stringId(term: Str): number {
+        const value = this.stringLiteral(term);
+        const existing = this.stringIds.get(value);
+        if (existing !== undefined) {
+            return existing;
+        }
+        const id = this.stringIds.size;
+        if (id >= 0xFFFF) {
+            this.fail(term, "文字列定数は65535個以内にしてください");
+        }
+        this.stringIds.set(value, id);
+        return id;
+    }
+
     /** 対応する演算命令か、静的に解決した関数呼出しを返す。 */
     private operation(app: App, scope: Scope): Opcode {
         const name = app.fncName;
+        if (name === 'f"' || name === "@format") {
+            this.fail(app, "f文字列と書式指定のアセンブリ生成には対応していません");
+        }
         if (app.args.length === 1 && (name === "+" || name === "-")) {
             return name === "+" ? "ADD" : "SUB";
         }
@@ -334,6 +449,10 @@ class BytecodeGenerator {
     }
 
     private validateExpression(term: Term, scope: Scope): void {
+        if (term instanceof Str) {
+            this.stringLiteral(term);
+            return;
+        }
         if (this.numberLiteral(term) !== undefined) {
             return;
         }
@@ -391,7 +510,7 @@ class BytecodeGenerator {
         });
     }
 
-    private emit(opcode: Opcode, node?: AbstractSyntaxNode, operand?: string): void {
+    private emit(opcode: AssemblyOpcode, node?: AbstractSyntaxNode, operand?: string): void {
         this.entries.push({ kind: "instruction", opcode, operand, ...this.location(node) });
     }
 
@@ -438,6 +557,9 @@ class BytecodeGenerator {
         const literal = this.numberLiteral(term);
         if (literal !== undefined) {
             this.emit(literal.opcode, term, literal.operand);
+        }
+        else if (term instanceof Str) {
+            this.emit("PUSH_STRING", term, String(this.stringId(term)));
         }
         else if (term instanceof RefVar) {
             if (term.name === "None") {
@@ -613,6 +735,14 @@ class BytecodeGenerator {
                 }
             }
             lines.push(this.format(entry));
+            if (entry.kind === "globals") {
+                for (const [value, id] of this.stringIds) {
+                    // JSONの引用で値を表示し、改行として扱われる文字と追加の制御文字も保護する。
+                    const quoted = JSON.stringify(value).replace(/[\x7f-\x9f\u2028\u2029]/g,
+                        ch => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`);
+                    lines.push(`.string ${id} ${quoted}`);
+                }
+            }
         }
         return `${lines.join("\n")}\n`;
     }
@@ -662,6 +792,9 @@ class BytecodeGenerator {
     }
 
     private instructionLength(entry: InstructionEntry): number {
+        if (entry.opcode === "PUSH_STRING") {
+            this.binaryError(entry, "文字列のバイナリ生成には対応していません");
+        }
         const encoding = operandEncoding[entry.opcode];
         if (encoding === undefined) {
             return 1;
@@ -791,6 +924,9 @@ class BytecodeGenerator {
             if (entry.kind !== "instruction") {
                 continue;
             }
+            if (entry.opcode === "PUSH_STRING") {
+                this.binaryError(entry, "文字列のバイナリ生成には対応していません");
+            }
             view.setUint8(offset, BytecodeOpcode[entry.opcode]);
             switch (operandEncoding[entry.opcode]) {
                 case "u16":
@@ -827,16 +963,16 @@ class BytecodeGenerator {
  * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
  */
 export function generateAssembly(module: Module): string {
-    return new BytecodeGenerator(module).generateAssembly();
+    return new BytecodeGenerator(module, "assembly").generateAssembly();
 }
 
 /**
  * Python構文木から、文字列を含まないESP32向けバイナリを生成する。
- * @param module parsePythonが返すModule。対応範囲はgenerateAssemblyと共通。
+ * @param module parsePythonが返すModule。文字列は未対応で、それ以外の対応範囲はgenerateAssemblyと共通。
  * @returns 数値ヘッダー・関数情報・命令列を持つUint8Array。複数バイト値はlittle endian。
  * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
  * @throws RangeError 命令列長、アドレス、変数数・関数数等の形式上限の超過。
  */
 export function generateBytecode(module: Module): Uint8Array {
-    return new BytecodeGenerator(module).generateBytecode();
+    return new BytecodeGenerator(module, "binary").generateBytecode();
 }
