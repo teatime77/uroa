@@ -1,3 +1,23 @@
+/**
+ * f文字列の構文解析と構文木の仕様。
+ * lex.tsが文字列部分・置換式・書式に分けたトークンを、このファイルで解析し、
+ * syntax.tsのApp・Str・Termで保持する。実行側（bytecode.ts以降）は未対応。
+ *
+ * 開始記号は f"・f'・F"・F' を受け付け、対応する終了引用符までを読む。
+ * いずれも関数名を f" に統一したAppとし、argsに各部分を出現順で格納する。
+ * 文字列部分は原文を保持したStr、書式のない置換式は解析したTermをそのまま格納する。
+ * 書式のある置換式はApp(RefVar("@format"), [式のTerm, 書式指定文字列のStr])とする。
+ * 例: f"a + b={a + b:.2f}" は次の構文木になる。
+ * App(RefVar('f"'), [Str("a + b="),
+ *     App(RefVar("@format"), [App(RefVar("+"), [RefVar("a"), RefVar("b")]), Str(".2f")])])
+ *
+ * 空のf文字列は引数なしのApp。複数の置換フィールドとf文字列の入れ子に対応する。
+ * 置換式の対応範囲はLogicalExpressionと同じで、空の式や不正な区切りはSyntaxError。
+ * コロン後はformat型トークンを必須とし、空の書式もStr("")として保持する。
+ * 書式の桁・精度・型の制約とエスケープの原文保持はlex.ts先頭の仕様に従う。
+ * 各ノードに元のcharPosを設定し、parseSource完了時に通常どおりparentを設定する。
+ * この解析は構文木の生成のみを行い、f文字列専用のtoStringによる再生成は未対応。
+ */
 import { fetchText, msg } from "@i18n";
 import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
 import {
@@ -316,6 +336,37 @@ export class Parser {
         return terms;
     }
 
+    /** f文字列を、文字列部分・置換式・@format呼出しを引数とするAppへ変換する。 */
+    private readFString(): App {
+        const position = this.token.charPos;
+        const quote = this.readText().slice(-1);
+        const args: Term[] = [];
+        while (!this.isToken(quote)) {
+            if (this.token.typeTkn === TokenType.String) {
+                const stringPosition = this.token.charPos;
+                args.push(this.at(new Str(this.readText()), stringPosition));
+            }
+            else if (this.match("{")) {
+                let term = this.LogicalExpression();
+                if (this.match(":")) {
+                    if (this.token.typeTkn !== TokenType.format) {
+                        this.fail("f文字列の書式指定が必要です");
+                    }
+                    const formatPosition = this.token.charPos;
+                    const format = this.at(new Str(this.readText()), formatPosition);
+                    term = this.application("@format", [term, format], term.charPos);
+                }
+                this.nextToken("}");
+                args.push(term);
+            }
+            else {
+                this.fail("f文字列の文字列部分・置換フィールド・終了引用符が必要です");
+            }
+        }
+        this.nextToken(quote);
+        return this.application('f"', args, position);
+    }
+
     PrimaryExpression(): Term {
         const position = this.token.charPos;
         let term: Term;
@@ -324,6 +375,9 @@ export class Parser {
         }
         else if (this.token.typeTkn === TokenType.String) {
             term = this.at(new Str(this.readText()), position);
+        }
+        else if (['f"', "f'", 'F"', "F'"].some(word => this.isToken(word))) {
+            term = this.readFString();
         }
         else if (this.token.typeTkn === TokenType.identifier
             || ["True", "False", "None"].some(word => this.isToken(word))) {
