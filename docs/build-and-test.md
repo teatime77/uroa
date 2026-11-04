@@ -2,6 +2,16 @@
 
 更新日: 2026-11-04。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## 構造体・機器APIのアセンブリ生成（2026-11-04）
+
+API定義を変更した場合は`python diagram/python/generate-device-api.py`でJSONを再生成する。TypeScriptの静的確認は`npm.cmd run build:all`、公開ビルド・成果物確認は`npm.cmd run verify`を使う。今回JSONも再生成した。
+
+開発用の`testPython()`は意味解析結果を渡してアセンブリまで表示する。入口・スロット配置・呼出し規約・新命令の仕様は[bytecode.tsの先頭コメント](../diagram/ts/python/bytecode.ts)を参照する。拡張アセンブリのバイトコード化・C++スタブ・VMは後続の範囲。
+
+ユーザー指定によりテストは作成・実行しない。アセンブリ生成の実行、ブラウザー、BLE、実機の動作確認は行っていない。
+
+`npm.cmd run verify`は成功し、TypeScript・Vite公開ビルド・成果物の静的確認を完了した。配信用device-api.jsonと生成元のSHA-256一致も確認した。既存gameの動的／静的import併用の警告2件は継続。
+
 ## Pythonの名前解決・型推論（2026-11-04）
 
 追加した[semantic.ts](../diagram/ts/python/semantic.ts)と呼出し元の静的確認には、uroaルートで`npm.cmd run build:all`を使う。公開ビルドと成果物の静的確認は`npm.cmd run verify`。API・対応範囲・制限はsemantic.ts先頭コメントを参照する。

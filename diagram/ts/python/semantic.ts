@@ -22,6 +22,11 @@
  * API引数・フィールド代入ではintからfloatだけを暗黙変換可能とする。recordは公開
  * フィールドを読み書きでき、deviceはメソッド呼出しだけを許す。メソッドの値としての
  * 取得、関数・クラスの別名代入、動的呼出しは未対応。未宣言のコンストラクターは作らない。
+ * schemaVersion/callingConventionVersion=2のrecordは値コピーとし、入れ子を宣言順に
+ * 平坦化する。Vec3は3、IMUValueは6スロット。device・数値・None・内部文字列は1。
+ * 型推論後に変数のslotを幅込みで再配置する。関数内のslotはBPの管理領域2個を含む。
+ * valueSlotTypes()が配置の共通処理で、bytecode.tsも使用する。空・循環recordは拒否する。
+ * CALL_NATIVE用のnativeIdは全コンストラクター・メソッド・関数に共通の単一ID。
  * 通常文字列・f文字列はJSONでstrと宣言された表示API引数だけに許す。f文字列の断片・
  * 書式のStrは内部データとして扱い、置換式は数値だけにする。整形・文字列生成は行わない。
  * 四則、//・%、ビット演算、比較、論理演算、if/while、関数、属性代入に対応する。
@@ -33,7 +38,8 @@
  * 参照できる。返却成功時はすべての変数型・戻り値型が確定している。
  * 元の構文木、parent、charPos、toString()のキャッシュは変更しない。
  * parser.tsの開発用入口とble-wifi/ble.tsの送信前処理が構文解析後に呼び出す。
- * bytecode.tsの命令生成・ESP32スタブ・VMは今回の変更対象に含めない。
+ * アセンブリ生成はbytecode.tsがこの結果を利用する。新しいバイトコード・ESP32側の
+ * 呼出しと構造体の実行は後続の範囲。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
@@ -46,6 +52,7 @@ export type PythonType = { kind: "int" | "float" | "str" | "none" }
 
 export interface DeviceCallable {
     id: number;
+    nativeId: number;
     name: string;
     parameters: { name: string; type: PythonType }[];
     returnType: PythonType;
@@ -78,7 +85,7 @@ export interface DeviceApi {
     functions: DeviceCallable[];
 }
 
-/** typeは推論中だけundefined。slotは既存VMに合わせ、局所では管理領域2個を含む。 */
+/** typeは推論中だけundefined。slotは解析完了時に値の幅込みで再配置する。 */
 export interface PythonVariable {
     name: string;
     scope: "global" | "local";
@@ -179,6 +186,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
     }
     const result: DeviceCallable = {
         id: id(data.id, `${path}.id`, constructor ? 0 : 1),
+        nativeId: id(data.nativeId, `${path}.nativeId`),
         name: name(data.name, `${path}.name`),
         parameters,
         returnType: readType(data.returnType, `${path}.returnType`)
@@ -195,7 +203,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
 /** 型参照と公開権限も検査し、名前解決で使うJSONのモデルを作る。 */
 export function readDeviceApi(value: unknown): DeviceApi {
     const data = record(value, "$");
-    if (data.schemaVersion !== 1 || data.callingConventionVersion !== 1 || data.stringPolicyVersion !== 1
+    if (data.schemaVersion !== 2 || data.callingConventionVersion !== 2 || data.stringPolicyVersion !== 1
         || typeof data.abiHash !== "string" || !/^[0-9a-f]{64}$/.test(data.abiHash)) {
         invalidApi("version/abiHash");
     }
@@ -228,12 +236,17 @@ export function readDeviceApi(value: unknown): DeviceApi {
         invalidApi("classes/functions（名前の重複）");
     }
     const classIds = new Set(classes.map(item => item.id));
+    const nativeIds = new Set<number>();
     const checkType = (type: PythonType): void => {
         if (type.kind === "object" && !classIds.has(type.classId)) {
             invalidApi(`classId=${type.classId}`);
         }
     };
     const checkCallable = (callable: DeviceCallable, qualifiedName: string): void => {
+        if (nativeIds.has(callable.nativeId)) {
+            invalidApi(`${qualifiedName}.nativeId（重複）`);
+        }
+        nativeIds.add(callable.nativeId);
         checkType(callable.returnType);
         if (callable.returnType.kind === "str") {
             invalidApi(`${qualifiedName}.returnType`);
@@ -274,8 +287,38 @@ export function readDeviceApi(value: unknown): DeviceApi {
     for (const fn of functions) {
         checkCallable(fn, fn.name);
     }
-    return { schemaVersion: 1, callingConventionVersion: 1, stringPolicyVersion: 1,
+    const api = { schemaVersion: 2, callingConventionVersion: 2, stringPolicyVersion: 1,
         abiHash: data.abiHash, classes, functions };
+    for (const owner of classes) {
+        valueSlotTypes({ kind: "object", classId: owner.id }, api);
+    }
+    return api;
+}
+
+/** recordを末端フィールドの型列へ展開する。ID順ではなくJSONの宣言順で配置する。 */
+export function valueSlotTypes(type: PythonType, api: DeviceApi, ancestors: readonly number[] = []): PythonType[] {
+    if (type.kind !== "object") {
+        return [type];
+    }
+    const owner = api.classes.find(item => item.id === type.classId);
+    if (owner === undefined || ancestors.includes(type.classId)) {
+        invalidApi(`classId=${type.classId}（未知または循環するrecord）`);
+    }
+    if (owner.kind === "device") {
+        return [type];
+    }
+    if (owner.fields.length === 0) {
+        invalidApi(`${owner.name}（空のrecord）`);
+    }
+    const result: PythonType[] = [];
+    for (const field of owner.fields) {
+        const fields = valueSlotTypes(field.type, api, [...ancestors, owner.id]);
+        if (result.length + fields.length > 65535) {
+            invalidApi(`${owner.name}（スロット数の上限超過）`);
+        }
+        result.push(...fields);
+    }
+    return result;
 }
 
 /** HTTP失敗・不正JSONは伝播し、失敗した結果をキャッシュしない。 */
@@ -796,6 +839,19 @@ class PythonResolver {
         for (const variable of this.globals.values()) {
             if (variable.type === undefined) {
                 this.fail(variable.declaration, `変数の型を推論できません: ${variable.name}`);
+            }
+        }
+        for (const [variables, start] of [
+            [this.globals, 0] as const,
+            ...[...this.functions.values()].map(fn => [fn.variables, 2] as const)
+        ]) {
+            let slot = start;
+            for (const variable of variables.values()) {
+                variable.slot = slot;
+                slot += valueSlotTypes(variable.type!, this.api).length;
+                if (slot > 65536) {
+                    this.fail(variable.declaration, "変数のスロット位置がuint16の範囲を超えています");
+                }
             }
         }
         return { module: this.module, api: this.api, globals: this.globals, functions: this.functions,

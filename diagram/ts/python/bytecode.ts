@@ -7,6 +7,47 @@
  *
  * `bytecode.md`に本ファイルに記したCALL／RET拡張と追加命令、関数情報、未初期化値の扱いを反映した。VMはこの契約に従って実装した。
  *
+ * ## 構造体・ネイティブ呼出しのアセンブリ（2026-11-04）
+ *
+ * generateAssembly(module, analysis)はsemantic.tsのPythonAnalysisを使う拡張入口。
+ * analysis.moduleとmoduleは同じ木を指定する。未指定時は従来の数値・通常文字列用の
+ * アセンブリ生成を維持する。構文木と意味解析結果は書き換えない。
+ *
+ * recordは値コピー。semantic.tsのvalueSlotTypesで宣言順の末端フィールドへ展開し、
+ * Vec3は3、IMUValueは6スロット、deviceハンドルは1スロットとする。フィールドは
+ * 大域領域・BPからの固定位置を使い、LOAD_G/LOAD_L、STORE_G/STORE_Lで操作する。
+ * 全体コピーは先頭から全スロットをLOADし、末尾からSTOREする。属性の対象が関数の
+ * 戻り値等なら一度だけ評価して一時領域へ保存する。属性代入では右辺→対象の順、
+ * 複合代入では対象・旧値→右辺の順を守る。未初期化recordへの属性代入を防ぐため、
+ * 書込み前に対象recordをLOAD/POPで検査する。参照共有・record用ヒープ・GET_FIELDは不要。
+ *
+ * 引数も戻り値もrecordの全スロットを渡す。関数内はBP+0/1を管理用とし、BP+2から
+ * 平坦化した引数、局所変数、コンパイラーの一時領域を配置する。一時領域は文ごとに
+ * 再利用し、同時に必要な最大数を確保する。.functionは「名前 入口PC 引数スロット数
+ * 追加局所スロット数 戻り値スロット数」。RETはこの戻り値数を保ってフレームを破棄
+ * する契約。非None関数の末尾RETは解析上到達不能で、到達時は戻り値不足で停止する。
+ * Noneも1スロット。式文は結果のスロット数だけPOPする。
+ *
+ * APIのコンストラクター・メソッド・関数は、device-api.jsonの共通nativeIdによる
+ * CALL_NATIVE 単一IDへ変換する。メソッドはselfを最初に、その後に明示引数を積む。
+ * コンストラクターの結果はresultType、その他はreturnTypeの幅を使う。
+ * .apiには呼出し規約版とABI指紋、.nativeには「ID 名前 引数スロット数 戻り値スロット数」
+ * を出力する。詳細な型・selfのクラス情報は指紋で結合したAPI表から取得する。
+ * int→floatの暗黙変換にはアセンブリ専用のTO_FLOATを使う。floatなら変更せず、
+ * その他の型は実行時の型エラーにする契約。構造体・機器の比較や条件値への直接使用は
+ * この生成器では未対応として拒否し、複数スロットを単一値の演算命令へ渡さない。
+ *
+ * 表示引数のf文字列はFORMAT_VALUE 書式定数IDとBUILD_STRING 断片数で生成する。
+ * 置換式は左から1回ずつ評価し、表示APIは結合後に1回だけ呼ぶ。通常文字列の解釈は
+ * 下記と共通で、f文字列の定数断片だけは原文の{{/}}を単一の括弧へ戻す。
+ *
+ * ユーザー関数はCALL 入口PC。PCは命令列先頭=0のバイト位置で、CALL/分岐等の
+ * uint16オペランド命令とCALL_NATIVE/FORMAT_VALUE/BUILD_STRINGは3バイト、
+ * PUSH_INT/PUSH_FLOATは5バイト、TO_FLOATを含むオペランドなし命令は1バイトとして
+ * アセンブリのPCだけを計算する。分岐は所属関数先頭からの相対位置。ラベルは表示にも残す。
+ * 拡張命令のopcode割当て・バイナリ出力・新しい関数表・ESP32実行は未実装。
+ * generateBytecode()は従来のversion=2用生成器のままで、この拡張経路を使用しない。
+ *
  * ## 文字列定数の生成（2026-11-04）
  *
  * generateAssembly()はsyntax.tsのStrを定数として登録し、`.string ID "値"`と
@@ -58,7 +99,7 @@
  * 関係するble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppはversion=1・2の
  * BLE転送・検証・RAM保持に対応する。bytecode_vm.cppのversion=2実行は後続の範囲。
  * 受信完了のACKはVMの開始・正常終了を表さず、現行VMはversion=2を形式エラーにする。
- * parser.tsのf文字列（関数名f"）・@formatのアセンブリ生成と実行も後続の範囲とする。
+ * f文字列（関数名f"）・@formatの実行とバイナリ生成も後続の範囲とする。
  *
  * ### 実装時の確認方針（当時の記録）
  *
@@ -69,6 +110,8 @@ import {
     IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
+import { valueSlotTypes } from "./semantic.js";
+import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 
 /** バイナリ形式version=2の命令番号。0x01〜0x18はversion=1と共通。 */
 export enum BytecodeOpcode {
@@ -108,6 +151,8 @@ export const bytecodeStringRecordLength = 8;
 export const bytecodeMaxLength = 128 * 1024;
 
 type Opcode = keyof typeof BytecodeOpcode;
+/** バイナリopcodeは未割当て。拡張アセンブリ内でだけ使う命令名。 */
+type AssemblyOpcode = Opcode | "CALL_NATIVE" | "TO_FLOAT" | "FORMAT_VALUE" | "BUILD_STRING";
 
 /** オペランドなしの命令は登録しない。複数バイト値は全てlittle endian。 */
 const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> = {
@@ -160,10 +205,10 @@ interface SourceLocation {
  * 命令は内部では「命令名・オペランド・元の`charPos`」として保持する。これにより、後から同じ命令列へアドレス解決とバイナリ出力を追加できる。構文木の`toString()`やキャッシュは変更しない。
  */
 type AssemblyEntry = SourceLocation & (
-    { kind: "instruction"; opcode: Opcode; operand: string | undefined }
+    { kind: "instruction"; opcode: AssemblyOpcode; operand: string | undefined }
     | { kind: "label"; name: string }
     | { kind: "globals"; count: number }
-    | { kind: "function"; name: string; args: number; locals: number }
+    | { kind: "function"; name: string; args: number; locals: number; returns?: number }
 );
 
 type InstructionEntry = Extract<AssemblyEntry, { kind: "instruction" }>;
@@ -175,6 +220,19 @@ interface LabelAddress {
     owner: string | undefined;
 }
 
+/** 連続した値スロットの位置。typeがrecordなら末端フィールドを複数スロット占有する。 */
+interface ValueAddress {
+    kind: "G" | "L";
+    slot: number;
+    type: PythonType;
+}
+
+interface SlotAllocation {
+    variablesEnd: number;
+    cursor: number;
+    end: number;
+}
+
 /** 元の構文木を変更せず、名前の収集・検査と命令生成を順に行う。
  *
  * @remarks
@@ -182,11 +240,11 @@ interface LabelAddress {
  *
  * `parsePython()`が返す`Module`を入力に、変数名とラベルを使ったアセンブラソースを出力する。対象は変数への代入、四則演算、単独の比較、`if`／`elif`／`else`、`while`、関数定義・位置引数による呼出し・`return`。`pass`は命令を出さず、`break`／`continue`は所属するwhileのラベルへの分岐にする。
  *
- * 通常文字列はアセンブリとバイナリの生成に対応する。`for`、構造体・クラス、属性・添字、f文字列・コンテナ、import、クロージャ、関数を値として扱う処理は後回しにする。論理演算・連鎖比較や仕様にない演算子も拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
+ * 通常文字列はアセンブリとバイナリの生成に対応する。構造体・機器API・属性・f文字列のアセンブリはPythonAnalysis指定時に対応する。`for`、添字・コンテナ、import、クロージャ、関数を値として扱う処理、論理演算・連鎖比較や仕様にない演算子は拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
  *
  * ## 処理を2段階に分ける
  *
- * `diagram/ts/python/bytecode.ts`の入口は`generateAssembly(module: Module): string`と`generateBytecode(module: Module): Uint8Array`。
+ * `diagram/ts/python/bytecode.ts`の入口は`generateAssembly(module: Module, analysis?: PythonAnalysis): string`と`generateBytecode(module: Module): Uint8Array`。以下は意味解析結果を指定しない従来経路の説明。
  *
  * 1. **事前走査**で関数表・大域変数表・関数ごとの局所変数表を作り、対応範囲、名前、引数個数を検査する。
  * 2. **命令生成**で構文木を再帰的にたどり、命令・ラベル・関数情報を配列へ追加し、最後にテキストへ整形する。
@@ -197,13 +255,17 @@ class BytecodeGenerator {
     private readonly loops: { start: string; end: string }[] = [];
     private readonly stringValues = new Map<Str, string>();
     private readonly stringIds = new Map<string, number>();
+    private readonly allocations = new Map<Scope, SlotAllocation>();
     private labelCount = 0;
     private readonly globalScope: Scope;
     private readonly sourceLines: string[];
     private readonly lineStarts = [0];
     private scope: Scope;
 
-    constructor(private readonly module: Module) {
+    constructor(private readonly module: Module, private readonly analysis?: PythonAnalysis) {
+        if (analysis !== undefined && analysis.module !== module) {
+            throw new Error("アセンブリ生成には同じ構文木の意味解析結果を指定してください");
+        }
         this.globalScope = { fn: undefined, block: module.block, variables: new Map() };
         this.scope = this.globalScope;
         this.sourceLines = module.source?.split(/\r\n|\r|\n/) ?? [];
@@ -541,7 +603,7 @@ class BytecodeGenerator {
         });
     }
 
-    private emit(opcode: Opcode, node?: AbstractSyntaxNode, operand?: string): void {
+    private emit(opcode: AssemblyOpcode, node?: AbstractSyntaxNode, operand?: string): void {
         this.entries.push({ kind: "instruction", opcode, operand, ...this.location(node) });
     }
 
@@ -557,7 +619,7 @@ class BytecodeGenerator {
     /**
      * ## 式と文の生成
      *
-     * 式は評価結果を必ず1個スタックに残し、文は一時的な値を残さない。二項演算は左、右の順に生成し、演算命令を置く。VMは右辺を先にpopし、次に左辺をpopして`左辺 op 右辺`を計算する。
+     * 従来経路では式は評価結果を必ず1個スタックに残し、文は一時的な値を残さない。意味解析を指定した経路ではrecordの結果はvalueWidth個になる。二項演算は左、右の順に生成し、演算命令を置く。VMは右辺を先にpopし、次に左辺をpopして`左辺 op 右辺`を計算する。
      *
      * 関数内の`a * (b + c)`は次のようになる。
      *
@@ -585,6 +647,10 @@ class BytecodeGenerator {
      * CALLは積まれた引数の前に管理領域2個を挿入し、BPをその先頭へ設定する。局所変数表のスロット番号は、この管理領域も含めて割り当てる。呼出しより前の式の一時値はフレームの下に保存されるため、`a + f(b)`や再帰呼出しにも対応できる。
      */
     private expression(term: Term): void {
+        if (this.analysis !== undefined) {
+            this.typedExpression(term);
+            return;
+        }
         const literal = this.numberLiteral(term);
         if (literal !== undefined) {
             this.emit(literal.opcode, term, literal.operand);
@@ -619,10 +685,218 @@ class BytecodeGenerator {
         }
     }
 
+    private valueType(term: Term): PythonType {
+        const type = this.analysis!.types.get(term);
+        if (type === undefined) {
+            this.fail(term, "式の型がありません。アセンブリ生成前に意味解析してください");
+        }
+        return type;
+    }
+
+    private valueWidth(type: PythonType): number {
+        return valueSlotTypes(type, this.analysis!.api).length;
+    }
+
+    /** すべてをpushしてから逆順にpopするため、コピー元と先が重なっても値を壊さない。 */
+    private loadValue(address: ValueAddress, node: AbstractSyntaxNode): void {
+        for (let index = 0; index < this.valueWidth(address.type); index++) {
+            this.emit(`LOAD_${address.kind}`, node, String(address.slot + index));
+        }
+    }
+
+    private storeValue(address: ValueAddress, node: AbstractSyntaxNode): void {
+        for (let index = this.valueWidth(address.type) - 1; index >= 0; index--) {
+            this.emit(`STORE_${address.kind}`, node, String(address.slot + index));
+        }
+    }
+
+    private temporary(type: PythonType, node: AbstractSyntaxNode): ValueAddress {
+        const allocation = this.allocations.get(this.scope)!;
+        const slot = allocation.cursor;
+        allocation.cursor += this.valueWidth(type);
+        allocation.end = Math.max(allocation.end, allocation.cursor);
+        if (allocation.end > 65535) {
+            this.fail(node, "一時領域を含むスロット数が65535を超えています");
+        }
+        return { kind: this.scope.fn === undefined ? "G" : "L", slot, type };
+    }
+
+    /** 動的な値は一度だけ一時領域へ保存し、以降は同じ固定スロットを参照する。 */
+    private address(term: Term, checkRoot = false): ValueAddress {
+        if (term instanceof RefVar) {
+            const binding = this.analysis!.references.get(term);
+            if (binding?.kind !== "variable") {
+                this.fail(term, "この名前の格納位置を取得できません");
+            }
+            const variable = binding.variable;
+            const address: ValueAddress = { kind: variable.scope === "global" ? "G" : "L",
+                slot: variable.slot, type: variable.type! };
+            if (checkRoot) {
+                for (let index = 0; index < this.valueWidth(address.type); index++) {
+                    this.emit(`LOAD_${address.kind}`, term, String(address.slot + index));
+                    this.emit("POP", term);
+                }
+            }
+            return address;
+        }
+        if (term instanceof App && term.fncName === ".") {
+            const field = this.analysis!.fields.get(term);
+            if (field === undefined) {
+                this.fail(term, "フィールドの解決結果がありません");
+            }
+            const parent = this.address(term.args[0], checkRoot);
+            let offset = 0;
+            for (const member of field.owner.fields) {
+                if (member.id === field.definition.id) {
+                    return { kind: parent.kind, slot: parent.slot + offset, type: member.type };
+                }
+                offset += this.valueWidth(member.type);
+            }
+            this.fail(term, "フィールドの格納位置を取得できません");
+        }
+        const temporary = this.temporary(this.valueType(term), term);
+        this.expression(term);
+        this.storeValue(temporary, term);
+        return temporary;
+    }
+
+    /** 型がfloatへ統合された変数・仮引数・戻り値にも、整数値をそのまま格納しない。 */
+    private expressionAs(term: Term, expected: PythonType): void {
+        this.expression(term);
+        if (this.valueType(term).kind === "int" && expected.kind === "float") {
+            this.emit("TO_FLOAT", term);
+        }
+    }
+
+    private typedCall(app: App): boolean {
+        const call = this.analysis!.calls.get(app);
+        if (call === undefined) {
+            return false;
+        }
+        if (call.kind === "function") {
+            for (const [index, argument] of app.args.entries()) {
+                this.expressionAs(argument, call.definition.parameters[index].type!);
+            }
+            this.emit("CALL", app, call.definition.node.name);
+            return true;
+        }
+        const args = call.kind === "method" ? app.args.slice(1) : app.args;
+        if (call.kind === "method") {
+            const attribute = app.args[0] as App;
+            this.expression(attribute.args[0]);
+        }
+        for (const [index, argument] of args.entries()) {
+            this.expressionAs(argument, call.definition.parameters[index].type);
+        }
+        this.emit("CALL_NATIVE", app, String(call.definition.nativeId));
+        return true;
+    }
+
+    private formattedString(app: App): void {
+        for (const part of app.args) {
+            if (part instanceof Str) {
+                // 置換は原文に対してだけ行い、Unicodeエスケープで作った括弧は縮約しない。
+                const fragment = new Str(part.text.replace(/\{\{/g, "{").replace(/\}\}/g, "}"));
+                fragment.charPos = part.charPos;
+                this.emit("PUSH_STRING", part, String(this.stringId(fragment)));
+            }
+            else {
+                const formatted = part instanceof App && part.fncName === "@format";
+                const value = formatted ? part.args[0] : part;
+                const format = formatted ? part.args[1] as Str : new Str("");
+                this.expression(value);
+                this.emit("FORMAT_VALUE", part, String(this.stringId(format)));
+            }
+        }
+        this.emit("BUILD_STRING", app, String(this.uint16(app.args.length, this.location(app), "文字列の断片数")));
+    }
+
+    private typedExpression(term: Term): void {
+        const literal = this.numberLiteral(term);
+        if (literal !== undefined) {
+            this.emit(literal.opcode, term, literal.operand);
+        }
+        else if (term instanceof Str) {
+            this.emit("PUSH_STRING", term, String(this.stringId(term)));
+        }
+        else if (term instanceof RefVar) {
+            if (term.name === "None") {
+                this.emit("PUSH_NONE", term);
+            }
+            else if (term.name === "True" || term.name === "False") {
+                this.emit("PUSH_INT", term, term.name === "True" ? "1" : "0");
+            }
+            else {
+                this.loadValue(this.address(term), term);
+            }
+        }
+        else if (term instanceof App) {
+            if (this.typedCall(term)) {
+                return;
+            }
+            if (term.fncName === ".") {
+                this.loadValue(this.address(term), term);
+                return;
+            }
+            if (term.fncName === 'f"') {
+                this.formattedString(term);
+                return;
+            }
+            const opcode = this.operation(term, this.scope);
+            if (opcode === "CALL") {
+                this.fail(term, "関数の意味解析結果がありません");
+            }
+            if (term.args.length === 1 && (term.fncName === "+" || term.fncName === "-")) {
+                this.emit("PUSH_INT", term, "0");
+            }
+            for (const argument of term.args) {
+                if (this.valueType(argument).kind === "object") {
+                    this.fail(term, "構造体・機器オブジェクトの比較や数値演算は未対応です");
+                }
+                this.expression(argument);
+            }
+            this.emit(opcode, term);
+        }
+        else {
+            this.fail(term, "未対応の式です");
+        }
+    }
+
+    private typedAssignment(app: App): void {
+        const target = app.args[0];
+        const right = app.args[1];
+        let address: ValueAddress;
+        if (app.fncName === "=") {
+            this.expressionAs(right, this.valueType(target));
+            address = this.address(target, target instanceof App);
+        }
+        else {
+            const opcode = arithmetic[app.fncName.slice(0, -1)];
+            if (opcode === undefined) {
+                this.fail(app, `未対応の複合代入です: ${app.fncName}`);
+            }
+            address = this.address(target, target instanceof App);
+            this.loadValue(address, target);
+            this.expression(right);
+            this.emit(opcode, app);
+            if (address.type.kind === "float") {
+                this.emit("TO_FLOAT", app);
+            }
+        }
+        this.storeValue(address, app);
+    }
+
     private block(block: BlockStatement): void {
         for (const statement of block.statements) {
             this.statement(statement);
         }
+    }
+
+    private condition(term: Term): void {
+        if (this.analysis !== undefined && this.valueType(term).kind === "object") {
+            this.fail(term, "条件には構造体・機器オブジェクトのフィールドやメソッドの数値結果を使ってください");
+        }
+        this.expression(term);
     }
 
     /**
@@ -652,11 +926,21 @@ class BytecodeGenerator {
      * | `HALT` | モジュール本体の終了。後ろに置いた関数本体への流入を防ぐ |
      */
     private statement(statement: Statement): void {
+        if (this.analysis !== undefined) {
+            const allocation = this.allocations.get(this.scope)!;
+            allocation.cursor = allocation.variablesEnd;
+        }
         if (statement instanceof CallStatement) {
             const assignment = this.assignment(statement);
             if (assignment === undefined) {
                 this.expression(statement.app);
-                this.emit("POP", statement);
+                const count = this.analysis === undefined ? 1 : this.valueWidth(this.valueType(statement.app));
+                for (let index = 0; index < count; index++) {
+                    this.emit("POP", statement);
+                }
+            }
+            else if (this.analysis !== undefined) {
+                this.typedAssignment(assignment);
             }
             else {
                 const target = assignment.args[0] as RefVar;
@@ -674,7 +958,7 @@ class BytecodeGenerator {
         else if (statement instanceof IfStatement) {
             const otherwise = this.newLabel("if_else");
             const end = this.newLabel("if_end");
-            this.expression(statement.condition);
+            this.condition(statement.condition);
             this.emit("JUMP_IF_FALSE", statement, otherwise);
             this.block(statement.ifBlock);
             this.emit("JUMP", statement, end);
@@ -691,7 +975,7 @@ class BytecodeGenerator {
             const start = this.newLabel("while_test");
             const end = this.newLabel("while_end");
             this.label(start, statement);
-            this.expression(statement.condition);
+            this.condition(statement.condition);
             this.emit("JUMP_IF_FALSE", statement, end);
             this.loops.push({ start, end });
             this.block(statement.block);
@@ -704,12 +988,21 @@ class BytecodeGenerator {
                 this.emit("PUSH_NONE", statement);
             }
             else {
-                this.expression(statement.value);
+                if (this.analysis === undefined) {
+                    this.expression(statement.value);
+                }
+                else {
+                    const fn = this.analysis.functions.get(this.scope.fn!.name)!;
+                    this.expressionAs(statement.value, fn.type!);
+                }
             }
             this.emit("RET", statement);
         }
         else if (statement.keyword === "break" || statement.keyword === "continue") {
             const loop = this.loops[this.loops.length - 1];
+            if (loop === undefined) {
+                this.fail(statement, "break/continueはwhile内だけに使用できます");
+            }
             this.emit("JUMP", statement, statement.keyword === "break" ? loop.end : loop.start);
         }
         else if (statement.keyword !== "pass") {
@@ -756,6 +1049,41 @@ class BytecodeGenerator {
      */
     private formatAssembly(): string {
         const lines: string[] = [];
+        const labels = new Map<string, LabelAddress>();
+        if (this.analysis !== undefined) {
+            let pc = 0;
+            for (const entry of this.entries) {
+                if (entry.kind === "label") {
+                    labels.set(entry.name, { pc, owner: entry.owner });
+                }
+                else if (entry.kind === "instruction") {
+                    pc += this.instructionLength(entry);
+                }
+            }
+            if (pc > 65536) {
+                this.binaryError(this.location(this.module), "アセンブリの命令列長が65536バイトを超えています");
+            }
+            lines.push(`.api ${this.analysis.api.callingConventionVersion} ${this.analysis.api.abiHash}`);
+            const natives: { definition: DeviceCallable; name: string; self: number }[] = [];
+            for (const owner of this.analysis.api.classes) {
+                if (owner.constructor !== null) {
+                    natives.push({ definition: owner.constructor, name: `${owner.name}.__init__`, self: 0 });
+                }
+                for (const definition of owner.methods) {
+                    natives.push({ definition, name: `${owner.name}.${definition.name}`,
+                        self: this.valueWidth({ kind: "object", classId: owner.id }) });
+                }
+            }
+            for (const definition of this.analysis.api.functions) {
+                natives.push({ definition, name: definition.name, self: 0 });
+            }
+            for (const native of natives.sort((left, right) => left.definition.nativeId - right.definition.nativeId)) {
+                const args = native.self + native.definition.parameters.reduce((count, parameter) => count + this.valueWidth(parameter.type), 0);
+                const result = this.valueWidth(native.definition.resultType ?? native.definition.returnType);
+                this.uint16(args, this.location(), "ネイティブ関数の引数スロット数");
+                lines.push(`.native ${native.definition.nativeId} ${native.name} ${args} ${result}`);
+            }
+        }
         let previousLine = -2;
         for (const entry of this.entries) {
             if (this.sourceLines.length > 0 && (entry.kind === "instruction" || entry.kind === "label")) {
@@ -765,7 +1093,21 @@ class BytecodeGenerator {
                     previousLine = line;
                 }
             }
-            lines.push(this.format(entry));
+            if (this.analysis !== undefined && entry.kind === "function") {
+                const pc = this.uint16(this.labelAddress(entry.name, labels, entry).pc, entry, "関数入口PC");
+                lines.push(`.function ${entry.name} ${pc} ${entry.args} ${entry.locals} ${entry.returns}`);
+            }
+            else if (this.analysis !== undefined && entry.kind === "instruction"
+                && ["CALL", "JUMP", "JUMP_IF_FALSE", "JUMP_IF_TRUE"].includes(entry.opcode)) {
+                const target = this.labelAddress(entry.operand, labels, entry);
+                const base = entry.opcode === "CALL" || entry.owner === undefined ? 0
+                    : this.labelAddress(entry.owner, labels, entry).pc;
+                const operand = this.uint16(target.pc - base, entry, "呼出し・分岐先PC");
+                lines.push(`${entry.opcode} ${operand} ; ${entry.operand}`);
+            }
+            else {
+                lines.push(this.format(entry));
+            }
             if (entry.kind === "globals") {
                 for (const [value, id] of this.stringIds) {
                     // JSONの引用で値を表示し、改行として扱われる文字と追加の制御文字も保護する。
@@ -778,7 +1120,56 @@ class BytecodeGenerator {
         return `${lines.join("\n")}\n`;
     }
 
-    /** アセンブリとバイナリで共通の命令列・変数表・関数表を作る。
+    /** 意味解析で確定した幅と配置を使用し、追加の一時領域だけを生成器が管理する。 */
+    private compileTyped(): void {
+        this.collectFunctions();
+        const globalScope = this.scope;
+        const scopes = [globalScope, ...this.functions.values()];
+        for (const scope of scopes) {
+            const variables = scope.fn === undefined ? this.analysis!.globals : this.analysis!.functions.get(scope.fn.name)!.variables;
+            scope.variables.clear();
+            let end = scope.fn === undefined ? 0 : 2;
+            for (const variable of variables.values()) {
+                scope.variables.set(variable.name, variable.slot);
+                end = Math.max(end, variable.slot + this.valueWidth(variable.type!));
+            }
+            if (end > 65535) {
+                this.fail(scope.fn ?? this.module, "変数領域のスロット数が65535を超えています");
+            }
+            this.allocations.set(scope, { variablesEnd: end, cursor: end, end });
+        }
+        const globals: Extract<AssemblyEntry, { kind: "globals" }> = {
+            kind: "globals", count: 0, ...this.location()
+        };
+        this.entries.push(globals);
+        const records = new Map<Scope, FunctionEntry>();
+        for (const scope of this.functions.values()) {
+            const fn = this.analysis!.functions.get(scope.fn!.name)!;
+            const args = fn.parameters.reduce((count, parameter) => count + this.valueWidth(parameter.type!), 0);
+            const entry: FunctionEntry = { kind: "function", name: fn.node.name, args, locals: 0,
+                returns: this.valueWidth(fn.type!), charPos: fn.node.charPos, owner: fn.node.name };
+            records.set(scope, entry);
+            this.entries.push(entry);
+        }
+        this.block(globalScope.block);
+        this.emit("HALT");
+        for (const scope of this.functions.values()) {
+            this.scope = scope;
+            const fn = this.analysis!.functions.get(scope.fn!.name)!;
+            this.label(fn.node.name, fn.node);
+            this.block(scope.block);
+            if (fn.type!.kind === "none") {
+                this.emit("PUSH_NONE");
+            }
+            // 非None関数の末尾は到達不能。RETは戻り値スロット不足を検査する契約。
+            this.emit("RET");
+            const record = records.get(scope)!;
+            record.locals = this.allocations.get(scope)!.end - 2 - record.args;
+        }
+        globals.count = this.allocations.get(globalScope)!.end;
+    }
+
+    /** 意味解析を指定しない従来経路で、アセンブリとバイナリ共通の命令列・変数表・関数表を作る。
      *
      * @remarks
      * 関数情報に「入口ラベル・仮引数個数・追加の局所変数個数」を持たせる。アセンブリでは疑似指示`.function f 2 1`のように出力する。この例は引数2個・追加の局所変数1個を示し、VMの実行命令ではない。大域変数の個数も`.globals 個数`で記録する。
@@ -823,7 +1214,10 @@ class BytecodeGenerator {
     }
 
     private instructionLength(entry: InstructionEntry): number {
-        const encoding = operandEncoding[entry.opcode];
+        if (["CALL_NATIVE", "FORMAT_VALUE", "BUILD_STRING"].includes(entry.opcode)) {
+            return 3;
+        }
+        const encoding = operandEncoding[entry.opcode as Opcode];
         if (encoding === undefined) {
             return 1;
         }
@@ -980,8 +1374,12 @@ class BytecodeGenerator {
             if (entry.kind !== "instruction") {
                 continue;
             }
-            view.setUint8(offset, BytecodeOpcode[entry.opcode]);
-            switch (operandEncoding[entry.opcode]) {
+            if (!Object.hasOwn(BytecodeOpcode, entry.opcode)) {
+                this.binaryError(entry, `拡張アセンブリ命令のバイナリ生成は未実装です: ${entry.opcode}`);
+            }
+            const opcode = entry.opcode as Opcode;
+            view.setUint8(offset, BytecodeOpcode[opcode]);
+            switch (operandEncoding[opcode]) {
                 case "u16":
                     view.setUint16(offset + 1, this.addressOperand(entry, labels), true);
                     break;
@@ -1006,7 +1404,12 @@ class BytecodeGenerator {
     }
 
     generateAssembly(): string {
-        this.compile();
+        if (this.analysis === undefined) {
+            this.compile();
+        }
+        else {
+            this.compileTyped();
+        }
         return this.formatAssembly();
     }
 
@@ -1017,19 +1420,20 @@ class BytecodeGenerator {
 }
 
 /**
- * Python構文木を検査し、変数名・ラベルを保持したアセンブラソースを生成する。
+ * Python構文木を検査し、アセンブラソースを生成する。
  * @param module parsePythonが返すModule。元の木とtoStringのキャッシュは変更しない。
+ * @param analysis 同じ木の意味解析結果。指定時は構造体・API・f文字列にも対応する。
  * @returns 疑似指示と命令を改行で区切った文字列（末尾改行付き）。Module.sourceが
  * 設定されている場合は、対応するPythonの行番号と原文をコメントで付ける。
  * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
  */
-export function generateAssembly(module: Module): string {
-    return new BytecodeGenerator(module).generateAssembly();
+export function generateAssembly(module: Module, analysis?: PythonAnalysis): string {
+    return new BytecodeGenerator(module, analysis).generateAssembly();
 }
 
 /**
  * Python構文木から、UTF-8文字列定数を含むversion=2のESP32向けバイナリを生成する。
- * @param module parsePythonが返すModule。対応範囲はgenerateAssemblyと共通。
+ * @param module parsePythonが返すModule。意味解析付きアセンブリの拡張機能は未対応。
  * @returns ヘッダー・関数情報・命令列・文字列表・UTF-8データを持つUint8Array。
  * 複数バイトの数値はlittle endian。形式の詳細はファイル先頭を参照する。
  * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲・文字列エスケープの不一致。

@@ -15,11 +15,15 @@ device.pyi、出力はuroa/public/diagram/device/device-api.json。既定パス�
 strはDisplay.printとモジュール関数printのtext引数だけに許可し、両APIは
 (text: str) -> Noneに限定する。Vec3/IMUValueだけが公開フィールドを持てる。
 
-JSONのschemaVersion/callingConventionVersion/stringPolicyVersionは1。
+JSONのschemaVersion/callingConventionVersionは2、stringPolicyVersionは1。
 classes/functionsと、各クラスのconstructor/methods/fieldsを出力する。
 classId相当のidはクラス宣言順、functionId相当のidは関数宣言順で1から。
 methodId相当のidはクラスごとに__init__=0、通常メソッドを宣言順で1から。
 fieldId相当のidはクラスごとのフィールド宣言順で1から。すべてuint16範囲。
+全コンストラクター・メソッド・関数には、ファイル内の宣言順で共通のnativeIdを1から
+付ける。CALL_NATIVEはこの単一IDを使用し、idは名前解決用の従来の名前空間に残す。
+呼出し規約version=2ではrecordを宣言順の末端フィールドの連続スロットへ展開し、
+代入・引数・戻り値で値をコピーする。deviceは1スロットのハンドルとして扱う。
 constructorが未宣言ならnullとし、暗黙に作らない。selfはparametersに含めない。
 コンストラクターのreturnTypeは宣言のnone、resultTypeは生成されるobject型。
 フィールドはreadable/writableともtrue。型は{"kind": "int"}等の形式とし、
@@ -63,6 +67,7 @@ class InterfaceParser:
     def __init__(self, path: Path) -> None:
         self.path = path
         self.class_ids: Dict[str, int] = {}
+        self.native_count = 0
 
     def fail(self, node: ast.AST, message: str) -> NoReturn:
         """対象ファイルと1始まりの行・列を付けて生成を中止する。"""
@@ -144,8 +149,10 @@ class InterfaceParser:
                          or return_type != {"kind": "none"}):
             self.fail(node, qualified_name + ": (text: str) -> Noneとして宣言してください")
 
+        self.native_count = self.check_id(self.native_count + 1, node)
         result = {
             "id": self.check_id(api_id, node),
+            "nativeId": self.native_count,
             "name": node.name,
             "parameters": output_parameters,
             "returnType": return_type,
@@ -222,8 +229,8 @@ class InterfaceParser:
             else:
                 functions.append(self.read_callable(node, len(functions) + 1))
         result = {
-            "schemaVersion": 1,
-            "callingConventionVersion": 1,
+            "schemaVersion": 2,
+            "callingConventionVersion": 2,
             "stringPolicyVersion": 1,
             "classes": classes,
             "functions": functions,

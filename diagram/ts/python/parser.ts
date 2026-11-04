@@ -1,7 +1,8 @@
 /**
  * f文字列の構文解析と構文木の仕様。
  * lex.tsが文字列部分・置換式・書式に分けたトークンを、このファイルで解析し、
- * syntax.tsのApp・Str・Termで保持する。実行側（bytecode.ts以降）は未対応。
+ * syntax.tsのApp・Str・Termで保持する。bytecode.tsは意味解析結果を指定した場合の
+ * アセンブリ生成まで対応し、f文字列のバイナリ生成・VM実行は後続の範囲。
  *
  * 開始記号は f"・f'・F"・F' を受け付け、対応する終了引用符までを読む。
  * いずれも関数名を f" に統一したAppとし、argsに各部分を出現順で格納する。
@@ -27,7 +28,7 @@ import {
     ForStatement, IfStatement, Module, RefVar, ReturnStatement, Statement,
     Str, Term, Variable, WhileStatement, indexOpr, isAssignmentToken
 } from "./syntax.js";
-import { generateAssembly, generateBytecode } from "./bytecode.js";
+import { generateAssembly } from "./bytecode.js";
 import { analyzePython } from "./semantic.js";
 
 /** 改行を保持し、Pythonサブセットを再帰下降で解析する。 */
@@ -541,6 +542,7 @@ export function parsePython(text: string): Module {
     return module;
 }
 
+/** 開発用入口は意味解析付きアセンブリまでを表示する。新しいバイナリ生成は後続。 */
 export async function testPython(){
     const text = await fetchText("/diagram/python/a.py")
     msg(`python:${text}`)
@@ -552,10 +554,6 @@ export async function testPython(){
         msg(`  type ${name}: ${JSON.stringify(variable.type)}`);
     }
 
-    const asm = generateAssembly(mod);
+    const asm = generateAssembly(mod, analysis);
     msg(`  asm:\n${asm}`);
-
-    const bytecode = generateBytecode(mod);
-    const hex = Array.from(bytecode, value => value.toString(16).padStart(2, "0")).join(" ");
-    msg(`  bytecode (${bytecode.byteLength} bytes):\n${hex}`);
 }

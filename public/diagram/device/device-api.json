@@ -1,6 +1,6 @@
 {
-    "schemaVersion": 1,
-    "callingConventionVersion": 1,
+    "schemaVersion": 2,
+    "callingConventionVersion": 2,
     "stringPolicyVersion": 1,
     "classes": [
         {
@@ -74,6 +74,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
+                "nativeId": 1,
                 "name": "__init__",
                 "parameters": [
                     {
@@ -94,6 +95,7 @@
             "methods": [
                 {
                     "id": 1,
+                    "nativeId": 2,
                     "name": "set_angle",
                     "parameters": [
                         {
@@ -109,6 +111,7 @@
                 },
                 {
                     "id": 2,
+                    "nativeId": 3,
                     "name": "set_speed",
                     "parameters": [
                         {
@@ -131,6 +134,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
+                "nativeId": 4,
                 "name": "__init__",
                 "parameters": [],
                 "returnType": {
@@ -144,6 +148,7 @@
             "methods": [
                 {
                     "id": 1,
+                    "nativeId": 5,
                     "name": "get_value",
                     "parameters": [],
                     "returnType": {
@@ -160,6 +165,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
+                "nativeId": 6,
                 "name": "__init__",
                 "parameters": [],
                 "returnType": {
@@ -173,6 +179,7 @@
             "methods": [
                 {
                     "id": 1,
+                    "nativeId": 7,
                     "name": "get_distance",
                     "parameters": [],
                     "returnType": {
@@ -188,6 +195,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
+                "nativeId": 8,
                 "name": "__init__",
                 "parameters": [],
                 "returnType": {
@@ -201,6 +209,7 @@
             "methods": [
                 {
                     "id": 1,
+                    "nativeId": 9,
                     "name": "set_text_color",
                     "parameters": [
                         {
@@ -216,6 +225,7 @@
                 },
                 {
                     "id": 2,
+                    "nativeId": 10,
                     "name": "set_cursor",
                     "parameters": [
                         {
@@ -237,6 +247,7 @@
                 },
                 {
                     "id": 3,
+                    "nativeId": 11,
                     "name": "print",
                     "parameters": [
                         {
@@ -252,6 +263,7 @@
                 },
                 {
                     "id": 4,
+                    "nativeId": 12,
                     "name": "draw_line",
                     "parameters": [
                         {
@@ -291,6 +303,7 @@
                 },
                 {
                     "id": 5,
+                    "nativeId": 13,
                     "name": "draw_rect",
                     "parameters": [
                         {
@@ -330,6 +343,7 @@
                 },
                 {
                     "id": 6,
+                    "nativeId": 14,
                     "name": "draw_circle",
                     "parameters": [
                         {
@@ -363,6 +377,7 @@
                 },
                 {
                     "id": 7,
+                    "nativeId": 15,
                     "name": "fill_circle",
                     "parameters": [
                         {
@@ -396,6 +411,7 @@
                 },
                 {
                     "id": 8,
+                    "nativeId": 16,
                     "name": "display",
                     "parameters": [],
                     "returnType": {
@@ -409,6 +425,7 @@
     "functions": [
         {
             "id": 1,
+            "nativeId": 17,
             "name": "print",
             "parameters": [
                 {
@@ -423,5 +440,5 @@
             }
         }
     ],
-    "abiHash": "a3ecaf19bc61f328ca32571fbc155d3e35a6a6e2bc3d1d75c7774065fa7971dc"
+    "abiHash": "0bd94e3153af0ff94d3c1b53c382645b98b8002b44b7b3566ec9c831d80b57f7"
 }
