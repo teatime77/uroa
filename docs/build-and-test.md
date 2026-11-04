@@ -1,6 +1,26 @@
 # ビルドと回帰テスト
 
-更新日: 2026-11-03。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-11-04。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## Pythonの名前解決・型推論（2026-11-04）
+
+追加した[semantic.ts](../diagram/ts/python/semantic.ts)と呼出し元の静的確認には、uroaルートで`npm.cmd run build:all`を使う。公開ビルドと成果物の静的確認は`npm.cmd run verify`。API・対応範囲・制限はsemantic.ts先頭コメントを参照する。
+
+従来の指定に従い、テストは作成・実行しない。ビルドと、ブラウザーでのAPI定義読込み・意味解析・BLE送信・実機実行は区別する。
+
+`npm.cmd run verify`のTypeScript参照ビルド、Vite公開ビルド、成果物の静的確認は成功した。既存gameの動的／静的import併用の警告2件は継続。意味解析の実行・ブラウザー・BLE・実機の確認は行っていない。
+
+## Python機器インターフェースのJSON生成（2026-11-04）
+
+uroaルートからPython 3.8以降で実行する。追加パッケージは不要。
+
+```powershell
+python diagram/python/generate-device-api.py
+```
+
+入力は[device.pyi](../diagram/python/device.pyi)、出力は[device-api.json](../public/diagram/device/device-api.json)。通常の生成では既存JSONを更新する。生成物を変更せず再生成が必要か確認するときは`--check`を付ける。入力・出力の変更には`--input`・`--output`を使う。既定パスは作業ディレクトリーに依存せず、明示した相対パスは作業ディレクトリーを基準にする。
+
+入力の対応範囲・採番・JSON形式・ABI指紋は[生成プログラムの仕様コメント](../diagram/python/generate-device-api.py)を参照する。今回の対象はJSON生成までで、TypeScript・C++の生成やコンパイラー・VMへの組込みは含まない。ユーザー指定によりテストは作成・実行しない。
 
 ## ESP32のPythonサブセットVM（2026-11-03）
 

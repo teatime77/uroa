@@ -17,6 +17,8 @@
  * 書式の桁・精度・型の制約とエスケープの原文保持はlex.ts先頭の仕様に従う。
  * 各ノードに元のcharPosを設定し、parseSource完了時に通常どおりparentを設定する。
  * この解析は構文木の生成のみを行い、f文字列専用のtoStringによる再生成は未対応。
+ * 構文解析後の名前解決・型推論とimportなしのdevice API利用はsemantic.tsが担当する。
+ * parsePythonは同期APIのまま保ち、利用側がawait analyzePython(module)を続けて呼ぶ。
  */
 import { fetchText, msg } from "@i18n";
 import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
@@ -26,6 +28,7 @@ import {
     Str, Term, Variable, WhileStatement, indexOpr, isAssignmentToken
 } from "./syntax.js";
 import { generateAssembly, generateBytecode } from "./bytecode.js";
+import { analyzePython } from "./semantic.js";
 
 /** 改行を保持し、Pythonサブセットを再帰下降で解析する。 */
 export class Parser {
@@ -543,6 +546,11 @@ export async function testPython(){
     msg(`python:${text}`)
     const mod = parsePython(text);
     msg(`  module:\n${mod.block}`);
+
+    const analysis = await analyzePython(mod);
+    for (const [name, variable] of analysis.globals) {
+        msg(`  type ${name}: ${JSON.stringify(variable.type)}`);
+    }
 
     const asm = generateAssembly(mod);
     msg(`  asm:\n${asm}`);
