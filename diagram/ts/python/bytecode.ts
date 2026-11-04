@@ -7,7 +7,7 @@
  *
  * `bytecode.md`に本ファイルに記したCALL／RET拡張と追加命令、関数情報、未初期化値の扱いを反映した。VMはこの契約に従って実装した。
  *
- * ## 文字列のアセンブリ生成（2026-11-04）
+ * ## 文字列定数の生成（2026-11-04）
  *
  * generateAssembly()はsyntax.tsのStrを定数として登録し、`.string ID "値"`と
  * `PUSH_STRING ID`を出力する。同じ実行時の値は関数をまたいで共有する。
@@ -22,9 +22,41 @@
  * .stringの値は二重引用符・バックスラッシュ・制御文字・行区切りをエスケープして
  * 1行に出力する。空文字列・日本語・BMP外文字・埋め込みNULも値として保持する。
  *
- * 今回はアセンブリ文字列のみを拡張する。PUSH_STRINGの数値opcode・文字列領域の
- * バイナリ化は未実装。generateBytecode()は文字列を明示的に拒否し、version=1の
- * ヘッダー・命令番号・数値プログラムの符号化は維持する。BLE転送側とESP32側は未変更。
+ * generateBytecode()も同じ定数IDを使い、値をTextEncoderでUTF-8へ符号化する。
+ * NUL終端は付けず、空文字列・埋め込みNULも明示的なバイト長で保持する。
+ * UTF-16の文字数をバイト長として使わず、Unicode正規化も行わない。
+ *
+ * ## バイナリversion=2
+ *
+ * 全体は24バイトヘッダー、関数表(F個×8バイト)、命令列(Cバイト)、
+ * 文字列表(S個×8バイト)、UTF-8文字列データ(Dバイト)の順。パディングなし。
+ * ヘッダーは次の位置に書き、複数バイトの数値はすべてlittle endianとする。
+ *
+ * | バイト位置 | 型 | 内容 |
+ * |---|---|---|
+ * | 0 | uint16 | 識別子0xB1C0 |
+ * | 2 | uint16 | バイナリversion=2 |
+ * | 4 | uint16 | 大域変数数 |
+ * | 6 | uint16 | 関数数F |
+ * | 8 | uint32 | 命令列長C（1〜65536） |
+ * | 12 | uint16 | 開始PC。0固定 |
+ * | 14 | uint16 | 予約。0固定 |
+ * | 16 | uint16 | 文字列定数数S（0〜65535） |
+ * | 18 | uint16 | 予約。0固定 |
+ * | 20 | uint32 | UTF-8データの全バイト長D |
+ *
+ * 関数表は位置24、命令列は24+F*8、文字列表は24+F*8+C、
+ * UTF-8データは24+F*8+C+S*8から始まる。全体長は24+F*8+C+S*8+Dで128KiB以内。
+ * 文字列表の各レコードは、データ先頭からの相対offset:uint32とlength:uint32。
+ * ID順にデータを連続配置し、最後の末尾をDに一致させる。空文字列のlengthは0。
+ * 文字列なしのプログラムもversion=2でS=D=0とする。上限超過は切り詰めずRangeError。
+ *
+ * PUSH_STRINGはopcode=0x19、uint16のIDを直後へ置く3バイト命令で、ID<Sを必須とする。
+ * 既存の0x01〜0x18の命令番号・長さ、関数表の8バイト形式は維持する。
+ * 命令PCは命令列先頭を0とし、文字列表・データの長さを分岐先・CALL先へ加算しない。
+ *
+ * 関係するble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cpp・bytecode_vm.cpp
+ * のversion=2対応は後続の範囲で、今回は変更しない。新形式のBLE転送・VM実行は未対応。
  * parser.tsのf文字列（関数名f"）・@formatのアセンブリ生成と実行も後続の範囲とする。
  *
  * ### 実装時の確認方針（当時の記録）
@@ -37,7 +69,7 @@ import {
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
 
-/** バイナリ形式version=1の命令番号。全命令のopcodeは1バイト。 */
+/** バイナリ形式version=2の命令番号。0x01〜0x18はversion=1と共通。 */
 export enum BytecodeOpcode {
     LOAD_L = 0x01,
     LOAD_G = 0x02,
@@ -62,19 +94,19 @@ export enum BytecodeOpcode {
     RET = 0x15,
     PUSH_NONE = 0x16,
     POP = 0x17,
-    HALT = 0x18
+    HALT = 0x18,
+    PUSH_STRING = 0x19
 }
 
 /** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
 export const bytecodeSignature = 0xB1C0;
-export const bytecodeVersion = 1;
-export const bytecodeHeaderLength = 16;
+export const bytecodeVersion = 2;
+export const bytecodeHeaderLength = 24;
 export const bytecodeFunctionRecordLength = 8;
+export const bytecodeStringRecordLength = 8;
+export const bytecodeMaxLength = 128 * 1024;
 
 type Opcode = keyof typeof BytecodeOpcode;
-
-/** PUSH_STRINGはアセンブリ専用。数値opcodeはバイナリ対応時に追加する。 */
-type AssemblyOpcode = Opcode | "PUSH_STRING";
 
 /** オペランドなしの命令は登録しない。複数バイト値は全てlittle endian。 */
 const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> = {
@@ -87,7 +119,8 @@ const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> 
     JUMP: "u16",
     JUMP_IF_FALSE: "u16",
     JUMP_IF_TRUE: "u16",
-    CALL: "u16"
+    CALL: "u16",
+    PUSH_STRING: "u16"
 };
 
 const arithmetic: Readonly<Record<string, Opcode>> = {
@@ -126,7 +159,7 @@ interface SourceLocation {
  * 命令は内部では「命令名・オペランド・元の`charPos`」として保持する。これにより、後から同じ命令列へアドレス解決とバイナリ出力を追加できる。構文木の`toString()`やキャッシュは変更しない。
  */
 type AssemblyEntry = SourceLocation & (
-    { kind: "instruction"; opcode: AssemblyOpcode; operand: string | undefined }
+    { kind: "instruction"; opcode: Opcode; operand: string | undefined }
     | { kind: "label"; name: string }
     | { kind: "globals"; count: number }
     | { kind: "function"; name: string; args: number; locals: number }
@@ -148,7 +181,7 @@ interface LabelAddress {
  *
  * `parsePython()`が返す`Module`を入力に、変数名とラベルを使ったアセンブラソースを出力する。対象は変数への代入、四則演算、単独の比較、`if`／`elif`／`else`、`while`、関数定義・位置引数による呼出し・`return`。`pass`は命令を出さず、`break`／`continue`は所属するwhileのラベルへの分岐にする。
  *
- * 通常文字列はアセンブリ生成のみ対応する。`for`、構造体・クラス、属性・添字、f文字列・コンテナ、import、クロージャ、関数を値として扱う処理は後回しにする。論理演算・連鎖比較や仕様にない演算子も拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
+ * 通常文字列はアセンブリとバイナリの生成に対応する。`for`、構造体・クラス、属性・添字、f文字列・コンテナ、import、クロージャ、関数を値として扱う処理は後回しにする。論理演算・連鎖比較や仕様にない演算子も拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
  *
  * ## 処理を2段階に分ける
  *
@@ -169,7 +202,7 @@ class BytecodeGenerator {
     private readonly lineStarts = [0];
     private scope: Scope;
 
-    constructor(private readonly module: Module, private readonly target: "assembly" | "binary") {
+    constructor(private readonly module: Module) {
         this.globalScope = { fn: undefined, block: module.block, variables: new Map() };
         this.scope = this.globalScope;
         this.sourceLines = module.source?.split(/\r\n|\r|\n/) ?? [];
@@ -333,9 +366,6 @@ class BytecodeGenerator {
 
     /** 原文を1回だけ値へ変換する。エスケープの対応範囲はファイル先頭を参照する。 */
     private stringLiteral(term: Str): string {
-        if (this.target === "binary") {
-            this.fail(term, "文字列のバイナリ生成には対応していません");
-        }
         const cached = this.stringValues.get(term);
         if (cached !== undefined) {
             return cached;
@@ -510,7 +540,7 @@ class BytecodeGenerator {
         });
     }
 
-    private emit(opcode: AssemblyOpcode, node?: AbstractSyntaxNode, operand?: string): void {
+    private emit(opcode: Opcode, node?: AbstractSyntaxNode, operand?: string): void {
         this.entries.push({ kind: "instruction", opcode, operand, ...this.location(node) });
     }
 
@@ -792,9 +822,6 @@ class BytecodeGenerator {
     }
 
     private instructionLength(entry: InstructionEntry): number {
-        if (entry.opcode === "PUSH_STRING") {
-            this.binaryError(entry, "文字列のバイナリ生成には対応していません");
-        }
         const encoding = operandEncoding[entry.opcode];
         if (encoding === undefined) {
             return 1;
@@ -825,7 +852,7 @@ class BytecodeGenerator {
         return address;
     }
 
-    /** 変数名・関数名・分岐ラベルをuint16オペランドへ解決する。
+    /** 変数名・関数名・分岐ラベル・文字列定数IDをuint16オペランドへ解決する。
      *
      * @remarks
      * アセンブリでは`LOAD_L a`等の名前を残す。内部の変数表にはスロット番号も保持し、バイナリ生成時にuint16のオペランドへ変換する。
@@ -834,6 +861,12 @@ class BytecodeGenerator {
         const name = entry.operand;
         let value: number | undefined;
         switch (entry.opcode) {
+            case "PUSH_STRING":
+                value = name === undefined ? undefined : Number(name);
+                if (value === undefined || !Number.isInteger(value) || value < 0 || value >= this.stringIds.size) {
+                    this.binaryError(entry, "文字列定数IDが範囲外です");
+                }
+                break;
             case "LOAD_G":
             case "STORE_G":
                 value = name === undefined ? undefined : this.globalScope.variables.get(name);
@@ -868,12 +901,14 @@ class BytecodeGenerator {
         return this.uint16(value, entry, "オペランド");
     }
 
-    /** 1回目でPCを決め、2回目で固定長ヘッダー・関数表・実行命令を書き込む。
+    /** PCを解決し、固定長ヘッダー・関数表・実行命令・UTF-8文字列定数を書き込む。
      *
      * @remarks
      * 初期仕様の「関数内ラベルはBPからの相対位置」はデータスタックのBPと命令アドレスが混在するため、分岐先を「関数先頭PCからのオフセット」、CALL先を「命令列先頭からの絶対PC」として区別した。バイナリ化では、1回目に命令長から全ラベルのPCを求め、2回目に変数スロット・分岐先・CALL先を数値化して書き込む。命令アドレスはバイト単位とし、ヘッダー・関数表を除いた命令列の先頭を0とする。
      *
-     * バイナリversion=1は16バイトの数値ヘッダー、1関数8バイトの関数情報、実行命令列の順。opcodeはuint8、オペランドはuint16／int32／float32で全てlittle endian。命令列は最大65536バイトとし、範囲超過で切り詰めない。名前・ラベル・原文・コメントはバイナリへ書き込まない。ヘッダーの各位置とopcode番号は[バイトコード仕様](../../../docs/diagram/python/bytecode.md)を参照する。ESP32の受信器は形式を検証し、VMは確定済みRAMバッファから実行する。
+     * バイナリversion=2の配置・ヘッダー・文字列表の形式は本ファイル先頭を参照する。
+     * 命令列は最大65536バイト、全体は128KiB以内とし、範囲超過で切り詰めない。
+     * 変数名・関数名・ラベル名・原文・コメントは書き込まない。
      */
     private encodeBinary(): Uint8Array {
         const labels = new Map<string, LabelAddress>();
@@ -897,8 +932,25 @@ class BytecodeGenerator {
 
         const globals = this.uint16(this.globalScope.variables.size, moduleLocation, "大域変数の個数");
         const functionCount = this.uint16(functions.length, moduleLocation, "関数の個数");
+        const stringCount = this.uint16(this.stringIds.size, moduleLocation, "文字列定数の個数");
         const codeOffset = bytecodeHeaderLength + functionCount * bytecodeFunctionRecordLength;
-        const bytes = new Uint8Array(codeOffset + codeLength);
+        const stringTableOffset = codeOffset + codeLength;
+        const stringDataOffset = stringTableOffset + stringCount * bytecodeStringRecordLength;
+        if (stringDataOffset > bytecodeMaxLength) {
+            this.binaryError(moduleLocation, "バイトコード全体は128KiB以内にしてください");
+        }
+        const encoder = new TextEncoder();
+        const strings: Uint8Array[] = [];
+        let stringDataLength = 0;
+        for (const value of this.stringIds.keys()) {
+            const encoded = encoder.encode(value);
+            stringDataLength += encoded.byteLength;
+            if (stringDataLength > bytecodeMaxLength - stringDataOffset) {
+                this.binaryError(moduleLocation, "文字列データを含むバイトコード全体は128KiB以内にしてください");
+            }
+            strings.push(encoded);
+        }
+        const bytes = new Uint8Array(stringDataOffset + stringDataLength);
         const view = new DataView(bytes.buffer);
         view.setUint16(0, bytecodeSignature, true);
         view.setUint16(2, bytecodeVersion, true);
@@ -907,6 +959,9 @@ class BytecodeGenerator {
         view.setUint32(8, codeLength, true);
         view.setUint16(12, 0, true);
         view.setUint16(14, 0, true);
+        view.setUint16(16, stringCount, true);
+        view.setUint16(18, 0, true);
+        view.setUint32(20, stringDataLength, true);
 
         for (const [index, fn] of functions.entries()) {
             const start = this.labelAddress(fn.name, labels, fn).pc;
@@ -924,9 +979,6 @@ class BytecodeGenerator {
             if (entry.kind !== "instruction") {
                 continue;
             }
-            if (entry.opcode === "PUSH_STRING") {
-                this.binaryError(entry, "文字列のバイナリ生成には対応していません");
-            }
             view.setUint8(offset, BytecodeOpcode[entry.opcode]);
             switch (operandEncoding[entry.opcode]) {
                 case "u16":
@@ -940,6 +992,14 @@ class BytecodeGenerator {
                     break;
             }
             offset += this.instructionLength(entry);
+        }
+        let dataOffset = 0;
+        for (const [id, encoded] of strings.entries()) {
+            const recordOffset = stringTableOffset + id * bytecodeStringRecordLength;
+            view.setUint32(recordOffset, dataOffset, true);
+            view.setUint32(recordOffset + 4, encoded.byteLength, true);
+            bytes.set(encoded, stringDataOffset + dataOffset);
+            dataOffset += encoded.byteLength;
         }
         return bytes;
     }
@@ -963,16 +1023,17 @@ class BytecodeGenerator {
  * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
  */
 export function generateAssembly(module: Module): string {
-    return new BytecodeGenerator(module, "assembly").generateAssembly();
+    return new BytecodeGenerator(module).generateAssembly();
 }
 
 /**
- * Python構文木から、文字列を含まないESP32向けバイナリを生成する。
- * @param module parsePythonが返すModule。文字列は未対応で、それ以外の対応範囲はgenerateAssemblyと共通。
- * @returns 数値ヘッダー・関数情報・命令列を持つUint8Array。複数バイト値はlittle endian。
- * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
- * @throws RangeError 命令列長、アドレス、変数数・関数数等の形式上限の超過。
+ * Python構文木から、UTF-8文字列定数を含むversion=2のESP32向けバイナリを生成する。
+ * @param module parsePythonが返すModule。対応範囲はgenerateAssemblyと共通。
+ * @returns ヘッダー・関数情報・命令列・文字列表・UTF-8データを持つUint8Array。
+ * 複数バイトの数値はlittle endian。形式の詳細はファイル先頭を参照する。
+ * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲・文字列エスケープの不一致。
+ * @throws RangeError 命令列長、全体長、アドレス、変数数・関数数等の形式上限の超過。
  */
 export function generateBytecode(module: Module): Uint8Array {
-    return new BytecodeGenerator(module, "binary").generateBytecode();
+    return new BytecodeGenerator(module).generateBytecode();
 }
