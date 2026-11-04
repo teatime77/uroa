@@ -2,13 +2,25 @@
  * @remarks
  * # PythonバイトコードのBLE転送
  *
- * 2026-11-03。[バイナリversion=1](../../../docs/diagram/python/bytecode.md)をdiagramから現行ESP32のdiagram-controlへ送り、形式を検証してRAMへ保持する。正常COMMIT後に[VM](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)を開始する。Flash保存は実装しない。
+ * バイナリversion=1・2をdiagramから現行ESP32のdiagram-controlへ送り、検証後にRAMへ保持する。
+ * バイナリ形式の仕様はpython/bytecode.ts先頭、受信側の検証はESP32のbytecode_receiver.cppを参照。
+ * 転送version=1とバイナリversionは区別し、専用UUID・20バイトパケット・受付結果は維持する。
+ * version=1は16バイトヘッダー、version=2は24バイトヘッダーと文字列表・UTF-8データを持つ。
+ * 送信前にヘッダー・全体長・文字列表の連続性と範囲・UTF-8を検証し、命令検証は受信側で行う。
+ * CRCは文字列表・UTF-8データも含む全体で計算し、DATAは文字・レコードの途中で分割してよい。
+ * 空文字列・埋め込みNULを許可し、文字列は明示的なバイト長で扱う。
+ * readyは検証とRAM保持の完了を表す。main.cppはCOMMIT後にVMの開始を試みるが、
+ * 現行VMはversion=1のみ対応し、version=2は形式エラーになる。文字列のVM実行は後続の範囲。
+ * Flash保存は実装しない。
  *
  * ## 確認範囲
  *
  * 模擬・単体・ブラウザーテストはユーザーの従来の指定により作成・実行しない。型ビルド・公開ビルド、PlatformIOの各ボードのビルド結果は[検証記録](../../../docs/build-and-test.md)を参照する。実BLE転送、タイムアウト・切断時の実動作、空きRAM、Uploadと実機での保持はビルドとは別の確認とする。
  */
-import { bytecodeHeaderLength, bytecodeSignature, bytecodeVersion } from "../python/bytecode.js";
+import {
+    bytecodeFunctionRecordLength, bytecodeHeaderLength, bytecodeMaxLength,
+    bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion
+} from "../python/bytecode.js";
 
 /** 既定ATT MTU=23の20バイト書き込みで使う転送形式。
  *
@@ -30,7 +42,7 @@ import { bytecodeHeaderLength, bytecodeSignature, bytecodeVersion } from "../pyt
  */
 export const bytecodeTransfer = {
     version: 1,
-    maxLength: 128 * 1024,
+    maxLength: bytecodeMaxLength,
     packetLength: 20,
     headerLength: 10,
     resultLength: 20,
@@ -60,7 +72,7 @@ export interface BytecodeReceipt {
 /** CRC-32/ISO-HDLC。初期値と最終XORは0xFFFFFFFF。
  *
  * @remarks
- * CRCはバイナリヘッダー・関数表・命令列を含む全体のCRC-32/ISO-HDLC（反転多項式0xEDB88320、初期値・最終XOR=0xFFFFFFFF）。
+ * CRCはヘッダー・関数表・命令列・文字列表・UTF-8データを含む全体のCRC-32/ISO-HDLC（反転多項式0xEDB88320、初期値・最終XOR=0xFFFFFFFF）。
  */
 export function bytecodeCrc32(bytes: Uint8Array): number {
     let crc = 0xFFFFFFFF;
@@ -73,18 +85,49 @@ export function bytecodeCrc32(bytes: Uint8Array): number {
     return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-/** 転送上限とヘッダーを検査する。全命令の検証は受信側でも行う。 */
+/** 転送上限・版別ヘッダー・文字列領域を検査する。全命令の検証は受信側で行う。 */
 export function checkBytecodeTransfer(bytes: Uint8Array): void {
-    if (bytes.byteLength < bytecodeHeaderLength || bytes.byteLength > bytecodeTransfer.maxLength) {
-        throw new RangeError(`バイトコード全体は${bytecodeHeaderLength}〜${bytecodeTransfer.maxLength}バイトにしてください。`);
+    const legacyHeaderLength = 16;
+    if (bytes.byteLength < legacyHeaderLength || bytes.byteLength > bytecodeTransfer.maxLength) {
+        throw new RangeError(`バイトコード全体は${legacyHeaderLength}〜${bytecodeTransfer.maxLength}バイトにしてください。`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const version = view.getUint16(2, true);
+    const headerLength = version === 1 ? legacyHeaderLength : bytecodeHeaderLength;
+    if ((version !== 1 && version !== bytecodeVersion) || bytes.byteLength < headerLength) {
+        throw new Error("バイトコードのversionまたはヘッダー長が不正です。");
+    }
     const codeLength = view.getUint32(8, true);
-    if (view.getUint16(0, true) !== bytecodeSignature || view.getUint16(2, true) !== bytecodeVersion
+    const stringCount = version === 1 ? 0 : view.getUint16(16, true);
+    const dataLength = version === 1 ? 0 : view.getUint32(20, true);
+    const tableOffset = headerLength + view.getUint16(6, true) * bytecodeFunctionRecordLength + codeLength;
+    const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
+    if (view.getUint16(0, true) !== bytecodeSignature
         || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 0
+        || (version !== 1 && view.getUint16(18, true) !== 0)
         || codeLength < 1 || codeLength > 65536
-        || bytes.byteLength !== bytecodeHeaderLength + view.getUint16(6, true) * 8 + codeLength) {
+        || bytes.byteLength !== dataOffset + dataLength) {
         throw new Error("バイトコードのヘッダーまたは長さが不正です。");
+    }
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let expectedOffset = 0;
+    for (let id = 0; id < stringCount; id++) {
+        const recordOffset = tableOffset + id * bytecodeStringRecordLength;
+        const offset = view.getUint32(recordOffset, true);
+        const length = view.getUint32(recordOffset + 4, true);
+        if (offset !== expectedOffset || offset > dataLength || length > dataLength - offset) {
+            throw new Error("バイトコードの文字列表の範囲または連続性が不正です。");
+        }
+        try {
+            decoder.decode(bytes.subarray(dataOffset + offset, dataOffset + offset + length));
+        }
+        catch {
+            throw new Error("バイトコードの文字列データがUTF-8として不正です。");
+        }
+        expectedOffset += length;
+    }
+    if (expectedOffset !== dataLength) {
+        throw new Error("バイトコードの文字列データ長が文字列表と一致しません。");
     }
 }
 

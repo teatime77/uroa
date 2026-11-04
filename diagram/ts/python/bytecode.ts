@@ -55,8 +55,9 @@
  * 既存の0x01〜0x18の命令番号・長さ、関数表の8バイト形式は維持する。
  * 命令PCは命令列先頭を0とし、文字列表・データの長さを分岐先・CALL先へ加算しない。
  *
- * 関係するble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cpp・bytecode_vm.cpp
- * のversion=2対応は後続の範囲で、今回は変更しない。新形式のBLE転送・VM実行は未対応。
+ * 関係するble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppはversion=1・2の
+ * BLE転送・検証・RAM保持に対応する。bytecode_vm.cppのversion=2実行は後続の範囲。
+ * 受信完了のACKはVMの開始・正常終了を表さず、現行VMはversion=2を形式エラーにする。
  * parser.tsのf文字列（関数名f"）・@formatのアセンブリ生成と実行も後続の範囲とする。
  *
  * ### 実装時の確認方針（当時の記録）
