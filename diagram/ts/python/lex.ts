@@ -1,4 +1,22 @@
-
+/**
+ * Python字句解析のf文字列仕様（構文解析・実行側との受け渡しを含む）。
+ *
+ * fまたはF接頭辞と、二重引用符または単一引用符の文字列を扱う。
+ * 開始（f"等）・終了引用符と置換フィールドの {・}・: はsymbol、
+ * 文字列部分はString、置換式は通常の式トークン、コロン後の書式はformatに分ける。
+ * 例: f"a + b={a + b:.2f}" は次の順に出力する。
+ * symbol f" / String a + b= / symbol { / identifier a / symbol + /
+ * identifier b / symbol : / format .2f / symbol } / symbol "
+ * 論理行末には通常どおりnewLineを付ける。
+ *
+ * 書式は [width][.precision][type] のみ。width・precisionは1桁以上の10進数字、
+ * typeは b c d e E f F g G n o s x X % のいずれか1文字とし、各要素は省略可能。
+ * 配置・符号・桁区切り・書式内の置換フィールドは未対応として拒否する。
+ * 文字列中の {{・}} とエスケープは原文のまま保持し、空の文字列部分は出力しない。
+ * 通常文字列も引用符を除いた原文を保持し、値への変換は後段で行う。
+ * 三重引用符、raw・bytes等の接頭辞付き文字列は未対応として拒否する。
+ * f文字列の構文解析（parser.ts）・実行（bytecode.ts以降）は未対応。
+ */
 export enum TokenType{
     unknown,
 
@@ -37,6 +55,9 @@ export enum TokenType{
 
     // 文字列
     String,
+
+    // 書式
+    format,
 
     // 文字
     character,
@@ -87,12 +108,14 @@ const symbols = [
  * ESP32向けPythonサブセットのソースを共通Tokenの列へ変換する。
  * INDENT / DEDENTはsymbol型、論理行の終端はnewLine型で返す。eotは付けない。
  * Stringのtextは引用符を除いた原文で、エスケープの解釈は後段で行う。
+ * f文字列は開始・終了引用符と置換フィールドを分離し、書式は桁・精度・型のみ扱う。
  * charPosは入力string内のUTF-16位置。字句エラーは位置付きSyntaxErrorにする。
  */
 export function lexicalAnalysis(text: string): Token[] {
     const tokens: Token[] = [];
     const indents: number[] = [0];
     const brackets: string[] = [];
+    const fStrings: { quote: string; start: number; bracketDepth: number; inExpression: boolean }[] = [];
     const identifierPattern = /[A-Za-z_][A-Za-z0-9_]*/y;
     const numberPattern = /(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/y;
     let pos = 0;
@@ -115,6 +138,54 @@ export function lexicalAnalysis(text: string): Token[] {
     }
 
     while (pos < text.length) {
+        const fString = fStrings[fStrings.length - 1];
+        if (fString !== undefined && !fString.inExpression) {
+            const contentStart = pos;
+            while (pos < text.length && text[pos] !== fString.quote) {
+                if (newlineLength(pos) !== 0) {
+                    fail("f文字列が改行前に閉じられていません", fString.start);
+                }
+                if (text[pos] === "{" || text[pos] === "}") {
+                    if (text[pos + 1] === text[pos]) {
+                        // 二重波括弧は文字列の原文として保持する。
+                        pos += 2;
+                        continue;
+                    }
+                    if (text[pos] === "}") {
+                        fail("f文字列内の単独の閉じ波括弧は使用できません", pos);
+                    }
+                    break;
+                }
+                if (text[pos] === "\\") {
+                    pos++;
+                    // バックスラッシュでは置換フィールドの波括弧をエスケープしない。
+                    if (pos < text.length && text[pos] !== "{" && text[pos] !== "}") {
+                        pos += newlineLength(pos) || 1;
+                    }
+                }
+                else {
+                    pos++;
+                }
+            }
+            if (pos > contentStart) {
+                add(TokenType.String, text.slice(contentStart, pos), contentStart);
+            }
+            if (pos >= text.length) {
+                fail("f文字列が閉じられていません", fString.start);
+            }
+            add(TokenType.symbol, text[pos], pos);
+            if (text[pos] === fString.quote) {
+                fStrings.pop();
+            }
+            else {
+                brackets.push("{");
+                fString.bracketDepth = brackets.length;
+                fString.inExpression = true;
+            }
+            pos++;
+            continue;
+        }
+
         if (atLineStart) {
             let width = 0;
             // タブは8桁ごとのタブストップまで進める。
@@ -148,6 +219,34 @@ export function lexicalAnalysis(text: string): Token[] {
         const ch = text[pos];
         const lineLength = newlineLength(pos);
 
+        if (fString !== undefined && brackets.length === fString.bracketDepth) {
+            if (ch === "}") {
+                add(TokenType.symbol, ch, pos);
+                brackets.pop();
+                fString.inExpression = false;
+                pos++;
+                continue;
+            }
+            if (ch === ":") {
+                add(TokenType.symbol, ch, pos);
+                pos++;
+                const formatStart = pos;
+                while (pos < text.length && text[pos] !== "}" && text[pos] !== fString.quote && newlineLength(pos) === 0) {
+                    pos++;
+                }
+                const format = text.slice(formatStart, pos);
+                // width / .precision / typeはそれぞれ省略可能。配置・符号等は受け付けない。
+                if (!/^[0-9]*(?:\.[0-9]+)?[bcdeEfFgGnosxX%]?$/.test(format)) {
+                    fail("書式は桁・精度・型のみ対応しています", formatStart);
+                }
+                if (text[pos] !== "}") {
+                    fail("f文字列の置換フィールドが閉じられていません", start);
+                }
+                add(TokenType.format, format, formatStart);
+                continue;
+            }
+        }
+
         if (ch === " " || ch === "\t") {
             pos++;
             continue;
@@ -177,7 +276,16 @@ export function lexicalAnalysis(text: string): Token[] {
             continue;
         }
 
-        if (ch === "\"" || ch === "'") {
+        if ((ch === "f" || ch === "F") && (text[pos + 1] === "\"" || text[pos + 1] === "'")) {
+            const quote = text[pos + 1];
+            if (text.startsWith(quote.repeat(3), pos + 1)) {
+                fail("三重引用符の文字列には対応していません", start);
+            }
+            add(TokenType.symbol, text.slice(pos, pos + 2), start);
+            fStrings.push({ quote, start, bracketDepth: brackets.length, inExpression: false });
+            pos += 2;
+        }
+        else if (ch === "\"" || ch === "'") {
             if (text.startsWith(ch.repeat(3), pos)) {
                 fail("三重引用符の文字列には対応していません", start);
             }
@@ -243,6 +351,9 @@ export function lexicalAnalysis(text: string): Token[] {
         hasCode = true;
     }
 
+    if (fStrings.length !== 0) {
+        fail("f文字列が閉じられていません", fStrings[fStrings.length - 1].start);
+    }
     if (brackets.length !== 0) {
         fail("括弧が閉じられていません", text.length);
     }
