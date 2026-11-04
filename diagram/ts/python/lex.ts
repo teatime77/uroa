@@ -1,4 +1,71 @@
-import { Token, TokenSubType, TokenType } from "../../../parser/ts/lex.js";
+
+export enum TokenType{
+    unknown,
+
+    // 識別子
+    identifier,
+
+    // クラス
+    Class,
+
+    // 数値
+    Number,
+
+    // 記号
+    symbol,
+
+    // 予約語
+    reservedWord,
+
+    // #n.m
+    path,
+
+    // End Of Text
+    eot,
+
+    // 指定なし
+    any,
+
+    // 行コメント
+    lineComment,
+
+    // ブロックコメント
+    blockComment,
+
+    // 改行
+    newLine,
+
+    // 文字列
+    String,
+
+    // 文字
+    character,
+
+    // 不正
+    illegal
+}
+    
+export enum TokenSubType {
+    unknown,
+    integer,
+    float,
+    double
+}
+
+export class Token{
+    typeTkn:TokenType;
+    subType:TokenSubType;
+    text:string;
+    charPos:number;
+
+    public constructor(type : TokenType, sub_type : TokenSubType, text : string, char_pos : number){
+        //console.log("" + TokenType[type] + " " + TokenSubType[sub_type] + " " + text + " " + char_pos);
+        this.typeTkn = type;
+        this.subType = sub_type;
+        this.text = text;
+        this.charPos = char_pos;
+    }
+}    
 
 const keywords = new Set([
     "False", "None", "True", "and", "as", "assert", "async", "await",

@@ -1,6 +1,5 @@
 import { fetchText, msg } from "@i18n";
-import { Token, TokenSubType, TokenType } from "../../../parser/ts/lex.js";
-import { lexicalAnalysis } from "./lex.js";
+import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
     ForStatement, IfStatement, Module, RefVar, ReturnStatement, Statement,
