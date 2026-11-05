@@ -2,6 +2,12 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## Pythonエディタの行ブレークポイント表示（2026-11-05）
+
+操作・描画・解除の仕様は[highlight-editor.tsのtoggleBreakpoint()](../diagram/ts/python/highlight-editor.ts)、読込との連携は[python-block.ts](../diagram/ts/python/python-block.ts)を参照する。静的確認はuroaルートの`npm.cmd run verify`で行う。ユーザー指定によりテストは作成・実行しない。ブラウザーでのF9・IME・選択範囲・スクロール・編集による解除は未確認。ESP32側の変更・ビルドは行わない。
+
+`npm.cmd run verify`は成功し、型・公開ビルド・配信成果物を静的確認した。既存gameのimport併用警告2件は継続。既存CRLFを許可した`git -c core.whitespace=cr-at-eol diff --check`も成功した。
+
 ## Pythonのglobal文（2026-11-05）
 
 構文木・構文解析・意味解析・コード生成にglobal文を追加した。宣言の適用範囲と検査の共通契約は[global-scope.tsの仕様コメント](../diagram/ts/python/global-scope.ts)、束縛は[semantic.ts](../diagram/ts/python/semantic.ts)、大域変数の命令生成は[bytecode.ts](../diagram/ts/python/bytecode.ts)を参照する。

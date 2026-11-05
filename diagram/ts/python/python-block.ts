@@ -4,6 +4,7 @@
  * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
  * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
+ * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
  * チェックと表示の契約：チェックボタンはBLE未接続でも字句・構文・意味解析だけを行い、
  * バイトコード生成・転送・VM操作を行わない。入力時の解析・自動チェックは行わない。
  * Startは送信済みコードを再利用する場合も必ずチェックし、問題があればVMを開始しない。
@@ -164,6 +165,7 @@ export class PythonBlock extends ActionBlock {
         this.editRevision++;
         this.checkRequest?.abort();
         this.request?.abort();
+        this.highlightEditor.clearBreakpoints();
         this.highlightEditor.clearDiagnostics();
         this.highlightEditor.refresh();
         this.receipt = undefined;

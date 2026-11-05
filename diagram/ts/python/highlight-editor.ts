@@ -1,5 +1,5 @@
 /**
- * PythonBlock用の構文ハイライト。webgpu-sims/src/editor.tsのSyntaxHighlightEditorを参考に、
+ * PythonBlock用の構文ハイライトと行ブレークポイント表示。webgpu-sims/src/editor.tsのSyntaxHighlightEditorを参考に、
  * 透明なtextareaと表示専用Canvasを重ねる。python-block.tsが生成・表示切替・復元・破棄を管理し、
  * ソース・選択・キャレット・IME・スクロールはtextareaだけを正本とする。
  * 診断の表示・チェックのタイミングについての共通契約はpython-block.tsを参照する。
@@ -105,8 +105,10 @@ export class PythonHighlightEditor {
     private readonly viewport = document.createElement("div");
     private readonly description = document.createElement("div");
     private readonly tooltip = document.createElement("div");
+    private readonly breakpointCanvas = document.createElement("canvas");
     private readonly canvas = document.createElement("canvas");
     private readonly ctx: CanvasRenderingContext2D;
+    private readonly breakpointContext: CanvasRenderingContext2D;
     private readonly observer: ResizeObserver;
     private readonly events = new AbortController();
     private frame?: number;
@@ -114,6 +116,9 @@ export class PythonHighlightEditor {
     private tokens: HighlightToken[] = [];
     private lines: string[] = [];
     private lineStarts: number[] = [];
+    private readonly breakpointLines = new Set<number>();
+    private breakpointSource: string;
+    private composing = false;
     private diagnostics: readonly PythonEditorDiagnostic[] = [];
     private diagnosticSource?: string;
     private diagnosticBoxes: DiagnosticBox[] = [];
@@ -122,6 +127,8 @@ export class PythonHighlightEditor {
     /** textareaの入力機能を維持し、Canvasは選択・クリック・読み上げの対象にしない。 */
     constructor(private readonly textarea: HTMLTextAreaElement) {
         this.ctx = this.canvas.getContext("2d")!;
+        this.breakpointContext = this.breakpointCanvas.getContext("2d")!;
+        this.breakpointSource = textarea.value;
         Object.assign(this.element.style, {
             display: "none", position: "relative", flex: "1", minHeight: "0", width: "100%",
             overflow: "hidden", boxSizing: "border-box", border: "1px solid #454545",
@@ -138,6 +145,10 @@ export class PythonHighlightEditor {
             overflow: "auto", whiteSpace: "pre", pointerEvents: "auto"
         });
         this.canvas.setAttribute("aria-hidden", "true");
+        this.breakpointCanvas.setAttribute("aria-hidden", "true");
+        Object.assign(this.breakpointCanvas.style, {
+            position: "absolute", left: "0", top: "0", pointerEvents: "none"
+        });
         Object.assign(this.canvas.style, {
             position: "absolute", left: "0", top: "0", zIndex: "1", pointerEvents: "none"
         });
@@ -159,12 +170,27 @@ export class PythonHighlightEditor {
             background: "#252526", color: "#f1f1f1", font: "14px/1.5 sans-serif",
             whiteSpace: "pre-wrap", overflowWrap: "anywhere", pointerEvents: "none"
         });
-        this.viewport.append(textarea, this.canvas, this.tooltip);
+        // 行背景はtextareaより背面へ置き、ブラウザーの選択背景を覆わない。
+        this.viewport.append(this.breakpointCanvas, textarea, this.canvas, this.tooltip);
         this.element.append(this.viewport, this.description);
         this.updateDescription();
         textarea.addEventListener("input", () => {
+            this.clearBreakpoints();
             this.clearDiagnostics();
             this.refresh();
+        }, { signal: this.events.signal });
+        textarea.setAttribute("aria-keyshortcuts", "F9");
+        textarea.title = "F9: この行のブレークポイントをON/OFF。ソース変更で全解除します。";
+        textarea.addEventListener("keydown", event => {
+            if (event.key !== "F9" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey
+                || event.isComposing || this.composing) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (!event.repeat) {
+                this.toggleBreakpoint();
+            }
         }, { signal: this.events.signal });
         textarea.addEventListener("scroll", () => {
             this.diagnosticBoxes = [];
@@ -186,10 +212,41 @@ export class PythonHighlightEditor {
                 this.updateDescription();
             }
         }, { signal: this.events.signal });
-        textarea.addEventListener("compositionend", () => this.refresh(), { signal: this.events.signal });
+        textarea.addEventListener("compositionstart", () => {
+            this.composing = true;
+        }, { signal: this.events.signal });
+        textarea.addEventListener("compositionend", () => {
+            this.composing = false;
+            this.refresh();
+        }, { signal: this.events.signal });
         window.addEventListener("resize", () => this.refresh(), { signal: this.events.signal });
         this.observer = new ResizeObserver(() => this.refresh());
         this.observer.observe(textarea);
+    }
+
+    /**
+     * 修飾なしF9でselectionStartの1始まり行番号を切り替える。IME変換中・キーリピートは除外する。
+     * 空行・コメントを含む任意の行が対象で、実行可能行の検証・BLE送信・VM停止はまだ行わない。
+     * 状態はこのエディタ内だけに保持し、PythonBlockの保存・コピーには含めない。
+     */
+    private toggleBreakpoint(): void {
+        // 直前に代入されたソースの変更も反映してから、新しい行を登録する。
+        this.refresh();
+        const line = this.textarea.value.slice(0, this.textarea.selectionStart).split("\n").length;
+        if (this.breakpointLines.has(line)) {
+            this.breakpointLines.delete(line);
+        }
+        else {
+            this.breakpointLines.add(line);
+        }
+        this.refresh();
+    }
+
+    /** 入力・Undo/Redo・復元で全解除する。PythonBlock.loadObj()は同じソースの読込でも呼ぶ。 */
+    clearBreakpoints(): void {
+        this.breakpointLines.clear();
+        this.breakpointSource = this.textarea.value;
+        this.refresh();
     }
 
     /** 入力・復元・チェック開始時に古い位置情報を破棄する。ここから解析を実行することはない。 */
@@ -259,6 +316,11 @@ export class PythonHighlightEditor {
 
     /** 代入による復元・コピーや表示切替でも呼ぶ。inputイベントは発生させず、送信済み判定を変えない。 */
     refresh(): void {
+        // inputを発生させないソース代入も対象。描画待ち・非表示中でも変更時点で全解除する。
+        if (this.breakpointSource !== this.textarea.value) {
+            this.breakpointLines.clear();
+            this.breakpointSource = this.textarea.value;
+        }
         this.diagnosticBoxes = [];
         this.tooltip.hidden = true;
         if (this.events.signal.aborted || this.frame !== undefined) {
@@ -282,6 +344,7 @@ export class PythonHighlightEditor {
         this.canvas.height = Math.round(height * dpr);
         this.canvas.style.width = `${width}px`;
         this.canvas.style.height = `${height}px`;
+        this.drawBreakpoints(width, height, dpr);
         const ctx = this.ctx;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.font = font;
@@ -329,6 +392,23 @@ export class PythonHighlightEditor {
             }
         }
         this.drawDiagnostics(width, height, tabWidth);
+    }
+
+    /** 行背景を入力面の全幅へ描く。縦スクロールだけを反映し、横スクロールでも背景幅を保つ。 */
+    private drawBreakpoints(width: number, height: number, dpr: number): void {
+        this.breakpointCanvas.width = Math.round(width * dpr);
+        this.breakpointCanvas.height = Math.round(height * dpr);
+        this.breakpointCanvas.style.width = `${width}px`;
+        this.breakpointCanvas.style.height = `${height}px`;
+        const ctx = this.breakpointContext;
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = "#5a1d1d";
+        for (const line of this.breakpointLines) {
+            const y = padding + (line - 1) * lineHeight - this.textarea.scrollTop;
+            if (y + lineHeight > 0 && y < height) {
+                ctx.fillRect(0, y, width, lineHeight);
+            }
+        }
     }
 
     /** UTF-16位置から行番号を求める。長いソースでも診断ごとの先頭からの走査を避ける。 */
