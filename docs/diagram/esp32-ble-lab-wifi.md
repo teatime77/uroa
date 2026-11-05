@@ -36,7 +36,7 @@
 | [robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
 | [camera-feed.ts](../../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
 
-制御指令は10バイト、Statusは12バイト。IMUのTelemetryはBLEと同じversion=3で、8バイトのヘッダーに13バイトのIMUレコードを登録数だけ連結する（最大268バイト）。BLEで登録したDeviceInfoはWi-Fi制御権の取得時に引き継ぐ。形式は[連携ガイド](esp32-integration.md)を参照する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
+制御指令は10バイト、Statusは12バイト。IMUのTelemetryはBLEと同じversion=3で、8バイトのヘッダーに13バイトのIMUレコードを登録数だけ連結する（最大268バイト）。DeviceInfoのWi-Fi登録は[共通登録API](../../diagram/ts/ble-wifi/control-connection.ts)、形式は[連携ガイド](esp32-integration.md)を参照する。ネットワークタスクはI²Cを操作せず、コールバックから指令キューへ渡す。カメラHTTPサーバーは制御サーバーとは別ポート・タスク。
 
 ## 初回の操作
 
@@ -76,7 +76,7 @@ ChromeへのWi-Fiパスワード保存はチェック欄で選ぶ。保存要求
 
 BLEサービスのUUIDは既存のまま。設定Write `f3641404`、結果Read `f3641405`を追加する。文字列JSONは先頭1バイトの0（初期化）・1（続き）・2（確定）を使い、各Writeを20バイト以下に分割する。要求は384バイト未満、結果は512バイト以下。`scan`、`list`（ページ）、`configure`、`info`、`forget`を扱う。結果Readの`key`には教材用固定キーを返し、diagramが対応ファームウェアかを確認する。設定の読み書きには従来どおり暗号化・MITM認証済みBLE接続が必要。通常のサーボBLE通信とは別のCharacteristicを使う。
 
-HTTPポート80は`/info`、`/claim`、`/command`、`/events`、`/release`、WebSocketは81、JPEGの`/capture`は82。接続キーはWi-Fi上で送らず、Web Crypto／mbedTLSのHMAC-SHA256でchallenge・基板ID・Originを認証する。セッションID、要求番号と署名で指令・画像取得要求を検証し、要求番号の再使用を拒否する。制御応答・センサー通知も署名を検証する。1台につきWi-Fi制御は1セッション。
+HTTPポート80は`/info`、`/claim`、`/command`、`/device-info`、`/events`、`/release`、WebSocketは81、JPEGの`/capture`は82。接続キーはWi-Fi上で送らず、Web Crypto／mbedTLSのHMAC-SHA256でchallenge・基板ID・Originを認証する。セッションID、要求番号と署名で指令・画像取得要求を検証し、要求番号の再使用を拒否する。制御応答・センサー通知も署名を検証する。1台につきWi-Fi制御は1セッション。
 
 localhostのHTTP開発版はWebSocketを先に試し、接続失敗時はHTTPへ切り替える。HTTPS画面はローカルHTTPを使用する。HTTPでは通知を100ms間隔で取得し、センサーは最新通知を出力する。CORSはHTTPSまたはlocalhost／127.0.0.1のOriginへ返す。Chromeのローカルネットワークアクセス権限によるHTTPのmixed-content例外を使い、`ws://`へ同じ例外が適用されるとは扱わない。[Chrome公式説明](https://developer.chrome.com/blog/local-network-access)。ブラウザーがローカルHTTPを許可しない場合、この直接接続方式は利用できない。mDNS・端末間通信も利用環境で確認する。
 

@@ -2,6 +2,12 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## 機器一覧のWi-Fi対応（2026-11-05）
+
+機器一覧の形式は[device-telemetry.ts](../diagram/ts/ble-wifi/device-telemetry.ts)、共通の配送・完了範囲は[control-connection.tsのsendDeviceInfo()](../diagram/ts/ble-wifi/control-connection.ts)、Wi-Fi接続時の登録は[ble.ts](../diagram/ts/ble-wifi/ble.ts)、HTTP／WebSocketの送信は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。
+
+uroaルートの`npm.cmd run verify`は成功し、TypeScript・公開ビルド・配信成果物の静的確認を完了した。既存gameの動的／静的import併用警告2件は継続。ESP32はユーザー指定によりesp32devだけをビルドし、結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記載する。テストは作成・実行していない。ブラウザー操作、実BLE／Wi-Fi、空一覧・上限・認証エラー・切断時の実動作、STREAM再開、Uploadは未確認。
+
 ## 通常指令・通知の共通層抽出（2026-11-05）
 
 共通の待ち列・ACK・通知検証は[control-connection.ts](../diagram/ts/ble-wifi/control-connection.ts)、GATT配送は[ble-control-transport.ts](../diagram/ts/ble-wifi/ble-control-transport.ts)、Wi-Fi配送は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)、ESP32の配送・接続照合は[control_transport.h](../../esp32/app/diagram-control/include/control_transport.h)を参照する。

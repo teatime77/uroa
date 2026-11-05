@@ -4,9 +4,9 @@
  * ble.tsは接続UI・機器登録・ブロックへの状態反映を担当し、本層へ通信経路を渡す。
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
- * 機器登録・Python転送・デバッグは引き続きBLE専用で、カメラ画像は本層を通さない。
+ * 機器一覧は両経路で同じ内容を送る。Python転送・デバッグはBLE専用で、カメラ画像は本層を通さない。
  */
-import { parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
+import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
 export type ControlPacketKind = "status" | "telemetry";
@@ -16,6 +16,7 @@ export interface ControlTransport {
     readonly kind: "ble" | "wifi";
     readonly connected: boolean;
     write(bytes: Uint8Array): Promise<void>;
+    writeDeviceInfo(bytes: Uint8Array): Promise<void>;
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void;
 }
 
@@ -78,7 +79,7 @@ interface PendingCommand {
 /**
  * 通信経路を交換できる通常指令・通知の所有者。
  * bind/closeで世代を更新し、旧経路の通知・キュー待機・ACKを次の接続へ適用しない。
- * GATT専用の機器登録・転送もenqueue()を使い、同じ待ち列で排他する。
+ * 機器登録とGATT専用の転送もenqueue()を使い、同じ待ち列で排他する。
  * 転送全体ではなく各フレームを並べ、PING・STOPを間に処理できるようにする。
  */
 export class ControlConnection {
@@ -125,6 +126,53 @@ export class ControlConnection {
         }).then(operation);
         this.tail = task;
         return task;
+    }
+
+    /**
+     * 機器一覧を現在の通信経路へ送り、書込みを最大2.5秒待つ。
+     * ble.tsがセンサー→アクチュエータの順で作った0〜20バイトをコピーする。
+     * レコード形式はdevice-telemetry.ts、ESP32の内容検証はmain.cppのhandleDeviceInfo()を参照する。
+     * BLEは既存DeviceInfo Characteristicへresponse付きWriteを行う。
+     * Wi-Fiはrobot-wifi.tsの認証済み/device-info（HTTP）またはdevice-info（WebSocket）へ送る。
+     * HTTPのaccepted:trueとGATT書込み完了は受付までを表す。専用の内容検証ACKは追加しない。
+     * WebSocketはブラウザーの送信キューへの追加までで、ESP32の受付完了を待たない。
+     * 呼出元は書込み後に受信先を更新し、同じ待ち列へ新しいSTREAMを追加する。
+     * 取消・期限超過・接続変更では未完了の登録を失効させ、新接続へ適用しない。
+     */
+    sendDeviceInfo(input: Uint8Array): Promise<void> {
+        if (input.byteLength > DeviceInfoMaxLength) {
+            throw new Error(`機器情報は${DeviceInfoMaxLength}バイト以内で送信してください。`);
+        }
+        const bytes = input.slice();
+        const transport = this.transport;
+        const generation = this.generation;
+        const check = () => {
+            if (!transport || transport !== this.transport || generation !== this.generation || !transport.connected) {
+                throw new Error("機器情報の送信を取り消しました。接続を確認してください。");
+            }
+        };
+        return this.enqueue(async () => {
+            check();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            try {
+                const timeout = new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => {
+                        reject(new Error("機器情報の書き込みがタイムアウトしました。"));
+                    }, 2500);
+                });
+                await Promise.race([transport!.writeDeviceInfo(bytes), timeout]);
+                check();
+            }
+            catch (error) {
+                if (generation === this.generation) {
+                    this.callbacks.failed(error instanceof Error ? error : new Error("機器情報を送信できませんでした。"));
+                }
+                throw error;
+            }
+            finally {
+                clearTimeout(timer);
+            }
+        });
     }
 
     /**

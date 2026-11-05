@@ -1,4 +1,4 @@
-/** GATTの通常指令・通知をcontrol-connection.tsの共通通信経路へ接続する。 */
+/** GATTの通常指令・機器一覧・通知をcontrol-connection.tsの共通通信経路へ接続する。 */
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 
 /** Web Bluetoothの通常通信に使う構造型。GATT参照は保存データへ含めない。 */
@@ -17,7 +17,8 @@ export class BLEControlTransport implements ControlTransport {
     readonly kind = "ble";
 
     constructor(private command: ControlCharacteristic, private status: ControlCharacteristic,
-        private telemetry: ControlCharacteristic, private isConnected: () => boolean) {
+        private telemetry: ControlCharacteristic, private deviceInfo: ControlCharacteristic,
+        private isConnected: () => boolean) {
     }
 
     /** ネイティブGATTの現在の接続状態を照合する。 */
@@ -28,6 +29,11 @@ export class BLEControlTransport implements ControlTransport {
     /** GATTの受付までを待つ。機器のACKは共通層が別に照合する。 */
     write(bytes: Uint8Array): Promise<void> {
         return this.command.writeValueWithResponse(bytes);
+    }
+
+    /** 既存DeviceInfo窓口へ一覧を送る。内容検証ACKはなく、契約は共通層のsendDeviceInfo()を参照。 */
+    writeDeviceInfo(bytes: Uint8Array): Promise<void> {
+        return this.deviceInfo.writeValueWithResponse(bytes);
     }
 
     /** 通知購読の解除関数を返す。Wi-Fi切替後は旧GATT通知を共通層へ渡さない。 */

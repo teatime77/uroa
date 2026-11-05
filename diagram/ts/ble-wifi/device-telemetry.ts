@@ -1,4 +1,11 @@
-/** ESP32と共有する機器種別付きTelemetry version=3の形式。 */
+/**
+ * ESP32と共有する機器一覧の最大バイト数。
+ * DeviceInfoは版番号・件数を付けず、センサー→アクチュエータの順にレコードを連結する。
+ * IMU6Axis=0、IMU9Axis=1、距離=2、Camera=3は種別1バイト。
+ * ServoMotor=128は種別・CH(0〜15)・mode(0角度/1速度)の3バイト。
+ * 空一覧は0バイト。未使用領域の0埋めはIMUとして解釈されるため送らない。
+ * BLEとWi-Fiで同じ内容を使う。配送・完了の範囲はcontrol-connection.tsのsendDeviceInfo()を参照。
+ */
 export const DeviceInfoMaxLength = 20;
 export const DeviceTelemetryVersion = 3;
 export const DeviceTelemetryHeaderLength = 8;

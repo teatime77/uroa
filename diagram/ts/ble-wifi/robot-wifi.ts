@@ -1,4 +1,5 @@
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
+import { DeviceInfoMaxLength } from "./device-telemetry";
 
 /** Wi-Fi transport and authenticated BLE provisioning. No live credentials are serialized. */
 export interface RobotEndpoint {
@@ -267,14 +268,45 @@ export class RobotWifi implements ControlTransport {
             }
         } catch { if (!this.closed) this.fail("Wi-Fiの応答が途切れました。再接続してください。"); }
     }
-    async write(bytes: Uint8Array): Promise<void> {
-        if (!this.connected) throw new Error("Wi-Fi接続が切れました。");
+    /** 通常指令と機器一覧を同じ認証・要求番号の窓で送る。受付と内容検証の区別は共通層を参照。 */
+    private async writeControl(op: "command" | "device-info", bytes: Uint8Array): Promise<void> {
+        if (!this.connected) {
+            throw new Error("Wi-Fi接続が切れました。");
+        }
         const data = packetHex(bytes);
+        const path = `/${op}`;
         if (this.socket?.readyState === WebSocket.OPEN) {
-            const count = ++this.counter, mac = await this.mac(`${this.session}|${count}|/command|${data}`);
-            if (!this.connected) throw new Error("Wi-Fi接続が切れました。");
-            this.socket.send(JSON.stringify({ op: "command", session: this.session, counter: count, data, mac }));
-        } else await this.json("/command", data, true);
+            const count = ++this.counter;
+            const mac = await this.mac(`${this.session}|${count}|${path}|${data}`);
+            if (!this.connected) {
+                throw new Error("Wi-Fi接続が切れました。");
+            }
+            this.socket.send(JSON.stringify({ op, session: this.session, counter: count, data, mac }));
+        }
+        else {
+            const reply = await this.json(path, data, true);
+            if (reply.accepted !== true) {
+                throw new Error("Wi-Fi機器が書き込みを受け付けませんでした。");
+            }
+        }
+    }
+
+    /** Command v1を認証付きで送る。機器のStatus ACKは共通層が照合する。 */
+    async write(bytes: Uint8Array): Promise<void> {
+        await this.writeControl("command", bytes);
+    }
+
+    /**
+     * 機器一覧の生バイト列を16進文字列で送る。空の一覧は空文字列のPOST／dataとして送る。
+     * HMAC対象はsession|counter|/device-info|data。Commandの署名を別窓口へ流用しない。
+     * HTTPはコールバックへの配送応答、WebSocketはブラウザーの送信キューへの追加までを待つ。
+     * ESP32の内容検証ACKは待たない。
+     */
+    async writeDeviceInfo(bytes: Uint8Array): Promise<void> {
+        if (bytes.byteLength > DeviceInfoMaxLength) {
+            throw new Error("機器情報の送信サイズが上限を超えています。");
+        }
+        await this.writeControl("device-info", bytes);
     }
     async image(signal: AbortSignal): Promise<Blob> {
         if (!this.connected || !this.endpoint?.camera) throw new Error("カメラを利用できません。");

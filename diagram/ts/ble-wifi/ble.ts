@@ -15,8 +15,6 @@ import { analyzePython } from "../python/semantic.js";
 import { generateBytecode } from "../python/bytecode.js";
 import { PythonDebugTransport, type DebugSnapshot } from "./debug-protocol";
 
-const DeviceInfoWriteTimeoutMs = 2500;
-
 // GATT service shared with esp32/app/diagram-control.
 /**
  * @remarks
@@ -67,7 +65,7 @@ export interface BLEConnectionState { phase: BLEPhase; deviceName: string; messa
 export type ServoMode = "angle" | "speed";
 
 /**
- * 図の接続UI・機器状態・BLE専用転送の窓口。GATT参照は保存しない。
+ * 図の接続UI・機器登録・機器状態・BLE専用転送の窓口。GATT参照は保存しない。
  * 通常指令・ACK・通知検証・PING・共通待ち列はcontrol-connection.tsへ委譲する。
  * BLE/Wi-Fiの切替とブロックへの反映を担当し、Python・デバッグは引き続きBLE専用。
  */
@@ -77,7 +75,6 @@ export class BLEConnection {
     private sensorStreamUsers = new Set<FunctionBlock>();
     private requestedRate = 0;
     private device?: BLEDevice;
-    private deviceInfo?: BLECharacteristic;
     private generation = 0;
     private connectTimer?: ReturnType<typeof setTimeout>;
     private armedChannels = new Map<number, ServoMode>();
@@ -320,7 +317,6 @@ export class BLEConnection {
         this.device?.removeEventListener("gattserverdisconnected", this.lost);
         const device = this.device;
         this.device = undefined;
-        this.deviceInfo = undefined;
         try { device?.gatt?.disconnect(); } catch { /* Already disconnected. */ }
         this.publish(phase, "", message);
         this.closing = false;
@@ -382,8 +378,7 @@ export class BLEConnection {
             stage = "機器情報Characteristic取得";
             const deviceInfo = await service.getCharacteristic(BLE_UUID.deviceInfo);
             check();
-            this.deviceInfo = deviceInfo;
-            this.control.bind(new BLEControlTransport(tx, status, rx, () =>
+            this.control.bind(new BLEControlTransport(tx, status, rx, deviceInfo, () =>
                 this.generation === generation && !!selected?.gatt?.connected));
             stage = "状態通知登録";
             await status.startNotifications();
@@ -474,7 +469,6 @@ export class BLEConnection {
             this.device?.removeEventListener("gattserverdisconnected", this.lost);
             this.device?.gatt?.disconnect();
             this.device = undefined;
-            this.deviceInfo = undefined;
             this.service = undefined;
             this.wifi = wifi;
             const generation = ++this.generation;
@@ -485,6 +479,12 @@ export class BLEConnection {
             await this.sendControl(ControlOpcode.INFO);
             signal.throwIfAborted();
             if (generation !== this.generation) throw new Error("接続を取り消しました。");
+            // Wi-Fiでも現在の図を登録し、BLE接続時点の一覧だけに依存しない。
+            await this.sendDeviceInfo();
+            signal.throwIfAborted();
+            if (generation !== this.generation) {
+                throw new Error("接続を取り消しました。");
+            }
             this.publish("connected", actual.name);
             this.provisioning = false;
             if (actual.camera) setCameraProvider(cameraSignal => wifi.image(cameraSignal));
@@ -724,7 +724,7 @@ export class BLEConnection {
         }
     }
 
-    /** センサー、アクチュエータの順に機器情報を1回のBLE書き込みで送る。 */
+    /** 両経路で現在の図の一覧を送り、同じ接続の書込み完了後に通知の受信先を更新する。 */
     private async sendDeviceInfo(): Promise<void> {
         const sensors = theEditor.blocks.filter(x => x instanceof FunctionBlock && x.isSensor()) as FunctionBlock[];
         const actuators = theEditor.blocks.filter(x => x instanceof FunctionBlock && x.isActuator() && !sensors.includes(x)) as FunctionBlock[];
@@ -740,38 +740,13 @@ export class BLEConnection {
         }
         // 種別0は6軸IMUなので、未使用領域を0で埋めたまま送らない。
         const payload = bytes.slice(0, offset);
-        const characteristic = this.deviceInfo;
         const generation = this.generation;
-        const task = this.control.enqueue(async () => {
-            if (generation !== this.generation || characteristic !== this.deviceInfo || !characteristic ||
-                !this.device?.gatt?.connected || this.wifi?.connected) {
-                throw new Error("機器情報の送信には現在のESP32へのBLE接続が必要です。");
-            }
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            try {
-                const timeout = new Promise<never>((_, reject) => {
-                    timer = setTimeout(() => {
-                        reject(new Error("機器情報のBLE書き込みがタイムアウトしました。"));
-                    }, DeviceInfoWriteTimeoutMs);
-                });
-                await Promise.race([characteristic.writeValueWithResponse(payload), timeout]);
-            }
-            catch (error) {
-                if (generation === this.generation) {
-                    this.close("error", error instanceof Error ? error.message : "機器情報を送信できませんでした。");
-                }
-                throw error;
-            }
-            finally {
-                clearTimeout(timer);
-            }
-            if (generation !== this.generation || characteristic !== this.deviceInfo) {
-                throw new Error("機器情報の送信を取り消しました。");
-            }
-            this.sensors = sensors;
-            this.actuators = actuators;
-        });
-        await task;
+        await this.control.sendDeviceInfo(payload);
+        if (generation !== this.generation) {
+            throw new Error("機器情報の送信を取り消しました。");
+        }
+        this.sensors = sensors;
+        this.actuators = actuators;
     }
 }
 
