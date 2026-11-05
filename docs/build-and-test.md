@@ -2,6 +2,12 @@
 
 更新日: 2026-11-04。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## ESP32 VMの構造体・ネイティブ呼出し（2026-11-04）
+
+別リポジトリーの[VM](../../esp32/app/diagram-control/src/bytecode_vm.cpp)をversion=3へ対応させた。呼出し規約・スタブの登録API・実行制限はVM先頭コメント、PlatformIOビルドと未確認範囲は[esp32の検証記録](../../esp32/docs/build-and-test.md)を参照する。機器スタブ本体と生成登録表は後続作業。
+
+uroa側は関連する仕様コメントの更新だけを行い、TypeScriptの実装は変更していない。テストはユーザー指定により作成・実行しない。
+
 ## Pythonバイナリversion=3のBLE転送・受信（2026-11-04）
 
 diagramの「a.pyを送信」を意味解析付きのバイナリ生成へ接続し、[転送チェック](../diagram/ts/ble-wifi/bytecode-transfer.ts)とESP32の[BytecodeReceiver](../../esp32/app/diagram-control/src/bytecode_receiver.cpp)を更新した。通信・検証・保持とVMの境界はそれぞれの先頭コメントを参照する。VM本体は変更していない。

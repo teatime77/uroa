@@ -84,7 +84,8 @@
  * 形式上限の超過は切り詰めず拒否する。bytecodeVersion等の既存公開定数は従来の
  * version=2用として維持し、version=3にはbytecodeApiVersion等の別定数を用意する。
  * BLE転送と受信形式検証はble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppが
- * 対応する。ABI・nativeIdのファームウェアのスタブ表との照合と新形式のVM実行は後続。
+ * 対応する。ESP32のbytecode_vm.cppは新形式の値コピー・呼出し・文字列命令と、登録スタブ表との
+ * ABI/nativeId照合に対応する。機器スタブ本体・生成登録表は後続で、未登録の呼出しは実行エラー。
  *
  * ## 文字列定数の生成（2026-11-04）
  *
