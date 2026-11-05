@@ -1,6 +1,12 @@
 # ビルドと回帰テスト
 
-更新日: 2026-11-04。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## Python機器スタブ生成・ESP32接続（2026-11-05）
+
+uroaルートで`python diagram/python/generate-device-api.py`を実行し、JSONと、別リポジトリーesp32の`device_api.generated.h/.cpp`を同時に生成する。生成後の一致確認は`--check`、JSONだけを生成する場合は`--json-only`。出力先の変更は`--output`・`--cpp-header`・`--cpp-source`で指定する。生成・変換の仕様は[生成プログラム](../diagram/python/generate-device-api.py)と[変換処理](../diagram/python/device_api_cpp.py)を参照する。
+
+ビルドはユーザー指定によりESP32の`esp32dev`だけを確認する。結果と未確認範囲は[esp32の検証記録](../../esp32/docs/build-and-test.md)を参照する。テストは作成・実行しない。TypeScriptはコメント更新だけのためnpmビルドは行わない。
 
 ## ESP32 VMの構造体・ネイティブ呼出し（2026-11-04）
 

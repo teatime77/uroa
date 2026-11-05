@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""device.pyiを静的に解析し、コンパイラー用のdevice-api.jsonを生成する。
+"""device.pyiを静的に解析し、コンパイラー用JSONとESP32のC++スタブを生成する。
 
 仕様の正本はこのコメントと各処理のdocstring。Python 3.8以降の標準ライブラリー
 だけを使い、入力のimport・exec・evalは行わない。既定の入力は同じディレクトリーの
 device.pyi、出力はuroa/public/diagram/device/device-api.json。既定パスは実行時の
 作業ディレクトリーに依存しない。--input/--outputの相対パスは作業ディレクトリー基準。
-今回はJSONだけを生成し、TypeScriptやC++、コンパイラー・VMの変更は行わない。
+JSONとC++は同じ解析結果・ABI指紋から生成する。C++変換はdevice_api_cpp.py、
+機器操作はESP32のdevice_native.h/.cppが担当する。TypeScriptは生成しない。
 
 入力はクラス、型注釈付きフィールド、位置引数の関数・メソッドに限定する。
 各スコープの先頭docstringは無視し、関数本体は...だけを許す。継承、デコレーター、
@@ -33,7 +34,7 @@ abiHashは、abiHash自身を除いたJSON全体をsort_keys=True、ensure_ascii
 separators=(",", ":")で正規化したUTF-8のSHA-256（小文字16進64桁）。
 通常の出力は4スペース整形・末尾LF付き。位置・パス・日時・docstringは含めない。
 宣言順やシグネチャの変更で指紋が変わる。意味・呼出し規約の変更時は対応する版を
-更新する。将来のC++生成はこのJSONと同じID・型・指紋を使用すること。
+更新する。C++生成もこのJSONと同じID・型・指紋を使用する。
 
 解析・検証・シリアライズの成功後にだけ出力を一時ファイル経由で置換する。
 --checkは出力を変更せず、生成予定のバイト列と一致すれば0、不一致・欠落・エラーは1。
@@ -48,6 +49,10 @@ from pathlib import Path
 import sys
 import tempfile
 from typing import Any, Dict, List, NoReturn, Optional, Set
+
+# 明示したJSON/C++以外の生成物を残さないため、補助モジュールのpycは書き出さない。
+sys.dont_write_bytecode = True
+from device_api_cpp import generate_cpp
 
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
@@ -263,27 +268,41 @@ def main() -> int:
     arguments.add_argument("--output", type=Path,
                            default=PROJECT_DIRECTORY / "public/diagram/device/device-api.json",
                            help="出力JSON（既定: uroa/public/diagram/device/device-api.json）")
-    arguments.add_argument("--check", action="store_true", help="出力せず、既存JSONとの完全一致を確認する")
+    arguments.add_argument("--cpp-header", type=Path,
+                           default=PROJECT_DIRECTORY.parent / "esp32/app/diagram-control/include/device_api.generated.h",
+                           help="出力C++ヘッダー")
+    arguments.add_argument("--cpp-source", type=Path,
+                           default=PROJECT_DIRECTORY.parent / "esp32/app/diagram-control/src/device_api.generated.cpp",
+                           help="出力C++実装（ヘッダー名はdevice_api.generated.h）")
+    arguments.add_argument("--json-only", action="store_true", help="従来通りJSONだけを生成する")
+    arguments.add_argument("--check", action="store_true", help="出力せず、生成対象の全成果物との完全一致を確認する")
     options = arguments.parse_args()
     try:
-        if options.input.resolve() == options.output.resolve():
-            raise InterfaceError("入力と出力には異なるファイルを指定してください")
         interface = InterfaceParser(options.input).parse()
         content = (json.dumps(interface, ensure_ascii=False, indent=4) + "\n").encode("utf-8")
-        if options.check:
-            if not options.output.is_file() or options.output.read_bytes() != content:
-                raise InterfaceError(str(options.output) + ": JSONが未生成または古くなっています。再生成してください")
-        else:
-            write_output(options.output, content)
+        outputs = [(options.output, content)]
+        if not options.json_only:
+            header, source = generate_cpp(interface)
+            outputs.extend([(options.cpp_header, header), (options.cpp_source, source)])
+        # すべての検証・生成と出力先重複検査に成功してから各成果物を原子的に置換する。
+        paths = [options.input.resolve()] + [path.resolve() for path, _ in outputs]
+        if len(set(paths)) != len(paths):
+            raise InterfaceError("入力と各出力には異なるファイルを指定してください")
+        for path, data in outputs:
+            if options.check:
+                if not path.is_file() or path.read_bytes() != data:
+                    raise InterfaceError(str(path) + ": 未生成または古くなっています。再生成してください")
+            else:
+                write_output(path, data)
     except SyntaxError as error:
         print("{}:{}:{}: {}".format(options.input, error.lineno, error.offset, error.msg), file=sys.stderr)
         return 1
-    except (InterfaceError, OSError, UnicodeError) as error:
+    except (InterfaceError, OSError, UnicodeError, ValueError) as error:
         print(str(error), file=sys.stderr)
         return 1
     action = "Checked" if options.check else "Generated"
-    print("{} {} ({} classes, {} functions)".format(
-        action, options.output, len(interface["classes"]), len(interface["functions"])))
+    for path, _ in outputs:
+        print("{} {}".format(action, path))
     return 0
 
 

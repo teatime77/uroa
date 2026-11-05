@@ -82,6 +82,12 @@
                         "type": {
                             "kind": "int"
                         }
+                    },
+                    {
+                        "name": "mode",
+                        "type": {
+                            "kind": "int"
+                        }
                     }
                 ],
                 "returnType": {
@@ -96,6 +102,24 @@
                 {
                     "id": 1,
                     "nativeId": 2,
+                    "name": "enable",
+                    "parameters": [],
+                    "returnType": {
+                        "kind": "none"
+                    }
+                },
+                {
+                    "id": 2,
+                    "nativeId": 3,
+                    "name": "disable",
+                    "parameters": [],
+                    "returnType": {
+                        "kind": "none"
+                    }
+                },
+                {
+                    "id": 3,
+                    "nativeId": 4,
                     "name": "set_angle",
                     "parameters": [
                         {
@@ -110,8 +134,8 @@
                     }
                 },
                 {
-                    "id": 2,
-                    "nativeId": 3,
+                    "id": 4,
+                    "nativeId": 5,
                     "name": "set_speed",
                     "parameters": [
                         {
@@ -134,7 +158,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
-                "nativeId": 4,
+                "nativeId": 6,
                 "name": "__init__",
                 "parameters": [],
                 "returnType": {
@@ -148,7 +172,7 @@
             "methods": [
                 {
                     "id": 1,
-                    "nativeId": 5,
+                    "nativeId": 7,
                     "name": "get_value",
                     "parameters": [],
                     "returnType": {
@@ -165,7 +189,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
-                "nativeId": 6,
+                "nativeId": 8,
                 "name": "__init__",
                 "parameters": [],
                 "returnType": {
@@ -179,7 +203,7 @@
             "methods": [
                 {
                     "id": 1,
-                    "nativeId": 7,
+                    "nativeId": 9,
                     "name": "get_distance",
                     "parameters": [],
                     "returnType": {
@@ -195,7 +219,7 @@
             "kind": "device",
             "constructor": {
                 "id": 0,
-                "nativeId": 8,
+                "nativeId": 10,
                 "name": "__init__",
                 "parameters": [],
                 "returnType": {
@@ -209,7 +233,7 @@
             "methods": [
                 {
                     "id": 1,
-                    "nativeId": 9,
+                    "nativeId": 11,
                     "name": "set_text_color",
                     "parameters": [
                         {
@@ -225,7 +249,7 @@
                 },
                 {
                     "id": 2,
-                    "nativeId": 10,
+                    "nativeId": 12,
                     "name": "set_cursor",
                     "parameters": [
                         {
@@ -247,7 +271,7 @@
                 },
                 {
                     "id": 3,
-                    "nativeId": 11,
+                    "nativeId": 13,
                     "name": "print",
                     "parameters": [
                         {
@@ -263,7 +287,7 @@
                 },
                 {
                     "id": 4,
-                    "nativeId": 12,
+                    "nativeId": 14,
                     "name": "draw_line",
                     "parameters": [
                         {
@@ -303,7 +327,7 @@
                 },
                 {
                     "id": 5,
-                    "nativeId": 13,
+                    "nativeId": 15,
                     "name": "draw_rect",
                     "parameters": [
                         {
@@ -343,7 +367,7 @@
                 },
                 {
                     "id": 6,
-                    "nativeId": 14,
+                    "nativeId": 16,
                     "name": "draw_circle",
                     "parameters": [
                         {
@@ -377,7 +401,7 @@
                 },
                 {
                     "id": 7,
-                    "nativeId": 15,
+                    "nativeId": 17,
                     "name": "fill_circle",
                     "parameters": [
                         {
@@ -411,7 +435,7 @@
                 },
                 {
                     "id": 8,
-                    "nativeId": 16,
+                    "nativeId": 18,
                     "name": "display",
                     "parameters": [],
                     "returnType": {
@@ -425,7 +449,7 @@
     "functions": [
         {
             "id": 1,
-            "nativeId": 17,
+            "nativeId": 19,
             "name": "print",
             "parameters": [
                 {
@@ -440,5 +464,5 @@
             }
         }
     ],
-    "abiHash": "0bd94e3153af0ff94d3c1b53c382645b98b8002b44b7b3566ec9c831d80b57f7"
+    "abiHash": "d0cc57548f6ed8af218eaee2cb2a54141d90a79d9a1420ca9b03141a547b54bc"
 }

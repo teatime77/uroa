@@ -40,7 +40,7 @@
  * parser.tsの開発用入口とble-wifi/ble.tsの送信前処理が構文解析後に呼び出す。
  * アセンブリ・version=3のバイトコード生成はbytecode.tsがこの結果を利用する。
  * 新形式のBLE転送・受信形式検証はble-wifi側、値コピーと呼出しの実行はESP32の
- * bytecode_vm.cppが担当する。機器スタブ本体・生成登録表は後続の範囲。
+ * bytecode_vm.cppが担当する。生成スタブはdevice_api.generated.cppからdevice_native.cppを呼ぶ。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,

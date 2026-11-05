@@ -85,7 +85,8 @@
  * version=2用として維持し、version=3にはbytecodeApiVersion等の別定数を用意する。
  * BLE転送と受信形式検証はble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppが
  * 対応する。ESP32のbytecode_vm.cppは新形式の値コピー・呼出し・文字列命令と、登録スタブ表との
- * ABI/nativeId照合に対応する。機器スタブ本体・生成登録表は後続で、未登録の呼出しは実行エラー。
+ * ABI/nativeId照合に対応する。生成登録表はdevice_api.generated.cpp、機器操作はdevice_native.cpp。
+ * 未登録の呼出しは実行エラーとなる。
  *
  * ## 文字列定数の生成（2026-11-04）
  *
