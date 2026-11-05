@@ -4,9 +4,10 @@
  * ble.tsは接続UI・機器登録・ブロックへの状態反映を担当し、本層へ通信経路を渡す。
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
- * 機器一覧は両経路で同じ内容を送る。Python転送・デバッグはBLE専用で、カメラ画像は本層を通さない。
+ * 機器一覧・Python転送・VM指令を両経路へ配送する。デバッグはBLE専用で、カメラ画像は本層を通さない。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
+import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt } from "./bytecode-transfer";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
 export type ControlPacketKind = "status" | "telemetry";
@@ -17,6 +18,7 @@ export interface ControlTransport {
     readonly connected: boolean;
     write(bytes: Uint8Array): Promise<void>;
     writeDeviceInfo(bytes: Uint8Array): Promise<void>;
+    openBytecode(): Promise<BytecodeChannel>;
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void;
 }
 
@@ -90,6 +92,7 @@ export class ControlConnection {
     private tail: Promise<unknown> = Promise.resolve();
     private pending = new Map<number, PendingCommand>();
     private heartbeat?: ReturnType<typeof setInterval>;
+    private bytecodeTransferId = 0;
 
     constructor(private callbacks: ControlCallbacks) {
     }
@@ -126,6 +129,71 @@ export class ControlConnection {
         }).then(operation);
         this.tail = task;
         return task;
+    }
+
+    /**
+     * 共通待ち列の1操作に2.5秒の期限と取消を付ける。ネイティブ操作自体の取消可否に依存せず、
+     * 失敗時は現接続を終了し、古い処理が新しい通信経路へ進まないよう前後で世代を照合する。
+     * BLE専用デバッグも同じ待ち列を使い、要求・結果・停止値の途中へ別操作を挟まない。
+     */
+    runOperation<T>(operation: () => Promise<T>, check: () => void, signal?: AbortSignal): Promise<T> {
+        const generation = this.generation;
+        const transport = this.transport;
+        const current = () => {
+            signal?.throwIfAborted();
+            if (!transport || transport !== this.transport || generation !== this.generation || !transport.connected) {
+                throw new Error("機器の接続が切れました。");
+            }
+            check();
+        };
+        return this.enqueue(async () => {
+            current();
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            let abort: (() => void) | undefined;
+            try {
+                const timeout = new Promise<never>((_, reject) => {
+                    timer = setTimeout(() => reject(new Error("機器の通信応答がありません。再接続してください。")),
+                        bytecodeTransfer.timeoutMs);
+                    abort = () => reject(signal?.reason ?? new DOMException("転送を取り消しました。", "AbortError"));
+                    signal?.addEventListener("abort", abort, { once: true });
+                });
+                const result = await Promise.race([operation(), timeout]);
+                current();
+                return result;
+            }
+            catch (error) {
+                if (generation === this.generation) {
+                    this.callbacks.failed(error instanceof Error ? error : new Error("機器の通信に失敗しました。"));
+                }
+                throw error;
+            }
+            finally {
+                clearTimeout(timer);
+                if (abort !== undefined) {
+                    signal?.removeEventListener("abort", abort);
+                }
+            }
+        });
+    }
+
+    /** 同一のフレーム・CRC・Result照合でRAM保持までを待つ。完全な契約はbytecode-transfer.tsを参照。 */
+    async sendBytecode(input: Uint8Array, signal?: AbortSignal): Promise<BytecodeReceipt> {
+        checkBytecodeTransfer(input);
+        const bytes = input.slice();
+        const generation = this.generation;
+        const transport = this.transport;
+        const check = () => {
+            signal?.throwIfAborted();
+            if (!transport || generation !== this.generation || transport !== this.transport || !transport.connected) {
+                throw new Error("プログラム転送中に接続が変わりました。");
+            }
+        };
+        const run = <T>(operation: () => Promise<T>) => this.runOperation(operation, check, signal);
+        const channel = await run(() => transport!.openBytecode());
+        this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
+        const receipt = await uploadBytecode(bytes, this.bytecodeTransferId, channel, run, check);
+        check();
+        return receipt;
     }
 
     /**

@@ -1,6 +1,6 @@
 /**
  * @remarks
- * # PythonバイトコードのBLE転送
+ * # PythonバイトコードのBLE／Wi-Fi共通転送
  *
  * バイナリversion=1・2・3をdiagramから現行ESP32のdiagram-controlへ送り、検証後にRAMへ保持する。
  * バイナリ形式の仕様はpython/bytecode.ts先頭、受信側の検証はESP32のbytecode_receiver.cppを参照。
@@ -20,6 +20,21 @@
  * 照合しない。登録表との照合はVM、引数型・ハンドルの検査は各スタブが担当する。
  * readyはAPIの互換性の保証を含まない。
  * Flash保存は実装しない。
+ *
+ * ## 通信経路の分担
+ * control-connection.tsが接続世代・共通待ち列・パケット単位の2.5秒期限・取消を担当する。
+ * ble-control-transport.tsは既存Bytecode/Result Characteristicを遅延取得する。
+ * robot-wifi.tsは同じ10〜20バイトのフレームをHTTP POST /bytecodeまたはWebSocket op=bytecodeで送る。
+ * Wi-FiのResultはWebSocket利用時もHTTP GET /bytecode-resultで読み、Telemetryへ混在させない。
+ * 各要求のHMACはsession|counter|path|payload。読出し要求のpayloadは空文字列。
+ * Result応答はsession/counter/data(20バイトの16進文字列)/proofを返す。
+ * proofはsession|bytecode-result|counter|dataのHMAC。セッション・要求番号・署名を検証してから復号する。
+ * HTTPのaccepted:true、WebSocket送信、GATT Writeはフレームの検証完了を意味しない。
+ * loop()で更新したResultのID・sequence・op・状態・長さ・CRCが一致したときだけ次へ進む。
+ * ESP32のbytecode_receiver.cppは両経路を同じ受信器で処理する。受信元と接続世代を組で照合し、
+ * 切替・切断では未完了転送を破棄する。保持済みコードは残すが、自動実行・自動再開はしない。
+ * VM_START/VM_STOPは両経路の通常指令を使う。開始ACKはVM初期化までで、実行終了を保証しない。
+ * デバッガの通信はdebug-protocol.tsのBLE専用経路を維持する。
  *
  * ## 確認範囲
  *
@@ -64,12 +79,10 @@ export const bytecodeTransfer = {
     ready: 2
 } as const;
 
-export interface BytecodeWriteCharacteristic {
-    writeValueWithResponse(value: Uint8Array): Promise<void>;
-}
-
-export interface BytecodeReadCharacteristic {
-    readValue(): Promise<DataView>;
+/** 同じ転送形式を配送する経路。write完了とloop()による受付結果は別に照合する。 */
+export interface BytecodeChannel {
+    write(value: Uint8Array): Promise<void>;
+    readResult(): Promise<DataView>;
 }
 
 /** 受信完了はRAMへの保持を表し、VMでの実行やFlash保存を意味しない。 */
@@ -153,7 +166,7 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
 }
 
 /**
- * 現接続のGATTキューで各パケットを書き、loop()が返す専用の受付結果を待つ。
+ * 現接続の共通キューで各パケットを書き、loop()が返す専用の受付結果を待つ。
  * runはパケット単位で直列化・タイムアウトを行い、PING等が間に入れるようにする。
  *
  * @remarks
@@ -162,8 +175,7 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
 export async function uploadBytecode(
     input: Uint8Array,
     transferId: number,
-    write: BytecodeWriteCharacteristic,
-    result: BytecodeReadCharacteristic,
+    channel: BytecodeChannel,
     run: <T>(operation: () => Promise<T>) => Promise<T>,
     check: () => void
 ): Promise<BytecodeReceipt> {
@@ -184,7 +196,7 @@ export async function uploadBytecode(
         packet.set(payload, bytecodeTransfer.headerLength);
         await run(async () => {
             check();
-            await write.writeValueWithResponse(packet);
+            await channel.write(packet);
             while (true) {
                 check();
                 /**
@@ -203,7 +215,7 @@ export async function uploadBytecode(
                  * | 12 | uint32 | BEGINで指定した全体長 |
                  * | 16 | uint32 | BEGINで指定した全体CRC32。COMMIT成功時は実際のCRCと一致する |
                  */
-                const reply = await result.readValue();
+                const reply = await channel.readResult();
                 check();
                 if (reply.byteLength !== bytecodeTransfer.resultLength || reply.getUint8(0) !== bytecodeTransfer.version) {
                     throw new Error("バイトコード受付結果の形式が不正です。");

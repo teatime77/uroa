@@ -9,7 +9,7 @@ import { theEditor } from "../json-util";
 import { DeviceInfoMaxLength, type DeviceTelemetry } from "./device-telemetry";
 import { ControlConnection, ControlOpcode, ControlCommand } from "./control-connection";
 import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
-import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeReceipt } from "./bytecode-transfer";
+import { checkBytecodeTransfer, type BytecodeReceipt } from "./bytecode-transfer";
 import { parsePython } from "../python/parser.js";
 import { analyzePython } from "../python/semantic.js";
 import { generateBytecode } from "../python/bytecode.js";
@@ -67,7 +67,7 @@ export type ServoMode = "angle" | "speed";
 /**
  * 図の接続UI・機器登録・機器状態・BLE専用転送の窓口。GATT参照は保存しない。
  * 通常指令・ACK・通知検証・PING・共通待ち列はcontrol-connection.tsへ委譲する。
- * BLE/Wi-Fiの切替とブロックへの反映を担当し、Python・デバッグは引き続きBLE専用。
+ * BLE/Wi-Fiの切替とブロックへの反映を担当する。デバッグ通信は引き続きBLE専用。
  */
 export class BLEConnection {
     state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
@@ -91,9 +91,8 @@ export class BLEConnection {
     });
     /** 更新はsendBytecode()だけが行う。別転送とWi-Fi設定の開始を抑止する。 */
     bytecodeSending = false;
-    /** 現BLE接続で最後に保持完了した転送。同一オブジェクトの間だけ再送を省略できる。 */
+    /** 現接続で最後に保持完了した転送。同一オブジェクトの間だけ再送を省略できる。切替で失効する。 */
     bytecodeReceipt?: BytecodeReceipt;
-    private bytecodeTransferId = 0;
     private debugger?: PythonDebugTransport;
     private debuggerSending = false;
     private debugRequestId = 0;
@@ -379,7 +378,17 @@ export class BLEConnection {
             const deviceInfo = await service.getCharacteristic(BLE_UUID.deviceInfo);
             check();
             this.control.bind(new BLEControlTransport(tx, status, rx, deviceInfo, () =>
-                this.generation === generation && !!selected?.gatt?.connected));
+                this.generation === generation && !!selected?.gatt?.connected, async () => {
+                    check();
+                    const write = await service.getCharacteristic(BLE_UUID.bytecode);
+                    check();
+                    const result = await service.getCharacteristic(BLE_UUID.bytecodeResult);
+                    check();
+                    return {
+                        write: bytes => write.writeValueWithResponse(bytes),
+                        readResult: () => result.readValue(),
+                    };
+                }));
             stage = "状態通知登録";
             await status.startNotifications();
             check();
@@ -472,6 +481,7 @@ export class BLEConnection {
             this.service = undefined;
             this.wifi = wifi;
             const generation = ++this.generation;
+            this.bytecodeReceipt = undefined;
             this.requestedRate = 0;
             this.control.bind(wifi);
             wifi.onLost = message => { if (this.generation === generation) this.close("error", message); };
@@ -504,41 +514,7 @@ export class BLEConnection {
         return this.control.send(opcode, value, channel, duration, isCurrent, accepted);
     }
 
-    /** 通常指令と共通の待ち列へGATT操作を追加し、期限切れ・取消時は接続を閉じる。 */
-    private bytecodeOperation<T>(operation: () => Promise<T>, check: () => void,
-        generation: number, signal?: AbortSignal): Promise<T> {
-        const task = this.control.enqueue(async () => {
-            check();
-            let timer: ReturnType<typeof setTimeout> | undefined;
-            let abort: (() => void) | undefined;
-            try {
-                const timeout = new Promise<never>((_, reject) => {
-                    timer = setTimeout(() => reject(new Error("BLE通信の応答がありません。再接続してください。")),
-                        bytecodeTransfer.timeoutMs);
-                    abort = () => reject(signal?.reason ?? new DOMException("転送を取り消しました。", "AbortError"));
-                    signal?.addEventListener("abort", abort, { once: true });
-                });
-                const result = await Promise.race([operation(), timeout]);
-                check();
-                return result;
-            }
-            catch (error) {
-                if (generation === this.generation) {
-                    this.close("error", error instanceof Error ? error.message : "BLE通信に失敗しました。");
-                }
-                throw error;
-            }
-            finally {
-                clearTimeout(timer);
-                if (abort !== undefined) {
-                    signal?.removeEventListener("abort", abort);
-                }
-            }
-        });
-        return task;
-    }
-
-    /** バイナリ全体をBLEで分割転送し、ESP32の検証・RAM保持の完了を待つ。
+    /** バイナリ全体を現在のBLE／Wi-Fiで分割転送し、ESP32の検証・RAM保持の完了を待つ。
      *
      * @remarks
      * ```typescript
@@ -554,9 +530,10 @@ export class BLEConnection {
      * // receipt.byteLengthとreceipt.crc32はESP32が保持完了を返した内容。
      * ```
      *
-     * BLE接続済みでWi-Fi設定・切替中でない場合に利用できる。送信元の配列は最初にコピーし、呼出元の後続変更を転送へ反映させない。同時に複数の転送は行わない。切断・ページ離脱・非表示・ブロック削除では未完了転送を取り消す。APIのAbortSignalでも取り消せる。処理中のネイティブGATT操作は取消できないため、取消・応答期限超過・送受信エラーでは接続を閉じる。
+     * 接続済みでWi-Fi設定・切替中でない場合に利用できる。送信元はコピーし、同時に複数の転送は行わない。
+     * 切断・ページ離脱・非表示・ブロック削除・APIのAbortSignalで取り消す。期限超過・取消・送受信エラーでは接続を閉じる。
      *
-     * 旧ファームウェアとの通常接続は維持する。バイトコードの専用Characteristicは送信時に取得し、未対応なら送信エラーにする。Wi-Fi経由の転送は実装していない。
+     * BLEの専用Characteristicは送信時に取得する。両経路の形式・Result照合・制約はbytecode-transfer.tsを参照する。
      */
     async sendBytecode(bytes: Uint8Array, signal?: AbortSignal): Promise<BytecodeReceipt> {
         if (this.bytecodeSending || this.debuggerSending) {
@@ -565,13 +542,10 @@ export class BLEConnection {
         checkBytecodeTransfer(bytes);
         const payload = bytes.slice();
         const generation = this.generation;
-        const service = this.service;
         const check = () => {
             signal?.throwIfAborted();
-            if (generation !== this.generation || service !== this.service || !service
-                || this.state.phase !== "connected" || !this.device?.gatt?.connected
-                || this.wifi?.connected || this.provisioning) {
-                throw new Error("バイトコード送信には現在のESP32へのBLE接続が必要です。");
+            if (generation !== this.generation || this.state.phase !== "connected" || this.provisioning) {
+                throw new Error("バイトコード送信には現在のESP32への接続が必要です。");
             }
         };
         check();
@@ -581,11 +555,7 @@ export class BLEConnection {
         this.state = { ...this.state, message: "バイトコードを送信しています…" };
         this.notify();
         try {
-            const run = <T>(operation: () => Promise<T>) => this.bytecodeOperation(operation, check, generation, signal);
-            const write = await run(() => service!.getCharacteristic(BLE_UUID.bytecode));
-            const result = await run(() => service!.getCharacteristic(BLE_UUID.bytecodeResult));
-            this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
-            const receipt = await uploadBytecode(payload, this.bytecodeTransferId, write, result, run, check);
+            const receipt = await this.control.sendBytecode(payload, signal);
             check();
             this.bytecodeReceipt = receipt;
             this.state = { ...this.state, message: `${receipt.byteLength}バイトをESP32で受信しました。` };
@@ -664,7 +634,7 @@ export class BLEConnection {
                         throw new Error("デバッグ用のBLE接続が切れました。");
                     }
                 };
-                const run = <T>(operation: () => Promise<T>) => this.bytecodeOperation(operation, checkGatt, generation);
+                const run = <T>(operation: () => Promise<T>) => this.control.runOperation(operation, checkGatt);
                 const control = await run(() => service!.getCharacteristic(BLE_UUID.debugControl));
                 const result = await run(() => service!.getCharacteristic(BLE_UUID.debugResult));
                 const event = await run(() => service!.getCharacteristic(BLE_UUID.debugEvent));
@@ -696,9 +666,9 @@ export class BLEConnection {
      */
     async startBytecode(receipt: BytecodeReceipt, isCurrent = () => true): Promise<void> {
         const current = () => isCurrent() && this.bytecodeReceipt === receipt && !this.bytecodeSending && !this.debuggerSending
-            && !this.provisioning && this.state.phase === "connected" && this.state.transport !== "wifi";
+            && !this.provisioning && this.state.phase === "connected";
         if (!current()) {
-            throw new Error("現在のESP32へPythonをBLE送信してから開始してください。");
+            throw new Error("現在のESP32へPythonを送信してから開始してください。");
         }
         this.debugger?.invalidateSnapshot();
         await this.sendControl(ControlOpcode.VM_START, 0, ControlCommand.allChannels, 0, current);
@@ -709,7 +679,7 @@ export class BLEConnection {
         this.debugger?.invalidateSnapshot();
         this.resetServos();
         this.notify();
-        if (this.state.phase !== "connected" || this.state.transport === "wifi") {
+        if (this.state.phase !== "connected") {
             return;
         }
         const generation = this.generation;
@@ -779,7 +749,7 @@ export class BLEConnectionBlock extends FunctionBlock {
         } });
         this.bytecodeButton = new Button({ text: "a.pyを送信", click: () => this.sendPythonFile() });
         if (!this.inToolbox) this.unsubscribe = diagramBLE.subscribe(() => {
-            if (diagramBLE.state.phase !== "connected" || diagramBLE.state.transport === "wifi") {
+            if (diagramBLE.state.phase !== "connected") {
                 this.bytecodeAbort?.abort();
             }
             this.updateButton();
@@ -869,7 +839,7 @@ export class BLEConnectionBlock extends FunctionBlock {
         this.wifiButton.disabled ||= diagramBLE.bytecodeSending || this.bytecodeAbort !== undefined;
         this.bytecodeButton.text = this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending ? "送信中…" : "a.pyを送信";
         this.bytecodeButton.disabled = this.removed || this.inToolbox || phase !== "connected"
-            || diagramBLE.state.transport === "wifi" || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending;
+            || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending;
     }
 
     draw(): void {

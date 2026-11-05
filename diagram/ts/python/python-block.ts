@@ -34,6 +34,7 @@ import { semanticEditorDiagnostic, syntaxEditorDiagnostic } from "./editor-diagn
  * ESP32/lib/protocolが形式を検査し、app/diagram-control/src/main.cppのloop()が実行する。
  * COMMITは保持だけを行い、VM_STARTで保持中のコードを先頭から実行する。VM_STOPは所有機器も解放する。
  * 開始ACKは初期化の成功であり、実行終了・実行時エラーの通知は含まない。
+ * 転送とVM指令は現在のBLE／Wi-Fiを使う。切断・切替では転送済みReceiptを失効させ、再送・明示開始を要求する。
  */
 export class PythonBlock extends ActionBlock {
     readonly sourceEditor: HTMLTextAreaElement;
@@ -131,7 +132,7 @@ export class PythonBlock extends ActionBlock {
         panel.append(heading, controls, this.highlightEditor.element, this.statusView);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
         this.releaseBLE = diagramBLE.subscribe(state => {
-            if (state.phase !== "connected" || state.transport === "wifi") {
+            if (state.phase !== "connected") {
                 this.receipt = undefined;
                 this.ownsVM = false;
                 this.request?.abort();
@@ -241,7 +242,7 @@ export class PythonBlock extends ActionBlock {
         this.checkButton.disabled = disabled || this.request !== undefined || this.checkRequest !== undefined || this.stopping !== undefined;
         this.startButton.disabled = disabled || this.request !== undefined || this.stopping !== undefined
             || this.checkRequest !== undefined
-            || diagramBLE.bytecodeSending || diagramBLE.state.phase !== "connected" || diagramBLE.state.transport === "wifi";
+            || diagramBLE.bytecodeSending || diagramBLE.state.phase !== "connected";
         this.stopButton.disabled = disabled || this.stopping !== undefined || (!this.request && !this.ownsVM);
         this.sourceEditor.readOnly = this.request !== undefined;
     }
@@ -340,15 +341,15 @@ export class PythonBlock extends ActionBlock {
                 // Actionチェーンでも後続へ進まない。画面の波線・診断説明は保持する。
                 throw new Error("Pythonに問題があります。表示された問題箇所を修正してください。");
             }
-            if (diagramBLE.state.phase !== "connected" || diagramBLE.state.transport === "wifi") {
-                throw new Error("BLE接続ブロックでESP32へBLE接続してください。");
+            if (diagramBLE.state.phase !== "connected") {
+                throw new Error("BLE接続ブロックでESP32へ接続してください。");
             }
             let receipt = this.receipt;
             if (!receipt || this.uploadedSource !== source || this.uploadedAbiHash !== analysis.api.abiHash
                 || diagramBLE.bytecodeReceipt !== receipt) {
                 this.showStatus("Pythonをビルドしています…");
                 const bytes = generateBytecode(analysis.module, analysis);
-                this.showStatus("バイトコードをBLE送信しています…");
+                this.showStatus("バイトコードを送信しています…");
                 receipt = await diagramBLE.sendBytecode(bytes, controller.signal);
                 controller.signal.throwIfAborted();
                 if (this.sourceEditor.value === source && this.editRevision === editRevision) {

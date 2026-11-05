@@ -1,5 +1,6 @@
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import { DeviceInfoMaxLength } from "./device-telemetry";
+import { bytecodeTransfer, type BytecodeChannel } from "./bytecode-transfer";
 
 /** Wi-Fi transport and authenticated BLE provisioning. No live credentials are serialized. */
 export interface RobotEndpoint {
@@ -178,7 +179,9 @@ export class RobotWifi implements ControlTransport {
                 signal: request.signal, credentials: "omit", redirect: "error", cache: "no-store" });
             if (!response.ok) throw new Error("Wi-Fi機器から応答を得られません。接続先・ファームウェア・ネットワークのアクセス許可を確認してください。");
             const reply = await response.json();
-            if (path === "/events" && reply.counter !== String(requestCount)) throw new Error("応答の番号が一致しません。");
+            if ((path === "/events" || path === "/bytecode-result") && reply.counter !== String(requestCount)) {
+                throw new Error("応答の番号が一致しません。");
+            }
             return reply;
         } finally { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); }
     }
@@ -269,7 +272,7 @@ export class RobotWifi implements ControlTransport {
         } catch { if (!this.closed) this.fail("Wi-Fiの応答が途切れました。再接続してください。"); }
     }
     /** 通常指令と機器一覧を同じ認証・要求番号の窓で送る。受付と内容検証の区別は共通層を参照。 */
-    private async writeControl(op: "command" | "device-info", bytes: Uint8Array): Promise<void> {
+    private async writeControl(op: "command" | "device-info" | "bytecode", bytes: Uint8Array): Promise<void> {
         if (!this.connected) {
             throw new Error("Wi-Fi接続が切れました。");
         }
@@ -307,6 +310,41 @@ export class RobotWifi implements ControlTransport {
             throw new Error("機器情報の送信サイズが上限を超えています。");
         }
         await this.writeControl("device-info", bytes);
+    }
+
+    /**
+     * 既存20バイト転送を認証済みWi-Fiへ接続する。HTTP/WSの送信完了だけでは次へ進まない。
+     * Resultはセンサー通知から独立した署名付きHTTP Readを使う。共通契約はbytecode-transfer.ts。
+     */
+    async openBytecode(): Promise<BytecodeChannel> {
+        if (!this.connected) {
+            throw new Error("Wi-Fi接続が切れました。");
+        }
+        const session = this.session;
+        return {
+            write: async bytes => {
+                if (!this.connected || session !== this.session || bytes.length < bytecodeTransfer.headerLength ||
+                    bytes.length > bytecodeTransfer.packetLength) {
+                    throw new Error("プログラム転送の接続またはフレーム長が不正です。");
+                }
+                await this.writeControl("bytecode", bytes);
+            },
+            readResult: async () => {
+                if (!this.connected || session !== this.session) {
+                    throw new Error("プログラム転送の接続が変わりました。");
+                }
+                const reply = await this.json("/bytecode-result", undefined, true);
+                if (!this.connected || session !== this.session || reply.session !== session || typeof reply.data !== "string") {
+                    throw new Error("プログラム受付結果の接続が一致しません。");
+                }
+                await this.verify(`${session}|bytecode-result|${reply.counter}|${reply.data}`, reply.proof);
+                const bytes = decodeHex(reply.data);
+                if (bytes.length !== bytecodeTransfer.resultLength) {
+                    throw new Error("プログラム受付結果の長さが不正です。");
+                }
+                return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            },
+        };
     }
     async image(signal: AbortSignal): Promise<Blob> {
         if (!this.connected || !this.endpoint?.camera) throw new Error("カメラを利用できません。");
