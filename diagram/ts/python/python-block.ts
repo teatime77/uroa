@@ -4,6 +4,14 @@
  * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
  * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
+ * チェックと表示の契約：チェックボタンはBLE未接続でも字句・構文・意味解析だけを行い、
+ * バイトコード生成・転送・VM操作を行わない。入力時の解析・自動チェックは行わない。
+ * Startは送信済みコードを再利用する場合も必ずチェックし、問題があればVMを開始しない。
+ * editor-diagnostics.tsが診断をUTF-16範囲へ変換し、highlight-editor.tsが赤い波線、
+ * マウス位置のtooltipと、文字カーソル位置の編集領域下部の説明を表示する。
+ * 構文エラーは最初の1件、意味エラーは診断一覧を表示する。API・通信失敗に仮の波線は付けない。
+ * 入力・読込で古い診断を消し、解析中の入力変更・取消・削除後に遅れて届く結果は破棄する。
+ * Startで得た解析結果はそのまま生成に使い、同じStart内で解析を繰り返さない。
  */
 import { Vec2 } from "@i18n";
 import { diagramBLE } from "../ble-wifi/ble";
@@ -14,8 +22,9 @@ import { getProcedureSignal, subscribeDiagramStop } from "../runtime";
 import type { Attr } from "../ui";
 import { generateBytecode } from "./bytecode";
 import { parsePython } from "./parser";
-import { analyzePython } from "./semantic";
+import { analyzePython, type PythonAnalysis } from "./semantic";
 import { PythonHighlightEditor } from "./highlight-editor";
+import { semanticEditorDiagnostic, syntaxEditorDiagnostic } from "./editor-diagnostics";
 
 /**
  * Startでビルド・転送・VM_START、StopでVM_STOPを行う。Actionチェーンのrun()も同じ開始処理を待つ。
@@ -31,6 +40,7 @@ export class PythonBlock extends ActionBlock {
     private readonly panel = document.createElement("div");
     private readonly maximizeButton = document.createElement("button");
     private readonly minimizeButton = document.createElement("button");
+    private readonly checkButton = document.createElement("button");
     private readonly startButton = document.createElement("button");
     private readonly stopButton = document.createElement("button");
     private readonly statusView = document.createElement("div");
@@ -38,9 +48,11 @@ export class PythonBlock extends ActionBlock {
     private readonly releaseBLE: () => void;
     private readonly releaseStop: () => void;
     private request?: AbortController;
+    private checkRequest?: AbortController;
     private stopping?: Promise<void>;
     private receipt?: BytecodeReceipt;
     private uploadedSource?: string;
+    private uploadedAbiHash?: string;
     private expanded = false;
     private removed = false;
     private ownsVM = false;
@@ -71,6 +83,9 @@ export class PythonBlock extends ActionBlock {
         const buttons: [HTMLButtonElement, string, () => void][] = [
             [this.maximizeButton, "最大化", () => this.setExpanded(true)],
             [this.minimizeButton, "最小化", () => this.setExpanded(false)],
+            [this.checkButton, "チェック", () => {
+                void this.check();
+            }],
             [this.startButton, "Start", () => {
                 void this.start().catch(() => undefined);
             }],
@@ -95,8 +110,11 @@ export class PythonBlock extends ActionBlock {
         // 1回でも編集したら、元の文字列へ戻した場合も再ビルド・再送する。
         editor.addEventListener("input", () => {
             this.editRevision++;
+            this.checkRequest?.abort();
+            this.request?.abort();
             this.receipt = undefined;
             this.uploadedSource = undefined;
+            this.uploadedAbiHash = undefined;
             this.showStatus("ソースを変更しました。次のStartでビルド・送信します。");
         }, { signal: this.events.signal });
         // textarea内のTabはフォーカス移動の代わりに4スペースを挿入する。
@@ -131,7 +149,8 @@ export class PythonBlock extends ActionBlock {
     }
 
     setBoxSize(): void {
-        this.boxSize = new Vec2(370, 185);
+        // 追加したチェックを含む5個のボタンを通常表示でも1行に収める。
+        this.boxSize = new Vec2(440, 185);
     }
 
     /** 最大化状態は保存せず、ソースだけを通常のActionBlock情報に追加する。 */
@@ -142,9 +161,14 @@ export class PythonBlock extends ActionBlock {
     loadObj(obj: any): void {
         super.loadObj(obj);
         this.sourceEditor.value = typeof obj.source === "string" ? obj.source : "";
+        this.editRevision++;
+        this.checkRequest?.abort();
+        this.request?.abort();
+        this.highlightEditor.clearDiagnostics();
         this.highlightEditor.refresh();
         this.receipt = undefined;
         this.uploadedSource = undefined;
+        this.uploadedAbiHash = undefined;
     }
 
     copy(): PythonBlock {
@@ -163,7 +187,7 @@ export class PythonBlock extends ActionBlock {
             return;
         }
         this.expanded = expanded;
-        this.highlightEditor.element.style.display = expanded ? "block" : "none";
+        this.highlightEditor.element.style.display = expanded ? "flex" : "none";
         this.highlightEditor.refresh();
         this.positionPanel();
         this.updateControls();
@@ -212,7 +236,9 @@ export class PythonBlock extends ActionBlock {
         const disabled = this.removed || this.inToolbox;
         this.maximizeButton.disabled = disabled || this.expanded;
         this.minimizeButton.disabled = disabled || !this.expanded;
+        this.checkButton.disabled = disabled || this.request !== undefined || this.checkRequest !== undefined || this.stopping !== undefined;
         this.startButton.disabled = disabled || this.request !== undefined || this.stopping !== undefined
+            || this.checkRequest !== undefined
             || diagramBLE.bytecodeSending || diagramBLE.state.phase !== "connected" || diagramBLE.state.transport === "wifi";
         this.stopButton.disabled = disabled || this.stopping !== undefined || (!this.request && !this.ownsVM);
         this.sourceEditor.readOnly = this.request !== undefined;
@@ -225,9 +251,73 @@ export class PythonBlock extends ActionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
-    /** 未編集・現接続・最後の転送の3条件を満たすときだけ、ビルドとBLE転送を省略する。 */
+    /** チェックは手動操作時だけ実行する。入力変更で取消し、古い結果やエラーを表示し直さない。 */
+    private async check(): Promise<void> {
+        if (this.removed || this.inToolbox || this.request || this.checkRequest || this.stopping) {
+            return;
+        }
+        const controller = new AbortController();
+        const revision = this.editRevision;
+        this.checkRequest = controller;
+        this.updateControls();
+        try {
+            await this.checkSource(controller);
+        }
+        catch (error) {
+            if (!controller.signal.aborted && !this.removed) {
+                const message = error instanceof Error ? error.message : "チェックに失敗しました。";
+                this.showStatus(message);
+            }
+            else if (!this.removed && this.editRevision === revision) {
+                this.highlightEditor.clearDiagnostics("チェックを取り消しました。再チェックしてください。");
+                this.showStatus("チェックを取り消しました。");
+            }
+        }
+        finally {
+            this.checkRequest = undefined;
+            this.updateControls();
+        }
+    }
+
+    /** 同じスナップショットの診断と解析結果を返す。構文・意味エラーがあれば生成用の結果は返さない。 */
+    private async checkSource(controller: AbortController): Promise<PythonAnalysis | undefined> {
+        const source = this.sourceEditor.value;
+        const revision = this.editRevision;
+        controller.signal.throwIfAborted();
+        this.highlightEditor.clearDiagnostics("チェックしています…");
+        this.showStatus("Pythonをチェックしています…");
+        try {
+            const module = parsePython(source);
+            const analysis = await analyzePython(module, controller.signal);
+            controller.signal.throwIfAborted();
+            if (this.removed || this.editRevision !== revision || this.sourceEditor.value !== source) {
+                controller.abort();
+                controller.signal.throwIfAborted();
+            }
+            this.highlightEditor.setDiagnostics(source, analysis.diagnostics.map(item => semanticEditorDiagnostic(source, item)));
+            this.showStatus(analysis.diagnostics.length === 0 ? "チェック完了：問題はありません。"
+                : `${analysis.diagnostics.length}件の問題があります。問題箇所を確認してください。`);
+            return analysis.diagnostics.length === 0 ? analysis : undefined;
+        }
+        catch (error) {
+            if (controller.signal.aborted || this.removed || this.editRevision !== revision) {
+                throw error;
+            }
+            const diagnostic = syntaxEditorDiagnostic(source, error);
+            if (diagnostic === undefined) {
+                const message = error instanceof Error ? error.message : "チェックに失敗しました。";
+                this.highlightEditor.clearDiagnostics(`チェックできませんでした：${message}`);
+                throw error;
+            }
+            this.highlightEditor.setDiagnostics(source, [diagnostic]);
+            this.showStatus("構文エラーがあります。問題箇所を確認してください。");
+            return undefined;
+        }
+    }
+
+    /** チェックは毎回行い、未編集・同じAPI・現接続・最後の転送の場合だけ生成と転送を省略する。 */
     private async start(signal?: AbortSignal): Promise<void> {
-        if (this.removed || this.inToolbox || this.request || this.stopping) {
+        if (this.removed || this.inToolbox || this.request || this.checkRequest || this.stopping) {
             return;
         }
         const controller = new AbortController();
@@ -243,22 +333,26 @@ export class PythonBlock extends ActionBlock {
         this.updateControls();
         try {
             controller.signal.throwIfAborted();
+            const analysis = await this.checkSource(controller);
+            if (analysis === undefined) {
+                // Actionチェーンでも後続へ進まない。画面の波線・診断説明は保持する。
+                throw new Error("Pythonに問題があります。表示された問題箇所を修正してください。");
+            }
             if (diagramBLE.state.phase !== "connected" || diagramBLE.state.transport === "wifi") {
                 throw new Error("BLE接続ブロックでESP32へBLE接続してください。");
             }
             let receipt = this.receipt;
-            if (!receipt || this.uploadedSource !== source || diagramBLE.bytecodeReceipt !== receipt) {
+            if (!receipt || this.uploadedSource !== source || this.uploadedAbiHash !== analysis.api.abiHash
+                || diagramBLE.bytecodeReceipt !== receipt) {
                 this.showStatus("Pythonをビルドしています…");
-                const module = parsePython(source);
-                const analysis = await analyzePython(module, controller.signal);
-                controller.signal.throwIfAborted();
-                const bytes = generateBytecode(module, analysis);
+                const bytes = generateBytecode(analysis.module, analysis);
                 this.showStatus("バイトコードをBLE送信しています…");
                 receipt = await diagramBLE.sendBytecode(bytes, controller.signal);
                 controller.signal.throwIfAborted();
                 if (this.sourceEditor.value === source && this.editRevision === editRevision) {
                     this.receipt = receipt;
                     this.uploadedSource = source;
+                    this.uploadedAbiHash = analysis.api.abiHash;
                 }
             }
             this.showStatus("VMを開始しています…");
@@ -271,6 +365,9 @@ export class PythonBlock extends ActionBlock {
         }
         catch (error) {
             if (!this.removed) {
+                if (controller.signal.aborted && this.editRevision === editRevision) {
+                    this.highlightEditor.clearDiagnostics("開始を取り消しました。再チェックしてください。");
+                }
                 this.showStatus(controller.signal.aborted ? "開始を取り消しました。"
                     : error instanceof Error ? error.message : "Pythonを開始できませんでした。");
             }
@@ -289,6 +386,7 @@ export class PythonBlock extends ActionBlock {
 
     /** 開始待機を無効化してから停止指令を送る。転送の取消で切断した場合は機器側の切断停止を使う。 */
     private stop(): Promise<void> {
+        this.checkRequest?.abort();
         if (this.stopping) {
             return this.stopping;
         }

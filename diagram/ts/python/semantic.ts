@@ -12,7 +12,8 @@
  * 診断がある結果は部分的な解決情報を含み、slot=-1で返す。bytecode.tsは両生成入口で
  * 診断を検査し、1件以上なら生成前に拒否する。python-block.tsとble-wifi/ble.tsは
  * この境界を通して送信を止める。parser.tsの開発用入口は診断を記録して生成を省く。
- * 画面への問題箇所表示はここでは行わない。API読込み・不正JSON・取消の例外は維持する。
+ * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当する。ここではDOMを操作しない。
+ * API読込み・不正JSON・取消の例外は維持する。
  * JSONの形式はdiagram/python/generate-device-api.pyの先頭コメントを参照する。
  * 形式の版、IDの重複、型参照、コンストラクター、表示APIの型制限を検証する。
  * abiHashは解析結果へ保持するが、ここでは指紋の再計算やVMとの照合は行わない。

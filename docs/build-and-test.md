@@ -2,6 +2,12 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## PythonBlockのチェックと診断表示（2026-11-05）
+
+チェックボタン・Startとの連携と表示の契約は[python-block.tsの仕様コメント](../diagram/ts/python/python-block.ts)、描画・マウス／文字カーソルへの追従は[highlight-editor.ts](../diagram/ts/python/highlight-editor.ts)、表示範囲への変換は[editor-diagnostics.ts](../diagram/ts/python/editor-diagnostics.ts)を参照する。静的確認はuroaルートの`npm.cmd run verify`で行う。ユーザー指定によりテストは作成・実行しない。ブラウザーの波線・tooltip・入力操作・チェック結果・実BLE・実機実行は未確認。ESP32側の変更・ビルドは行わない。
+
+`npm.cmd run verify`は成功し、TypeScript・公開ビルド・配信成果物を静的確認した。既存gameのimport併用警告2件は継続。既存CRLFを許可した`git -c core.whitespace=cr-at-eol diff --check`も成功した。
+
 ## Python意味解析の診断蓄積（2026-11-05）
 
 意味解析と生成器の契約を変更した。診断・型推論の回復・コード生成の制約は[semantic.tsの仕様コメント](../diagram/ts/python/semantic.ts)、生成前の検査は[bytecode.ts](../diagram/ts/python/bytecode.ts)を参照する。静的確認はuroaルートの`npm.cmd run verify`で行う。ユーザー指定によりテストは作成・実行しない。解析関数の実行・診断内容・ブラウザー・BLE・実機は未確認。問題箇所の画面表示とESP32側の変更は行わない。

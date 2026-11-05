@@ -2,13 +2,22 @@
  * PythonBlock用の構文ハイライト。webgpu-sims/src/editor.tsのSyntaxHighlightEditorを参考に、
  * 透明なtextareaと表示専用Canvasを重ねる。python-block.tsが生成・表示切替・復元・破棄を管理し、
  * ソース・選択・キャレット・IME・スクロールはtextareaだけを正本とする。
+ * 診断の表示・チェックのタイミングについての共通契約はpython-block.tsを参照する。
  */
+import type { PythonEditorDiagnostic } from "./editor-diagnostics";
 
 type HighlightKind = "plain" | "keyword" | "builtin" | "number" | "string" | "comment" | "bracket" | "operator";
 
 interface HighlightToken {
     kind: HighlightKind;
     text: string;
+}
+
+interface DiagnosticBox {
+    x: number;
+    y: number;
+    width: number;
+    diagnostic: PythonEditorDiagnostic;
 }
 
 /** 参考画像の暗色エディターに合わせ、背景#1e1e1e上で読みやすい明るい配色を使う。 */
@@ -91,7 +100,11 @@ function highlightTokens(source: string): HighlightToken[] {
 
 /** 入力・スクロール・サイズ変更を1フレームにまとめ、CSS座標で描画して高DPIにも対応する。 */
 export class PythonHighlightEditor {
+    private static nextId = 0;
     readonly element = document.createElement("div");
+    private readonly viewport = document.createElement("div");
+    private readonly description = document.createElement("div");
+    private readonly tooltip = document.createElement("div");
     private readonly canvas = document.createElement("canvas");
     private readonly ctx: CanvasRenderingContext2D;
     private readonly observer: ResizeObserver;
@@ -99,6 +112,12 @@ export class PythonHighlightEditor {
     private frame?: number;
     private source?: string;
     private tokens: HighlightToken[] = [];
+    private lines: string[] = [];
+    private lineStarts: number[] = [];
+    private diagnostics: readonly PythonEditorDiagnostic[] = [];
+    private diagnosticSource?: string;
+    private diagnosticBoxes: DiagnosticBox[] = [];
+    private summary = "未チェックです。「チェック」またはStartで確認してください。";
 
     /** textareaの入力機能を維持し、Canvasは選択・クリック・読み上げの対象にしない。 */
     constructor(private readonly textarea: HTMLTextAreaElement) {
@@ -108,6 +127,8 @@ export class PythonHighlightEditor {
             overflow: "hidden", boxSizing: "border-box", border: "1px solid #454545",
             background: "#1e1e1e", colorScheme: "dark"
         });
+        this.element.style.flexDirection = "column";
+        Object.assign(this.viewport.style, { position: "relative", flex: "1", minHeight: "0", overflow: "hidden" });
         Object.assign(textarea.style, {
             position: "absolute", inset: "0", width: "100%", height: "100%", margin: "0",
             boxSizing: "border-box", border: "0", padding: `${padding}px`, resize: "none",
@@ -121,17 +142,125 @@ export class PythonHighlightEditor {
             position: "absolute", left: "0", top: "0", zIndex: "1", pointerEvents: "none"
         });
         // 文字を選択背景より手前に描き、選択中も色付きのコードを読めるようにする。
-        this.element.append(textarea, this.canvas);
-        textarea.addEventListener("input", () => this.refresh(), { signal: this.events.signal });
-        textarea.addEventListener("scroll", () => this.refresh(), { signal: this.events.signal });
+        this.description.id = `python-diagnostics-${++PythonHighlightEditor.nextId}`;
+        this.description.setAttribute("role", "status");
+        this.description.setAttribute("aria-live", "polite");
+        Object.assign(this.description.style, {
+            flexShrink: "0", minHeight: "20px", maxHeight: "100px", overflow: "auto",
+            padding: "6px 10px", borderTop: "1px solid #454545", color: "#d4d4d4",
+            font: "14px/1.5 sans-serif", whiteSpace: "pre-wrap", overflowWrap: "anywhere", pointerEvents: "auto"
+        });
+        textarea.setAttribute("aria-describedby", this.description.id);
+        this.tooltip.setAttribute("role", "tooltip");
+        this.tooltip.hidden = true;
+        Object.assign(this.tooltip.style, {
+            position: "absolute", zIndex: "2", maxWidth: "min(480px, calc(100% - 16px))",
+            boxSizing: "border-box", padding: "8px", border: "1px solid #f48771",
+            background: "#252526", color: "#f1f1f1", font: "14px/1.5 sans-serif",
+            whiteSpace: "pre-wrap", overflowWrap: "anywhere", pointerEvents: "none"
+        });
+        this.viewport.append(textarea, this.canvas, this.tooltip);
+        this.element.append(this.viewport, this.description);
+        this.updateDescription();
+        textarea.addEventListener("input", () => {
+            this.clearDiagnostics();
+            this.refresh();
+        }, { signal: this.events.signal });
+        textarea.addEventListener("scroll", () => {
+            this.diagnosticBoxes = [];
+            this.tooltip.hidden = true;
+            this.refresh();
+        }, { signal: this.events.signal });
+        textarea.addEventListener("pointermove", event => this.showTooltip(event), { signal: this.events.signal });
+        textarea.addEventListener("pointerleave", () => {
+            this.tooltip.hidden = true;
+        }, { signal: this.events.signal });
+        textarea.addEventListener("blur", () => {
+            this.tooltip.hidden = true;
+        }, { signal: this.events.signal });
+        for (const event of ["select", "keyup", "pointerup", "focus"]) {
+            textarea.addEventListener(event, () => this.updateDescription(), { signal: this.events.signal });
+        }
+        document.addEventListener("selectionchange", () => {
+            if (document.activeElement === textarea) {
+                this.updateDescription();
+            }
+        }, { signal: this.events.signal });
         textarea.addEventListener("compositionend", () => this.refresh(), { signal: this.events.signal });
         window.addEventListener("resize", () => this.refresh(), { signal: this.events.signal });
         this.observer = new ResizeObserver(() => this.refresh());
         this.observer.observe(textarea);
     }
 
+    /** 入力・復元・チェック開始時に古い位置情報を破棄する。ここから解析を実行することはない。 */
+    clearDiagnostics(message = "未チェックです。「チェック」またはStartで確認してください。"): void {
+        this.diagnostics = [];
+        this.diagnosticSource = undefined;
+        this.diagnosticBoxes = [];
+        this.summary = message;
+        this.tooltip.hidden = true;
+        this.updateDescription();
+        this.refresh();
+    }
+
+    /** 解析対象と入力が一致する場合だけ反映する。変更後に届いた古い結果では波線を戻さない。 */
+    setDiagnostics(source: string, diagnostics: readonly PythonEditorDiagnostic[]): void {
+        if (this.events.signal.aborted || this.textarea.value !== source) {
+            return;
+        }
+        this.diagnosticSource = source;
+        this.diagnostics = diagnostics;
+        this.diagnosticBoxes = [];
+        this.summary = diagnostics.length === 0 ? "チェック完了：問題はありません。"
+            : `${diagnostics.length}件の問題があります。赤い波線にマウスまたは文字カーソルを合わせてください。`;
+        this.tooltip.hidden = true;
+        this.updateDescription();
+        this.refresh();
+    }
+
+    private diagnosticMessage(diagnostic: PythonEditorDiagnostic): string {
+        const before = this.textarea.value.slice(0, diagnostic.start);
+        const row = before.split("\n").length;
+        const column = diagnostic.start - before.lastIndexOf("\n");
+        return `${row}行 ${column}列：${diagnostic.message}`;
+    }
+
+    /** 選択方向に応じて実際の文字カーソル位置を見る。マウス操作だけでなく矢印キーでも更新する。 */
+    private updateDescription(): void {
+        const position = this.textarea.selectionDirection === "backward"
+            ? this.textarea.selectionStart : this.textarea.selectionEnd;
+        // キャレットは文字間の位置なので、問題範囲の末尾に置いた場合も説明する。
+        const selected = this.diagnosticSource === this.textarea.value
+            ? this.diagnostics.filter(item => position >= item.start && position <= item.end) : [];
+        this.description.textContent = selected.length === 0 ? this.summary
+            : selected.map(item => this.diagnosticMessage(item)).join("\n");
+        this.description.style.color = selected.length === 0 ? "#d4d4d4" : "#f48771";
+    }
+
+    /** 描画と同じCSS座標の範囲を使い、日本語・Tab・スクロール後も文字の上で説明する。 */
+    private showTooltip(event: PointerEvent): void {
+        const rect = this.textarea.getBoundingClientRect();
+        const x = (event.clientX - rect.left) * this.textarea.offsetWidth / rect.width;
+        const y = (event.clientY - rect.top) * this.textarea.offsetHeight / rect.height;
+        const boxes = this.diagnosticBoxes.filter(box => x >= box.x && x < box.x + box.width
+            && y >= box.y && y < box.y + lineHeight);
+        if (boxes.length === 0 || this.diagnosticSource !== this.textarea.value
+            || x >= this.textarea.clientWidth || y >= this.textarea.clientHeight) {
+            this.tooltip.hidden = true;
+            return;
+        }
+        this.tooltip.textContent = [...new Set(boxes.map(box => this.diagnosticMessage(box.diagnostic)))].join("\n");
+        this.tooltip.hidden = false;
+        this.tooltip.style.left = `${Math.max(4, Math.min(x + 12, this.textarea.clientWidth - this.tooltip.offsetWidth - 4))}px`;
+        const below = boxes[0].y + lineHeight + 4;
+        this.tooltip.style.top = `${Math.max(0, below + this.tooltip.offsetHeight <= this.textarea.clientHeight
+            ? below : boxes[0].y - this.tooltip.offsetHeight - 4)}px`;
+    }
+
     /** 代入による復元・コピーや表示切替でも呼ぶ。inputイベントは発生させず、送信済み判定を変えない。 */
     refresh(): void {
+        this.diagnosticBoxes = [];
+        this.tooltip.hidden = true;
         if (this.events.signal.aborted || this.frame !== undefined) {
             return;
         }
@@ -167,6 +296,13 @@ export class PythonHighlightEditor {
         if (source !== this.source) {
             this.source = source;
             this.tokens = highlightTokens(source);
+            this.lines = source.split("\n");
+            let start = 0;
+            this.lineStarts = this.lines.map(line => {
+                const position = start;
+                start += line.length + 1;
+                return position;
+            });
         }
         // Canvasが入力欄のplaceholderを覆わないよう、空のときは何も描かない。
         let x = 0;
@@ -192,6 +328,76 @@ export class PythonHighlightEditor {
                 }
             }
         }
+        this.drawDiagnostics(width, height, tabWidth);
+    }
+
+    /** UTF-16位置から行番号を求める。長いソースでも診断ごとの先頭からの走査を避ける。 */
+    private rowAt(position: number): number {
+        let left = 0;
+        let right = this.lineStarts.length;
+        while (left + 1 < right) {
+            const middle = Math.floor((left + right) / 2);
+            if (this.lineStarts[middle] <= position) {
+                left = middle;
+            }
+            else {
+                right = middle;
+            }
+        }
+        return left;
+    }
+
+    private textWidth(text: string, tabWidth: number): number {
+        let x = 0;
+        for (const [index, part] of text.split("\t").entries()) {
+            if (index !== 0) {
+                x = (Math.floor(x / tabWidth + 0.000001) + 1) * tabWidth;
+            }
+            x += this.ctx.measureText(part).width;
+        }
+        return x;
+    }
+
+    /** 複数行の式は行ごとに波線を分け、改行・EOFの問題には最低8pxの目印を付ける。 */
+    private drawDiagnostics(width: number, height: number, tabWidth: number): void {
+        if (this.diagnosticSource !== this.textarea.value) {
+            return;
+        }
+        const ctx = this.ctx;
+        ctx.save();
+        ctx.strokeStyle = "#f14c4c";
+        ctx.lineWidth = 1.5;
+        for (const diagnostic of this.diagnostics) {
+            const firstRow = this.rowAt(diagnostic.start);
+            const lastRow = this.rowAt(Math.max(diagnostic.start, diagnostic.end - 1));
+            for (let row = firstRow; row <= lastRow; row++) {
+                const y = padding + row * lineHeight - this.textarea.scrollTop;
+                if (y + lineHeight <= 0 || y >= height) {
+                    continue;
+                }
+                const line = this.lines[row];
+                const start = Math.max(0, diagnostic.start - this.lineStarts[row]);
+                const end = Math.min(line.length, diagnostic.end - this.lineStarts[row]);
+                const left = this.textWidth(line.slice(0, start), tabWidth);
+                const right = this.textWidth(line.slice(0, end), tabWidth);
+                const x = padding + left - this.textarea.scrollLeft;
+                const span = Math.max(8, right - left);
+                if (x + span <= 0 || x >= width) {
+                    continue;
+                }
+                this.diagnosticBoxes.push({ x, y, width: span, diagnostic });
+                const waveStart = Math.max(0, x);
+                const waveEnd = Math.min(width, x + span);
+                ctx.beginPath();
+                ctx.moveTo(waveStart, y + lineHeight - 3);
+                for (let point = waveStart + 2; point < waveEnd + 2; point += 2) {
+                    const offset = Math.round((point - waveStart) / 2) % 2 === 0 ? 0 : 2;
+                    ctx.lineTo(Math.min(point, waveEnd), y + lineHeight - 3 + offset);
+                }
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
     }
 
     /** 削除後に描画しないよう、監視・イベント・予約フレームとDOMを解放する。 */
