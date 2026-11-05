@@ -1,6 +1,7 @@
 /**
  * Python BLEデバッグ通信version=1の中心契約。
- * ble.tsが接続世代・GATT排他を所有し、本ファイルが一覧転送と停止値の復号を行う。
+ * ble.tsがBLE接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
+ * 本ファイルが一覧転送と停止値の復号を行う。
  * ESP32のbytecode_debugger.cppがloop()で要求を処理し、bytecode_vm.cppが停止値を作る。
  *
  * 同じServiceのUUID末尾は既存と共通で、先頭はControl=f3641409(Write with response)、

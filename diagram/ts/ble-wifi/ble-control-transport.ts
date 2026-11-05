@@ -1,0 +1,48 @@
+/** GATTの通常指令・通知をcontrol-connection.tsの共通通信経路へ接続する。 */
+import type { ControlPacketKind, ControlTransport } from "./control-connection";
+
+/** Web Bluetoothの通常通信に使う構造型。GATT参照は保存データへ含めない。 */
+export interface ControlCharacteristic extends EventTarget {
+    value?: DataView;
+    startNotifications(): Promise<ControlCharacteristic>;
+    readValue(): Promise<DataView>;
+    writeValueWithResponse(value: Uint8Array): Promise<void>;
+}
+
+/**
+ * Commandをresponse付きで書き、Status/Telemetryを実際のCharacteristicで区別して渡す。
+ * 接続・通知開始・初期Read・切断はble.tsが担当する。ここではパケットを解釈しない。
+ */
+export class BLEControlTransport implements ControlTransport {
+    readonly kind = "ble";
+
+    constructor(private command: ControlCharacteristic, private status: ControlCharacteristic,
+        private telemetry: ControlCharacteristic, private isConnected: () => boolean) {
+    }
+
+    /** ネイティブGATTの現在の接続状態を照合する。 */
+    get connected(): boolean {
+        return this.isConnected();
+    }
+
+    /** GATTの受付までを待つ。機器のACKは共通層が別に照合する。 */
+    write(bytes: Uint8Array): Promise<void> {
+        return this.command.writeValueWithResponse(bytes);
+    }
+
+    /** 通知購読の解除関数を返す。Wi-Fi切替後は旧GATT通知を共通層へ渡さない。 */
+    subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void {
+        const status = (event: Event) => {
+            listener((event.target as ControlCharacteristic).value, "status");
+        };
+        const telemetry = (event: Event) => {
+            listener((event.target as ControlCharacteristic).value, "telemetry");
+        };
+        this.status.addEventListener("characteristicvaluechanged", status);
+        this.telemetry.addEventListener("characteristicvaluechanged", telemetry);
+        return () => {
+            this.status.removeEventListener("characteristicvaluechanged", status);
+            this.telemetry.removeEventListener("characteristicvaluechanged", telemetry);
+        };
+    }
+}

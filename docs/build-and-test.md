@@ -2,6 +2,12 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## 通常指令・通知の共通層抽出（2026-11-05）
+
+共通の待ち列・ACK・通知検証は[control-connection.ts](../diagram/ts/ble-wifi/control-connection.ts)、GATT配送は[ble-control-transport.ts](../diagram/ts/ble-wifi/ble-control-transport.ts)、Wi-Fi配送は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)、ESP32の配送・接続照合は[control_transport.h](../../esp32/app/diagram-control/include/control_transport.h)を参照する。
+
+uroaルートの`npm.cmd run verify`は成功し、TypeScript・公開ビルド・配信成果物の静的確認を完了した。既存gameの動的／静的import併用警告2件は継続。ESP32はユーザー指定によりesp32devだけをビルドし、結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記載する。テストは作成・実行せず、ブラウザー操作、実BLE／Wi-Fi、切替・切断・ACK期限超過・STREAMの実動作、Uploadは未確認。
+
 ## PythonデバッガのBLE通信（2026-11-05）
 
 通信・停止値の共通仕様は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)、送信API・購読例は[ble.tsのsendBreakpoints()](../diagram/ts/ble-wifi/ble.ts)を参照する。F9の行番号から命令PCへの変換、変数・Call Stackの画面表示、再開・ステップ操作は後続実装。現段階の通信APIには命令PCを渡す。

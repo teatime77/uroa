@@ -71,9 +71,13 @@ pio run --project-dir app/diagram-control -e supermini_esp32s3
 
 `pio`がPATHにない場合は、PlatformIO IDE付属のCLIを使う。Upload・Monitorでは基板と実際のCOMポートを指定する。詳しい手順は上表のアプリREADME、検証記録は[ESP32側のbuild-and-test.md](../../../esp32/docs/build-and-test.md)を参照する。
 
+## 通常通信の共通層
+
+ブラウザー側の通常指令・ACK・通知検証は[control-connection.ts](../../diagram/ts/ble-wifi/control-connection.ts)、GATT配送は[ble-control-transport.ts](../../diagram/ts/ble-wifi/ble-control-transport.ts)、Wi-Fi配送は[robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。ESP32側の共通窓口は[control_transport.h](../../../esp32/app/diagram-control/include/control_transport.h)。担当範囲と通信契約は各ソースの仕様コメントを正本とする。
+
 ## 送受信のタイミング
 
-以下は現行の`ble.ts`とdiagram-controlの`main.cpp`・`config.h`に基づく。周期は設定・実装上の値であり、実機で測った通信遅延や描画周期ではない。
+以下は現行の`control-connection.ts`・`ble.ts`とdiagram-controlの`main.cpp`・`config.h`に基づく。周期は設定・実装上の値であり、実機で測った通信遅延や描画周期ではない。
 
 | 処理 | タイミングと責任 |
 |---|---|

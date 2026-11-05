@@ -6,7 +6,9 @@ import { BLEWifiSetup, RobotWifi, type RobotEndpoint } from "./robot-wifi";
 import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
 import { theEditor } from "../json-util";
-import { DeviceInfoMaxLength, parseDeviceTelemetry } from "./device-telemetry";
+import { DeviceInfoMaxLength, type DeviceTelemetry } from "./device-telemetry";
+import { ControlConnection, ControlOpcode, ControlCommand } from "./control-connection";
+import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeReceipt } from "./bytecode-transfer";
 import { parsePython } from "../python/parser.js";
 import { analyzePython } from "../python/semantic.js";
@@ -48,12 +50,7 @@ export const BLE_UUID = {
 } as const;
 
 // Structural types keep this browser-only module independent of the robot build.
-interface BLECharacteristic extends EventTarget {
-    value?: DataView;
-    startNotifications(): Promise<BLECharacteristic>;
-    readValue(): Promise<DataView>;
-    writeValueWithResponse(value: Uint8Array): Promise<void>;
-}
+type BLECharacteristic = ControlCharacteristic;
 interface BLEService { getCharacteristic(uuid: string): Promise<BLECharacteristic>; }
 interface BLEServer {
     connected: boolean;
@@ -67,65 +64,22 @@ interface BLEAdapter {
 }
 export type BLEPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
 export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; transport?: "ble" | "wifi"; }
-const errors = ["成功", "指令形式が不正（速度制御には対応ファームウェアが必要です）", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー", "角度／速度モードが異なります。無効化してから有効化してください。"];
-/** diagram-controlと共通の指令番号。 */
-enum BLEOpcode {
-    ARM = 1,
-    MOVE = 2,
-    STOP = 3,
-    STREAM = 4,
-    PING = 5,
-    INFO = 6,
-    DISABLE = 7,
-    ARM_SPEED = 8,
-    SET_SPEED = 9,
-    VM_START = 10,
-    VM_STOP = 11,
-}
-
-/** version 1のCommandパケットのサイズと各フィールドの位置。 */
-const BLE_COMMAND = {
-    byteLength: 10,
-    version: 1,
-    allChannels: 255,
-    maxSequence: 65535,
-    offset: {
-        version: 0,
-        opcode: 1,
-        sequence: 2,
-        channel: 4,
-        value: 6,
-        duration: 8,
-    },
-} as const;
-
 export type ServoMode = "angle" | "speed";
-const servoOperations: Partial<Record<BLEOpcode, string>> = {
-    [BLEOpcode.ARM]: "ARM",
-    [BLEOpcode.MOVE]: "MOVE",
-    [BLEOpcode.STOP]: "STOP",
-    [BLEOpcode.DISABLE]: "DISABLE",
-    [BLEOpcode.ARM_SPEED]: "ARM_SPEED",
-    [BLEOpcode.SET_SPEED]: "SET_SPEED",
-};
 
-/** One connection per diagram document. Blocks subscribe; GATT objects are never saved. */
+/**
+ * 図の接続UI・機器状態・BLE専用転送の窓口。GATT参照は保存しない。
+ * 通常指令・ACK・通知検証・PING・共通待ち列はcontrol-connection.tsへ委譲する。
+ * BLE/Wi-Fiの切替とブロックへの反映を担当し、Python・デバッグは引き続きBLE専用。
+ */
 export class BLEConnection {
     state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
     private listeners = new Set<(state: BLEConnectionState) => void>();
     private sensorStreamUsers = new Set<FunctionBlock>();
     private requestedRate = 0;
     private device?: BLEDevice;
-    private tx?: BLECharacteristic;
-    private rx?: BLECharacteristic;
-    private status?: BLECharacteristic;
     private deviceInfo?: BLECharacteristic;
     private generation = 0;
-    private sequence = 0;
-    private heartbeat?: ReturnType<typeof setInterval>;
     private connectTimer?: ReturnType<typeof setTimeout>;
-    private tail: Promise<unknown> = Promise.resolve();
-    private pending = new Map<number, { resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
     private armedChannels = new Map<number, ServoMode>();
     private servoVersions = Array<number>(16).fill(0);
     private service?: BLEService;
@@ -133,6 +87,11 @@ export class BLEConnection {
     private wifiDialog?: RobotWifiDialog;
     private provisioning = false;
     private closing = false;
+    private control = new ControlConnection({
+        status: data => this.hardwareStatus(data),
+        telemetry: (data, telemetry) => this.sampleChanged(data, telemetry),
+        failed: error => this.close("error", error.message),
+    });
     /** 更新はsendBytecode()だけが行う。別転送とWi-Fi設定の開始を抑止する。 */
     bytecodeSending = false;
     /** 現BLE接続で最後に保持完了した転送。同一オブジェクトの間だけ再送を省略できる。 */
@@ -172,7 +131,7 @@ export class BLEConnection {
         this.checkChannel(channel);
         this.checkServoConnection();
         const version = ++this.servoVersions[channel];
-        await this.sendControl(mode === "speed" ? BLEOpcode.ARM_SPEED : BLEOpcode.ARM, mode === "speed" ? 0 : 9000, channel, 0,
+        await this.sendControl(mode === "speed" ? ControlOpcode.ARM_SPEED : ControlOpcode.ARM, mode === "speed" ? 0 : 9000, channel, 0,
             () => version === this.servoVersions[channel] && isCurrent(),
             () => { this.armedChannels.set(channel, mode); this.notify(); });
     }
@@ -184,7 +143,7 @@ export class BLEConnection {
         if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
         if (!this.isServoArmed(channel, "angle")) throw new Error("先に角度モードで90°の有効化を行ってください。");
         const version = this.servoVersions[channel];
-        await this.sendControl(BLEOpcode.MOVE, Math.round(angle * 100), channel, duration,
+        await this.sendControl(ControlOpcode.MOVE, Math.round(angle * 100), channel, duration,
             () => version === this.servoVersions[channel] && this.isServoArmed(channel, "angle") && isCurrent());
     }
 
@@ -204,7 +163,7 @@ export class BLEConnection {
             throw new Error("先に速度モードで0%の有効化を行ってください。");
         }
         const version = this.servoVersions[channel];
-        await this.sendControl(BLEOpcode.SET_SPEED, Math.round(percent * 100), channel, 0,
+        await this.sendControl(ControlOpcode.SET_SPEED, Math.round(percent * 100), channel, 0,
             () => version === this.servoVersions[channel] && this.isServoArmed(channel, "speed") && isCurrent());
     }
 
@@ -217,7 +176,7 @@ export class BLEConnection {
         if (this.state.phase !== "connected") return;
         const generation = this.generation;
         try {
-            await this.sendControl(BLEOpcode.DISABLE, 0, channel);
+            await this.sendControl(ControlOpcode.DISABLE, 0, channel);
         }
         catch (error) {
             if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
@@ -232,7 +191,7 @@ export class BLEConnection {
         if (this.state.phase !== "connected") return;
         const generation = this.generation;
         try {
-            await this.sendControl(BLEOpcode.STOP);
+            await this.sendControl(ControlOpcode.STOP);
         }
         catch (error) {
             if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
@@ -284,7 +243,7 @@ export class BLEConnection {
         if (rate === this.requestedRate) return;
         this.requestedRate = rate;
         const generation = this.generation;
-        void this.sendControl(BLEOpcode.STREAM, rate).catch(error => {
+        void this.sendControl(ControlOpcode.STREAM, rate).catch(error => {
             if (generation === this.generation) this.close("error", error.message);
         });
     }
@@ -317,85 +276,51 @@ export class BLEConnection {
         }
     }
 
-    private sampleChanged = (event: Event): void => {
+    /** 共通層で検証した通知を、登録センサーの全件・順序を照合してから反映する。 */
+    private sampleChanged(value: DataView, telemetry: DeviceTelemetry): void {
         if (this.state.phase !== "connected" || !this.state.streaming || !this.requestedRate) {
             return;
         }
-        try {
-            const value = (event.target as BLECharacteristic).value;
-            if (!value) {
-                throw new Error("センサーデータがありません。");
-            }
-            const telemetry = parseDeviceTelemetry(value);
-            const sensors = this.sensors;
-            if (telemetry.records.length !== sensors.length) {
-                throw new Error("機器別Telemetryと登録センサー数が一致しません。");
-            }
-            // 全レコードと登録順を検証してから、ブロックへ反映する。
-            for (let index = 0; index < sensors.length; index++) {
-                if (telemetry.records[index].deviceType !== sensors[index].deviceType) {
-                    throw new Error("機器別Telemetryの種別と登録センサー順が一致しません。");
-                }
-            }
-            for (let index = 0; index < sensors.length; index++) {
-                sensors[index].readStatus(telemetry.time, value, telemetry.records[index].offset);
-            }
-        } catch (error) {
-            this.close("error", error instanceof Error ? error.message : "センサーデータを受信できませんでした。");
-            return;
+        const sensors = this.sensors;
+        if (telemetry.records.length !== sensors.length) {
+            throw new Error("機器別Telemetryと登録センサー数が一致しません。");
         }
-    };
+        for (let index = 0; index < sensors.length; index++) {
+            if (telemetry.records[index].deviceType !== sensors[index].deviceType) {
+                throw new Error("機器別Telemetryの種別と登録センサー順が一致しません。");
+            }
+        }
+        for (let index = 0; index < sensors.length; index++) {
+            sensors[index].readStatus(telemetry.time, value, telemetry.records[index].offset);
+        }
+    }
 
     private lost = (): void => {
         if (this.wifi?.connected) return;
         this.close("idle", "BLE接続が切れました。");
     };
-    private statusChanged = (event: Event): void => {
-        try {
-            const value = (event.target as BLECharacteristic).value;
-            if (!value || value.byteLength !== 12 || value.getUint8(0) !== 1) throw new Error("状態データの形式が正しくありません。");
-            this.hardwareStatus(value);
-            const pending = this.pending.get(value.getUint16(2, true));
-            if (pending) {
-                clearTimeout(pending.timer);
-                this.pending.delete(value.getUint16(2, true));
-                const code = value.getUint8(1);
-                if (code) pending.reject(new Error(errors[code] ?? `機器エラー ${code}`));
-                else pending.resolve();
-            }
-        } catch (error) {
-            this.close("error", error instanceof Error ? error.message : "状態を受信できませんでした。");
-        }
-    };
-
     private close(phase: BLEPhase, message = ""): void {
         this.closing = true;
         this.resetDebugger();
         this.debugRequestId = 0;
         this.bytecodeReceipt = undefined;
         this.generation++;
+        this.control.close();
         this.wifiDialog?.close(); this.wifiDialog = undefined;
         this.provisioning = false;
         this.wifi?.close(); this.wifi = undefined; this.service = undefined;
         setCameraProvider();
         this.state.transport = "ble";
         this.resetServos();
-        clearInterval(this.heartbeat);
         clearTimeout(this.connectTimer);
-        this.heartbeat = this.connectTimer = undefined;
+        this.connectTimer = undefined;
         this.requestedRate = 0;
         this.sensors = [];
         this.actuators = [];
-        this.status?.removeEventListener("characteristicvaluechanged", this.statusChanged);
-        this.rx?.removeEventListener("characteristicvaluechanged", this.sampleChanged);
         this.device?.removeEventListener("gattserverdisconnected", this.lost);
         const device = this.device;
-        this.device = this.tx = this.rx = this.status = this.deviceInfo = undefined;
-        for (const pending of this.pending.values()) {
-            clearTimeout(pending.timer);
-            pending.reject(new Error("BLE接続が切れました。"));
-        }
-        this.pending.clear();
+        this.device = undefined;
+        this.deviceInfo = undefined;
         try { device?.gatt?.disconnect(); } catch { /* Already disconnected. */ }
         this.publish(phase, "", message);
         this.closing = false;
@@ -457,12 +382,9 @@ export class BLEConnection {
             stage = "機器情報Characteristic取得";
             const deviceInfo = await service.getCharacteristic(BLE_UUID.deviceInfo);
             check();
-            this.tx = tx;
-            this.status = status;
-            this.rx = rx;
             this.deviceInfo = deviceInfo;
-            status.addEventListener("characteristicvaluechanged", this.statusChanged);
-            rx.addEventListener("characteristicvaluechanged", this.sampleChanged);
+            this.control.bind(new BLEControlTransport(tx, status, rx, () =>
+                this.generation === generation && !!selected?.gatt?.connected));
             stage = "状態通知登録";
             await status.startNotifications();
             check();
@@ -472,10 +394,10 @@ export class BLEConnection {
             stage = "初期状態取得";
             const initialStatus = await status.readValue();
             check();
-            if (initialStatus.byteLength !== 12 || initialStatus.getUint8(0) !== 1) throw new Error("状態データの形式が正しくありません。");
-            this.hardwareStatus(initialStatus);
+            this.control.receive(initialStatus, "status");
+            check();
             stage = "INFO応答確認";
-            await this.sendControl(BLEOpcode.INFO); // INFO ACK confirms application readiness, not motion completion.
+            await this.sendControl(ControlOpcode.INFO); // INFO ACK confirms application readiness, not motion completion.
             check();
             stage = "機器情報登録";
             await this.sendDeviceInfo();
@@ -483,7 +405,7 @@ export class BLEConnection {
             clearTimeout(this.connectTimer); this.connectTimer = undefined;
             this.publish("connected", selected.name || "名前のない機器");
             this.updateStream();
-            this.startHeartbeat(generation);
+            this.control.startHeartbeat();
         } catch (error) {
             if (this.generation !== generation) return;
             const name = error instanceof Error ? error.name : "";
@@ -494,15 +416,6 @@ export class BLEConnection {
                 this.close("error", `${stage}: ${name === "NotFoundError" ? "このデモに対応した機器ではありません。" : message}`);
             }
         }
-    }
-
-    private startHeartbeat(generation: number): void {
-        clearInterval(this.heartbeat);
-        this.heartbeat = setInterval(() => {
-            void this.sendControl(BLEOpcode.PING).catch(error => {
-                if (this.generation === generation) this.close("error", error instanceof Error ? error.message : "機器の応答がありません。");
-            });
-        }, 1500);
     }
 
     async openWifi(): Promise<void> {
@@ -517,9 +430,10 @@ export class BLEConnection {
         const generation = this.generation;
         try {
             this.resetDebugger();
-            this.provisioning = true; clearInterval(this.heartbeat);
+            this.provisioning = true;
+            this.control.stopHeartbeat();
             await this.stopServos();
-            await this.sendControl(BLEOpcode.STREAM, 0);
+            await this.sendControl(ControlOpcode.STREAM, 0);
             this.requestedRate = 0;
             const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
             const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
@@ -530,12 +444,18 @@ export class BLEConnection {
                 () => {
                     if (this.wifiDialog === dialog) this.wifiDialog = undefined;
                     this.provisioning = false;
-                    if (!this.closing && this.device?.gatt?.connected && this.state.phase === "connected") { this.updateStream(); this.startHeartbeat(this.generation); }
+                    if (!this.closing && this.device?.gatt?.connected && this.state.phase === "connected") {
+                        this.updateStream();
+                        this.control.startHeartbeat();
+                    }
                 }, setup);
             dialog.open();
         } catch {
             this.provisioning = false;
-            if (this.device?.gatt?.connected && this.state.phase === "connected") { this.updateStream(); this.startHeartbeat(this.generation); }
+            if (this.device?.gatt?.connected && this.state.phase === "connected") {
+                this.updateStream();
+                this.control.startHeartbeat();
+            }
             if (generation === this.generation) { this.state = { ...this.state, message: "Wi-Fi設定を開けません。対応するファームウェアとBLE接続を確認してください。" }; this.notify(); }
         }
     }
@@ -549,31 +469,27 @@ export class BLEConnection {
             signal.throwIfAborted();
             if (this.generation !== oldGeneration) throw new Error("接続を取り消しました。");
             // Remove native disconnection listener before the deliberate BLE handover.
-            clearInterval(this.heartbeat); this.resetServos();
+            this.control.stopHeartbeat();
+            this.resetServos();
             this.device?.removeEventListener("gattserverdisconnected", this.lost);
-            this.status?.removeEventListener("characteristicvaluechanged", this.statusChanged);
-            this.rx?.removeEventListener("characteristicvaluechanged", this.sampleChanged);
             this.device?.gatt?.disconnect();
-            this.device = this.tx = this.status = this.rx = this.deviceInfo = undefined;
+            this.device = undefined;
+            this.deviceInfo = undefined;
             this.service = undefined;
-            this.wifi = wifi; const generation = ++this.generation;
+            this.wifi = wifi;
+            const generation = ++this.generation;
             this.requestedRate = 0;
-            for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Wi-Fiへ切り替えました。")); }
-            this.pending.clear();
-            wifi.onPacket = data => {
-                if (this.generation !== generation) return;
-                if (data.byteLength === 12) this.statusChanged({ target: { value: data } } as unknown as Event);
-                else this.sampleChanged({ target: { value: data } } as unknown as Event);
-            };
+            this.control.bind(wifi);
             wifi.onLost = message => { if (this.generation === generation) this.close("error", message); };
             this.state = { phase: "connecting", deviceName: actual.name, transport: "wifi", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
-            await this.sendControl(BLEOpcode.INFO);
+            await this.sendControl(ControlOpcode.INFO);
             signal.throwIfAborted();
             if (generation !== this.generation) throw new Error("接続を取り消しました。");
             this.publish("connected", actual.name);
             this.provisioning = false;
             if (actual.camera) setCameraProvider(cameraSignal => wifi.image(cameraSignal));
-            this.updateStream(); this.startHeartbeat(generation);
+            this.updateStream();
+            this.control.startHeartbeat();
         } catch (error) {
             wifi.close();
             if (this.wifi === wifi) this.close("error", "Wi-Fiの制御接続を確認できません。再接続してください。");
@@ -582,61 +498,16 @@ export class BLEConnection {
         }
     }
 
-    private sendControl(opcode: BLEOpcode, value = 0, channel: number = BLE_COMMAND.allChannels, duration = 0,
-        isCurrent = () => true, accepted = () => {}): Promise<void> {
-        const generation = this.generation;
-        const task = this.tail.catch(() => {}).then(async () => {
-            if (generation !== this.generation || (!this.wifi?.connected && (!this.tx || !this.device?.gatt?.connected))) throw new Error("機器の接続が切れました。");
-            if (!isCurrent()) throw new Error("機器操作を取り消しました。");
-            const sequence = this.sequence = this.sequence % BLE_COMMAND.maxSequence + 1;
-            const bytes = new Uint8Array(BLE_COMMAND.byteLength);
-            const packet = new DataView(bytes.buffer);
-            bytes[BLE_COMMAND.offset.version] = BLE_COMMAND.version;
-            bytes[BLE_COMMAND.offset.opcode] = opcode;
-            bytes[BLE_COMMAND.offset.channel] = channel;
-            packet.setUint16(BLE_COMMAND.offset.sequence, sequence, true);
-            if (opcode === BLEOpcode.SET_SPEED) {
-                packet.setInt16(BLE_COMMAND.offset.value, value, true);
-            }
-            else {
-                packet.setUint16(BLE_COMMAND.offset.value, value, true);
-            }
-            packet.setUint16(BLE_COMMAND.offset.duration, duration, true);
-            const operation = servoOperations[opcode];
-            const details = { operation, sequence, channel, value, duration };
-            const ack = new Promise<void>((resolve, reject) => {
-                const timer = setTimeout(() => {
-                    this.pending.delete(sequence);
-                    reject(new Error("ESP32の応答がありません。再接続してください。"));
-                    if (generation === this.generation) this.close("error", "ESP32の応答がありません。再接続してください。");
-                }, 2500);
-                this.pending.set(sequence, { resolve, reject, timer });
-            });
-            void ack.catch(() => {});
-            if (operation) console.log("BLE servo send", details);
-            const write = (this.wifi?.connected ? this.wifi.write(bytes) : this.tx!.writeValueWithResponse(bytes)).catch(error => {
-                const pending = this.pending.get(sequence);
-                if (pending) { clearTimeout(pending.timer); this.pending.delete(sequence); pending.reject(error as Error); }
-                throw error;
-            });
-            // A missing ACK must unblock the queue even if the native write hangs.
-            try { await Promise.all([write, ack]); }
-            catch (error) {
-                if (operation) console.error("BLE servo error", details, error);
-                throw error;
-            }
-            if (operation) console.log("BLE servo ACK", details);
-            if (generation !== this.generation || !isCurrent()) throw new Error("機器操作を取り消しました。");
-            accepted();
-        });
-        this.tail = task;
-        return task;
+    /** 通常指令は通信経路を選別せず、ACK照合と共通待ち列を持つ層へ渡す。 */
+    private sendControl(opcode: ControlOpcode, value = 0, channel: number = ControlCommand.allChannels, duration = 0,
+        isCurrent = () => true, accepted?: () => void): Promise<void> {
+        return this.control.send(opcode, value, channel, duration, isCurrent, accepted);
     }
 
-    /** 既存のGATTキューへ1操作を追加し、期限切れ・取消時は未完了の接続を閉じる。 */
+    /** 通常指令と共通の待ち列へGATT操作を追加し、期限切れ・取消時は接続を閉じる。 */
     private bytecodeOperation<T>(operation: () => Promise<T>, check: () => void,
         generation: number, signal?: AbortSignal): Promise<T> {
-        const task = this.tail.catch(() => {}).then(async () => {
+        const task = this.control.enqueue(async () => {
             check();
             let timer: ReturnType<typeof setTimeout> | undefined;
             let abort: (() => void) | undefined;
@@ -664,7 +535,6 @@ export class BLEConnection {
                 }
             }
         });
-        this.tail = task;
         return task;
     }
 
@@ -831,7 +701,7 @@ export class BLEConnection {
             throw new Error("現在のESP32へPythonをBLE送信してから開始してください。");
         }
         this.debugger?.invalidateSnapshot();
-        await this.sendControl(BLEOpcode.VM_START, 0, BLE_COMMAND.allChannels, 0, current);
+        await this.sendControl(ControlOpcode.VM_START, 0, ControlCommand.allChannels, 0, current);
     }
 
     /** VMとその所有する機器を停止する。保持コードは残す。全体STOPは既存のstopServos()も使う。 */
@@ -844,7 +714,7 @@ export class BLEConnection {
         }
         const generation = this.generation;
         try {
-            await this.sendControl(BLEOpcode.VM_STOP);
+            await this.sendControl(ControlOpcode.VM_STOP);
         }
         catch (error) {
             if (generation === this.generation) {
@@ -872,7 +742,7 @@ export class BLEConnection {
         const payload = bytes.slice(0, offset);
         const characteristic = this.deviceInfo;
         const generation = this.generation;
-        const task = this.tail.catch(() => {}).then(async () => {
+        const task = this.control.enqueue(async () => {
             if (generation !== this.generation || characteristic !== this.deviceInfo || !characteristic ||
                 !this.device?.gatt?.connected || this.wifi?.connected) {
                 throw new Error("機器情報の送信には現在のESP32へのBLE接続が必要です。");
@@ -901,7 +771,6 @@ export class BLEConnection {
             this.sensors = sensors;
             this.actuators = actuators;
         });
-        this.tail = task;
         await task;
     }
 }

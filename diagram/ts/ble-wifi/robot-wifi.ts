@@ -1,4 +1,4 @@
-import { parseDeviceTelemetry } from "./device-telemetry";
+import type { ControlPacketKind, ControlTransport } from "./control-connection";
 
 /** Wi-Fi transport and authenticated BLE provisioning. No live credentials are serialized. */
 export interface RobotEndpoint {
@@ -127,7 +127,8 @@ export class BLEWifiSetup {
 }
 
 /** One authenticated control session. HTTP fallback supports secure-page local-network access. */
-export class RobotWifi {
+export class RobotWifi implements ControlTransport {
+    readonly kind = "wifi";
     private controller = new AbortController();
     private socket?: WebSocket;
     private cryptoKey?: CryptoKey;
@@ -141,8 +142,15 @@ export class RobotWifi {
     private closed = false;
     private latestImageController?: AbortController;
     endpoint?: RobotEndpoint;
-    onPacket: (data: DataView) => void = () => {};
+    private packetListeners = new Set<(data: DataView | undefined, kind?: ControlPacketKind) => void>();
     onLost: (message: string) => void = () => {};
+    /** 認証済みバイト列を共通層へ渡す。形式検証・ACK照合はcontrol-connection.tsが行う。 */
+    subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void {
+        this.packetListeners.add(listener);
+        return () => {
+            this.packetListeners.delete(listener);
+        };
+    }
     get connected(): boolean { return !this.closed && !!this.session; }
     private async mac(message: string): Promise<string> {
         if (!this.cryptoKey) throw new Error("接続キーがありません。");
@@ -243,12 +251,10 @@ export class RobotWifi {
     private receive(value: unknown): void {
         if (this.closed) return;
         const bytes = decodeHex(value);
-        const status = bytes.length === 12 && bytes[0] === 1;
         const data = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-        if (!status) {
-            parseDeviceTelemetry(data);
+        for (const listener of this.packetListeners) {
+            listener(data);
         }
-        this.onPacket(data);
     }
     private async poll(): Promise<void> {
         try {
@@ -297,6 +303,7 @@ export class RobotWifi {
                     body: "", credentials: "omit", redirect: "error", keepalive: true, signal: AbortSignal.timeout(1000) })
             ).catch(() => {});
         }
+        this.packetListeners.clear();
         this.closed = true; this.polling = false; this.latestImageController?.abort();
         this.controller.abort(); this.socket?.close(); this.socket = undefined; this.session = ""; this.cryptoKey = undefined;
     }
