@@ -11,6 +11,7 @@ import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeR
 import { parsePython } from "../python/parser.js";
 import { analyzePython } from "../python/semantic.js";
 import { generateBytecode } from "../python/bytecode.js";
+import { PythonDebugTransport, type DebugSnapshot } from "./debug-protocol";
 
 const DeviceInfoWriteTimeoutMs = 2500;
 
@@ -25,8 +26,10 @@ const DeviceInfoWriteTimeoutMs = 2500;
  * |---|---|---|---|
  * | Bytecode | f3641407 | Write with response | 10〜20 bytes |
  * | Bytecode Result | f3641408 | Read | 20 bytes |
+ * | Debug Control / Result / Event / Data | f3641409 / 140a / 140b / 140c | Write / Read / Read+Notify / Read | 最大20 bytes |
  *
  * Command・Status・Telemetry・DeviceInfoとは別の窓口。既定ATT MTU=23で扱える20バイト以内とし、Writeは必ずresponse付きにする。ただしGATTの受付だけではプログラムの受信完了とせず、各Writeの後に専用ResultをReadして、ESP32のloop()による受付結果を確認する。
+ * デバッグ通信の完全な形式・停止値・一覧確定の仕様はdebug-protocol.tsを参照する。
  */
 export const BLE_UUID = {
     service: "f3641400-00b0-4240-ba50-05ca45bf8abc",
@@ -38,6 +41,10 @@ export const BLE_UUID = {
     deviceInfo: "f3641406-00b0-4240-ba50-05ca45bf8abc",
     bytecode: "f3641407-00b0-4240-ba50-05ca45bf8abc",
     bytecodeResult: "f3641408-00b0-4240-ba50-05ca45bf8abc",
+    debugControl: "f3641409-00b0-4240-ba50-05ca45bf8abc",
+    debugResult: "f364140a-00b0-4240-ba50-05ca45bf8abc",
+    debugEvent: "f364140b-00b0-4240-ba50-05ca45bf8abc",
+    debugData: "f364140c-00b0-4240-ba50-05ca45bf8abc",
 } as const;
 
 // Structural types keep this browser-only module independent of the robot build.
@@ -131,6 +138,13 @@ export class BLEConnection {
     /** 現BLE接続で最後に保持完了した転送。同一オブジェクトの間だけ再送を省略できる。 */
     bytecodeReceipt?: BytecodeReceipt;
     private bytecodeTransferId = 0;
+    private debugger?: PythonDebugTransport;
+    private debuggerSending = false;
+    private debugRequestId = 0;
+    private debugListeners = new Set<(snapshot?: DebugSnapshot, error?: Error) => void>();
+    /** 最新の検証済み停止値。更新はデバッグ受信とStart/Stop/切断だけが行い、呼出元は参照する。 */
+    debugSnapshot?: DebugSnapshot;
+    debugError?: Error;
     private sensors   : FunctionBlock[] = [];
     private actuators : FunctionBlock[] = [];
 
@@ -212,6 +226,7 @@ export class BLEConnection {
     }
 
     async stopServos(): Promise<void> {
+        this.debugger?.invalidateSnapshot();
         this.resetServos();
         this.notify();
         if (this.state.phase !== "connected") return;
@@ -355,6 +370,8 @@ export class BLEConnection {
 
     private close(phase: BLEPhase, message = ""): void {
         this.closing = true;
+        this.resetDebugger();
+        this.debugRequestId = 0;
         this.bytecodeReceipt = undefined;
         this.generation++;
         this.wifiDialog?.close(); this.wifiDialog = undefined;
@@ -489,7 +506,7 @@ export class BLEConnection {
     }
 
     async openWifi(): Promise<void> {
-        if (this.bytecodeSending) {
+        if (this.bytecodeSending || this.debuggerSending) {
             return;
         }
         if (this.wifiDialog || ["selecting", "connecting"].includes(this.state.phase) || this.wifi?.connected) return;
@@ -499,6 +516,7 @@ export class BLEConnection {
         }
         const generation = this.generation;
         try {
+            this.resetDebugger();
             this.provisioning = true; clearInterval(this.heartbeat);
             await this.stopServos();
             await this.sendControl(BLEOpcode.STREAM, 0);
@@ -624,7 +642,7 @@ export class BLEConnection {
             let abort: (() => void) | undefined;
             try {
                 const timeout = new Promise<never>((_, reject) => {
-                    timer = setTimeout(() => reject(new Error("バイトコード転送の応答がありません。再接続してください。")),
+                    timer = setTimeout(() => reject(new Error("BLE通信の応答がありません。再接続してください。")),
                         bytecodeTransfer.timeoutMs);
                     abort = () => reject(signal?.reason ?? new DOMException("転送を取り消しました。", "AbortError"));
                     signal?.addEventListener("abort", abort, { once: true });
@@ -635,7 +653,7 @@ export class BLEConnection {
             }
             catch (error) {
                 if (generation === this.generation) {
-                    this.close("error", error instanceof Error ? error.message : "バイトコードを送信できませんでした。");
+                    this.close("error", error instanceof Error ? error.message : "BLE通信に失敗しました。");
                 }
                 throw error;
             }
@@ -671,8 +689,8 @@ export class BLEConnection {
      * 旧ファームウェアとの通常接続は維持する。バイトコードの専用Characteristicは送信時に取得し、未対応なら送信エラーにする。Wi-Fi経由の転送は実装していない。
      */
     async sendBytecode(bytes: Uint8Array, signal?: AbortSignal): Promise<BytecodeReceipt> {
-        if (this.bytecodeSending) {
-            throw new Error("バイトコードを送信中です。");
+        if (this.bytecodeSending || this.debuggerSending) {
+            throw new Error("バイトコードまたはブレークポイントを送信中です。");
         }
         checkBytecodeTransfer(bytes);
         const payload = bytes.slice();
@@ -687,6 +705,7 @@ export class BLEConnection {
             }
         };
         check();
+        this.resetDebugger();
         this.bytecodeReceipt = undefined;
         this.bytecodeSending = true;
         this.state = { ...this.state, message: "バイトコードを送信しています…" };
@@ -714,21 +733,110 @@ export class BLEConnection {
         }
     }
 
+    /** 停止値の購読。未取得・失効ではundefined、取得失敗ではerrorを渡す。図の保存には含めない。 */
+    subscribeDebugSnapshots(listener: (snapshot?: DebugSnapshot, error?: Error) => void): () => void {
+        this.debugListeners.add(listener);
+        listener(this.debugSnapshot, this.debugError);
+        return () => this.debugListeners.delete(listener);
+    }
+
+    private publishDebug(snapshot?: DebugSnapshot, error?: Error): void {
+        this.debugSnapshot = snapshot;
+        this.debugError = error;
+        for (const listener of this.debugListeners) {
+            listener(snapshot, error);
+        }
+    }
+
+    private resetDebugger(): void {
+        this.debugger?.dispose();
+        this.debugger = undefined;
+        this.publishDebug();
+    }
+
+    /**
+     * 最後に保持したコードへ命令PCの一覧を送る。行番号からPCへの変換とF9からの呼出しは後続実装。
+     * 完了後、同じ接続・同じ保持コードのPaused通知から停止値を自動取得し、購読者へ公開する。
+     * 通信・フラグ・停止値の共通仕様はdebug-protocol.ts。旧ファームウェアの通常接続には影響しない。
+     * ```typescript
+     * const receipt = await diagramBLE.sendBytecode(bytes, signal);
+     * const release = diagramBLE.subscribeDebugSnapshots((snapshot, error) => {
+     *     // snapshot?.globals / stack / pc / bp / spを後続の変数表示で使う。
+     * });
+     * await diagramBLE.sendBreakpoints(receipt, instructionPcs, signal);
+     * await diagramBLE.startBytecode(receipt);
+     * // 利用終了時はrelease()で購読を解除する。
+     * ```
+     */
+    async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal): Promise<void> {
+        if (this.bytecodeSending || this.debuggerSending) {
+            throw new Error("バイトコードまたはブレークポイントを送信中です。");
+        }
+        const generation = this.generation;
+        const service = this.service;
+        const check = () => {
+            if (generation !== this.generation || !service || service !== this.service
+                || this.bytecodeReceipt !== receipt || this.state.phase !== "connected" || !this.device?.gatt?.connected
+                || this.state.transport === "wifi" || this.provisioning) {
+                throw new Error("現在のESP32へ送信済みのコードだけをデバッグできます。");
+            }
+        };
+        check();
+        signal?.throwIfAborted();
+        const list = [...pcs];
+        this.debuggerSending = true;
+        try {
+            if (!this.debugger) {
+                // コード置換・Wi-Fi準備で受信を解除しても、進行中のGATT完了を通信障害にしない。
+                // receipt/所有者の照合は通信の前後にPythonDebugTransport.check()が行う。
+                const checkGatt = () => {
+                    if (generation !== this.generation || service !== this.service || !this.device?.gatt?.connected) {
+                        throw new Error("デバッグ用のBLE接続が切れました。");
+                    }
+                };
+                const run = <T>(operation: () => Promise<T>) => this.bytecodeOperation(operation, checkGatt, generation);
+                const control = await run(() => service!.getCharacteristic(BLE_UUID.debugControl));
+                const result = await run(() => service!.getCharacteristic(BLE_UUID.debugResult));
+                const event = await run(() => service!.getCharacteristic(BLE_UUID.debugEvent));
+                const data = await run(() => service!.getCharacteristic(BLE_UUID.debugData));
+                // プログラム再送・通信オブジェクト再作成でも、同じ接続内の要求番号を再利用しない。
+                const nextRequestId = () => {
+                    if (this.debugRequestId === 65535) {
+                        throw new Error("デバッグ要求番号の上限です。BLEを再接続してください。");
+                    }
+                    return ++this.debugRequestId;
+                };
+                const client = new PythonDebugTransport(control, result, event, data, run, check, nextRequestId, (snapshot, error) => {
+                    if (this.debugger === client && generation === this.generation) {
+                        this.publishDebug(snapshot, error);
+                    }
+                });
+                this.debugger = client;
+            }
+            await this.debugger.sendBreakpoints(receipt, list, signal);
+        }
+        finally {
+            this.debuggerSending = false;
+        }
+    }
+
     /** 保持済みコードを先頭から実行する。通信形式とPythonBlockとの分担はpython-block.tsを参照。
      * 同じ接続・最後の転送だけを許し、キュー待機中の上書き・取消も書込み直前に検査する。
      * ACKはVM初期化の成否までを表し、HALT・実行時エラーはシリアルで確認する。
      */
     async startBytecode(receipt: BytecodeReceipt, isCurrent = () => true): Promise<void> {
-        const current = () => isCurrent() && this.bytecodeReceipt === receipt && !this.bytecodeSending
+        const current = () => isCurrent() && this.bytecodeReceipt === receipt && !this.bytecodeSending && !this.debuggerSending
             && !this.provisioning && this.state.phase === "connected" && this.state.transport !== "wifi";
         if (!current()) {
             throw new Error("現在のESP32へPythonをBLE送信してから開始してください。");
         }
+        this.debugger?.invalidateSnapshot();
         await this.sendControl(BLEOpcode.VM_START, 0, BLE_COMMAND.allChannels, 0, current);
     }
 
     /** VMとその所有する機器を停止する。保持コードは残す。全体STOPは既存のstopServos()も使う。 */
     async stopBytecode(): Promise<void> {
+        this.debugger?.invalidateSnapshot();
         this.resetServos();
         this.notify();
         if (this.state.phase !== "connected" || this.state.transport === "wifi") {

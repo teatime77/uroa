@@ -2,6 +2,14 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## PythonデバッガのBLE通信（2026-11-05）
+
+通信・停止値の共通仕様は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)、送信API・購読例は[ble.tsのsendBreakpoints()](../diagram/ts/ble-wifi/ble.ts)を参照する。F9の行番号から命令PCへの変換、変数・Call Stackの画面表示、再開・ステップ操作は後続実装。現段階の通信APIには命令PCを渡す。
+
+uroaルートで`npm.cmd run verify`を実行し、型・公開ビルド・配信成果物を静的確認する。ESP32は[同リポジトリーの記録](../../esp32/docs/build-and-test.md)に従ってesp32devだけをビルドする。ユーザー指定によりテストは作成・実行しない。実BLE、旧ファームウェア接続、タイムアウト・切断・世代変更、最大件数／Snapshotの通信時間・空きRAM、VM停止・機器出力の実機動作、Uploadは未確認。
+
+`npm.cmd run verify`とESP32のesp32devビルドは成功した。既存gameのimport併用警告2件は継続。両リポジトリーの`git -c core.whitespace=cr-at-eol diff --check`と、更新したREADME・設計・検証記録のローカルリンク確認も成功した。
+
 ## Pythonエディタの行ブレークポイント表示（2026-11-05）
 
 操作・描画・解除の仕様は[highlight-editor.tsのtoggleBreakpoint()](../diagram/ts/python/highlight-editor.ts)、読込との連携は[python-block.ts](../diagram/ts/python/python-block.ts)を参照する。静的確認はuroaルートの`npm.cmd run verify`で行う。ユーザー指定によりテストは作成・実行しない。ブラウザーでのF9・IME・選択範囲・スクロール・編集による解除は未確認。ESP32側の変更・ビルドは行わない。

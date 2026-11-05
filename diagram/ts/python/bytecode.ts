@@ -157,7 +157,11 @@ import { valueSlotTypes } from "./semantic.js";
 import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 import { collectScopeGlobals } from "./global-scope";
 
-/** version=1は0x18まで、version=2は0x19まで、version=3は0x1Dまでの命令を使う。 */
+/**
+ * version=1は0x18まで、version=2は0x19まで、version=3は0x1Dまでの命令を使う。
+ * 生成・転送するopcodeのbit7は0。ESP32のデバッガが受信検証後にだけbit7をブレークポイントへ使う。
+ * 命令番号・長さは変えず、元イメージとの照合はフラグ設定前のCRCで行う。通信はble-wifi/debug-protocol.tsを参照。
+ */
 export enum BytecodeOpcode {
     LOAD_L = 0x01,
     LOAD_G = 0x02,
