@@ -36,3 +36,9 @@ class Display:
 
 # パソコンのシリアルモニタに出力する。
 def print(text: str) -> None: ...
+
+# importなしで使うVMの待機。秒単位で整数・小数を受け付ける。
+# sleep(1.0)は約1秒待ち、0秒もESP32のloop()へ一度制御を返す。
+# 待機中はPythonだけを中断し、時間経過後は続きから再開する。
+# 範囲・丸め・取消とVMとの分担はESP32のdevice_native.cppのfunction_sleepを参照する。
+def sleep(seconds: float) -> None: ...

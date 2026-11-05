@@ -2,6 +2,14 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## Pythonのsleep（2026-11-05）
+
+API宣言は[device.pyi](../diagram/python/device.pyi)、待機・再開・取消の仕様は[DeviceNative::function_sleep](../../esp32/app/diagram-control/src/device_native.cpp)を参照する。uroaルートで`python diagram/python/generate-device-api.py`を実行してJSONとC++の3成果物を再生成し、`--check`で生成物の一致を静的確認する。Windowsでは既存の`C:\Users\hamad\.platformio\penv\Scripts\python.exe`を使用する。配信成果物は`npm.cmd run verify`で確認する。
+
+ESP32の確認手順は[ESP32の検証記録](../../esp32/docs/build-and-test.md)を参照する。従来のユーザー指定に従い、テストは作成・実行せず、ファームウェアはesp32devだけをビルドする。ブラウザー・実BLE・実機の待機／再開・Uploadは未確認。
+
+3成果物の`--check`、`npm.cmd run verify`、両リポジトリーのCRLFを許可した差分確認は成功した。公開成果物のdevice-api.jsonと生成元のSHA-256も一致した。既存gameのimport併用警告2件は継続。
+
 ## PythonBlockのチェックと診断表示（2026-11-05）
 
 チェックボタン・Startとの連携と表示の契約は[python-block.tsの仕様コメント](../diagram/ts/python/python-block.ts)、描画・マウス／文字カーソルへの追従は[highlight-editor.ts](../diagram/ts/python/highlight-editor.ts)、表示範囲への変換は[editor-diagnostics.ts](../diagram/ts/python/editor-diagnostics.ts)を参照する。静的確認はuroaルートの`npm.cmd run verify`で行う。ユーザー指定によりテストは作成・実行しない。ブラウザーの波線・tooltip・入力操作・チェック結果・実BLE・実機実行は未確認。ESP32側の変更・ビルドは行わない。

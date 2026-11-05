@@ -462,7 +462,23 @@
             "returnType": {
                 "kind": "none"
             }
+        },
+        {
+            "id": 2,
+            "nativeId": 20,
+            "name": "sleep",
+            "parameters": [
+                {
+                    "name": "seconds",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "none"
+            }
         }
     ],
-    "abiHash": "d0cc57548f6ed8af218eaee2cb2a54141d90a79d9a1420ca9b03141a547b54bc"
+    "abiHash": "1c685b6e136be403723b0fa63770d708981da876889f9915b2328604e1f3dd67"
 }
