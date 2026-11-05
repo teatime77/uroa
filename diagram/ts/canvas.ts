@@ -419,12 +419,15 @@ export class Editor {
             if (idx >= 0) this.tools.splice(3 + offset, 0, this.tools.splice(idx, 1)[0]);
         }
 
-        let x = 10;
-        let y = 60;
-        for(const tool of this.tools){
+        // 左端のツールは既存の順序で左から右、上から下へ2列に配置する。
+        // 32×32のアイコン間に縦横2pxの間隔を置き、描画とヒット判定で同じ座標を使う。
+        const columnCount = 2;
+        for (const [index, tool] of this.tools.entries()) {
+            const column = index % columnCount;
+            const row = Math.floor(index / columnCount);
+            const x = 10 + column * (tool.boxSize.x + 2);
+            const y = 60 + row * (tool.boxSize.y + 2);
             tool.setPosition(new Vec2(x, y));
-
-            y += tool.boxSize!.y + 2;
         }
     }
 
