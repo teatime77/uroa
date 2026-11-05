@@ -21,12 +21,14 @@
  * この解析は構文木の生成のみを行い、f文字列専用のtoStringによる再生成は未対応。
  * 構文解析後の名前解決・型推論とimportなしのdevice API利用はsemantic.tsが担当する。
  * parsePythonは同期APIのまま保ち、利用側がawait analyzePython(module)を続けて呼ぶ。
+ * global文はGlobalStatementに識別子ごとの元位置を保持する。宣言の適用範囲・順序検査は
+ * global-scope.tsをsemantic.tsとbytecode.tsから使用する。global文自体に実行時命令はない。
  */
 import { fetchText, msg } from "@i18n";
 import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
-    ForStatement, IfStatement, Module, RefVar, ReturnStatement, Statement,
+    ForStatement, GlobalStatement, IfStatement, Module, RefVar, ReturnStatement, Statement,
     Str, Term, Variable, WhileStatement, indexOpr, isAssignmentToken
 } from "./syntax.js";
 import { generateAssembly, generateBytecode } from "./bytecode.js";
@@ -158,6 +160,14 @@ export class Parser {
 
     private readSimpleStatement(): Statement {
         const position = this.token.charPos;
+        if (this.match("global")) {
+            const names: Variable[] = [];
+            do {
+                const namePosition = this.token.charPos;
+                names.push(this.at(new Variable(this.readName()), namePosition));
+            } while (this.match(","));
+            return this.at(new GlobalStatement(names), position);
+        }
         if (this.match("return")) {
             if (this.functionDepth === 0) {
                 this.fail("returnは関数内でのみ使えます");

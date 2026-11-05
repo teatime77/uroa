@@ -306,6 +306,24 @@ export class CallStatement extends Statement {
     }
 }
 
+/** global文の名前と元位置を保持する。束縛・宣言順の共通契約はglobal-scope.tsを参照する。 */
+export class GlobalStatement extends Statement {
+    constructor(public names: Variable[]) {
+        super();
+    }
+
+    get children(): AbstractSyntaxNode[] {
+        return this.names;
+    }
+
+    toString(): string {
+        if (this._str === undefined) {
+            this._str = `global ${this.names.map(name => name.toString()).join(", ")}`;
+        }
+        return this._str;
+    }
+}
+
 export class ReturnStatement extends Statement {
     constructor(public value: Term | undefined) {
         super();

@@ -150,11 +150,12 @@
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
-    IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
+    GlobalStatement, IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
 import { valueSlotTypes } from "./semantic.js";
 import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
+import { collectScopeGlobals } from "./global-scope";
 
 /** version=1は0x18まで、version=2は0x19まで、version=3は0x1Dまでの命令を使う。 */
 export enum BytecodeOpcode {
@@ -243,6 +244,7 @@ interface Scope {
     fn: Fn | undefined;
     block: BlockStatement;
     variables: Map<string, number>;
+    globalNames: ReadonlySet<string>;
 }
 
 /** 関数名がundefinedならモジュール本体。ラベルのアドレス解決に使う。 */
@@ -326,7 +328,7 @@ class BytecodeGenerator {
             const first = analysis.diagnostics[0];
             throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
         }
-        this.globalScope = { fn: undefined, block: module.block, variables: new Map() };
+        this.globalScope = { fn: undefined, block: module.block, variables: new Map(), globalNames: new Set() };
         this.scope = this.globalScope;
         this.sourceLines = module.source?.split(/\r\n|\r|\n/) ?? [];
         if (analysis !== undefined) {
@@ -369,7 +371,7 @@ class BytecodeGenerator {
                 if (this.functions.has(statement.name)) {
                     this.fail(statement, `関数が重複しています: ${statement.name}`);
                 }
-                const scope: Scope = { fn: statement, block: statement.block, variables: new Map() };
+                const scope: Scope = { fn: statement, block: statement.block, variables: new Map(), globalNames: new Set() };
                 for (const argument of statement.args) {
                     if (scope.variables.has(argument.name)) {
                         this.fail(argument, `仮引数が重複しています: ${argument.name}`);
@@ -379,7 +381,9 @@ class BytecodeGenerator {
                 this.functions.set(statement.name, scope);
             }
             else {
-                executable = true;
+                if (!(statement instanceof GlobalStatement)) {
+                    executable = true;
+                }
                 statements.push(statement);
             }
         }
@@ -438,7 +442,10 @@ class BytecodeGenerator {
      * - モジュール直下の代入先は大域変数にする。直下のif・whileの内部も走査するが、関数本体には入らない。
      * - 関数では仮引数を先に登録し、続いて本体全体の代入先を初出順に登録する。if・whileの内部も含め、同じ名前は1領域にまとめる。内側の関数本体は混ぜない。
      * - Pythonではブロックごとの変数領域を作らない。条件付きの代入やreturnより後にある代入も事前走査に含め、呼出し時に必要な全領域を一度に確保する。
-     * - 関数内の名前参照は局所変数を優先し、それ以外は大域変数を参照する。関数内で一度でも代入する名前は、その代入より前の参照も局所変数となる。`global`／`nonlocal`は今回扱わない。
+     * - global-scope.tsが収集したglobal名は大域変数へ読み書きする。global文は命令を生成しない。
+     * - global未指定の関数内の代入先は局所変数となる。nonlocalは未対応。
+     * - 意味解析指定時はsemantic.tsが決めた束縛・スロットを使用する。未指定時も同じ宣言検査を行い、
+     *   関数内でglobal宣言した代入先を大域領域へ集める。既存のLOAD_G/STORE_Gを使い、形式は変えない。
      *
      * 仮引数と、それ以外の局所変数の個数を分けて関数情報へ記録する。未代入の領域には未初期化の印を置き、LOADでエラーにするVM契約が必要。0で初期化するとPythonの未束縛変数の挙動と変わる。
      */
@@ -451,14 +458,14 @@ class BytecodeGenerator {
                     if (assignment.args.length !== 2 || !(target instanceof RefVar)) {
                         this.fail(assignment, "代入先は単一の変数に限ります");
                     }
-                    this.addVariable(scope, target.name, target);
+                    this.addVariable(scope.globalNames.has(target.name) ? this.globalScope : scope, target.name, target);
                 }
             }
         });
     }
 
     private variableKind(reference: RefVar, scope: Scope): "L" | "G" {
-        if (scope.fn !== undefined && scope.variables.has(reference.name)) {
+        if (scope.fn !== undefined && !scope.globalNames.has(reference.name) && scope.variables.has(reference.name)) {
             return "L";
         }
         if (this.globalScope.variables.has(reference.name)) {
@@ -641,6 +648,9 @@ class BytecodeGenerator {
     private validateScope(scope: Scope): void {
         // 全関数・全変数を集めた後で、相互再帰や前方の大域参照も解決する。
         this.walkStatements(scope.block, (statement, loopDepth) => {
+            if (statement instanceof GlobalStatement) {
+                return;
+            }
             if (statement instanceof CallStatement) {
                 const assignment = this.assignment(statement);
                 if (assignment === undefined) {
@@ -999,6 +1009,9 @@ class BytecodeGenerator {
      * | `HALT` | モジュール本体の終了。後ろに置いた関数本体への流入を防ぐ |
      */
     private statement(statement: Statement): void {
+        if (statement instanceof GlobalStatement) {
+            return;
+        }
         if (this.analysis !== undefined) {
             const allocation = this.allocations.get(this.scope)!;
             allocation.cursor = allocation.variablesEnd;
@@ -1199,7 +1212,9 @@ class BytecodeGenerator {
         const globalScope = this.scope;
         const scopes = [globalScope, ...this.functions.values()];
         for (const scope of scopes) {
-            const variables = scope.fn === undefined ? this.analysis!.globals : this.analysis!.functions.get(scope.fn.name)!.variables;
+            const fn = scope.fn === undefined ? undefined : this.analysis!.functions.get(scope.fn.name)!;
+            const variables = fn === undefined ? this.analysis!.globals : fn.variables;
+            scope.globalNames = fn?.globalNames ?? new Set();
             scope.variables.clear();
             let end = scope.fn === undefined ? 0 : 2;
             for (const variable of variables.values()) {
@@ -1254,6 +1269,8 @@ class BytecodeGenerator {
         const globalScope = this.scope;
         const scopes = [globalScope, ...this.functions.values()];
         for (const scope of scopes) {
+            scope.globalNames = collectScopeGlobals(scope.fn === undefined ? this.module.block : scope.block,
+                scope.fn?.args ?? [], (node, message) => this.fail(node, message));
             this.collectVariables(scope);
         }
         for (const scope of scopes) {

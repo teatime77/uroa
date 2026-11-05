@@ -22,6 +22,10 @@
  * 仮引数による隠蔽は拒否する。関数定義は既存生成器と同じくモジュール先頭にまとめる。
  * 代入先を先に収集し、関数では仮引数・局所変数、次に大域変数の順で名前を解決する。
  * if/whileは変数スコープを作らず、属性名や演算子を変数として登録しない。
+ * global-scope.tsで関数全体のglobal宣言と宣言順を先に確認する。global名への代入・複合代入は
+ * this.globalsへ束縛し、同じ名前の局所領域を作らない。宣言だけでは大域値を初期化しない。
+ * 型推論は全関数で同じ大域変数を共有し、代入前の実行時LOADは既存VMの未初期化検査を使う。
+ * 引数との衝突・宣言前の使用は意味診断に蓄積する。詳細な共通契約はglobal-scope.tsを参照。
  *
  * 数値・None・APIオブジェクトの型を反復して推論する。ユーザー関数は呼出し箇所全体で
  * 単一の引数型・戻り値型を持ち、再帰・相互再帰も収束するまで反復する。変数も単一型で、
@@ -55,9 +59,10 @@
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
-    IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
+    GlobalStatement, IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
+import { collectScopeGlobals } from "./global-scope";
 
 /** errorは意味解析の回復用で、機器APIのJSON・バイトコードには出力しない。 */
 export type PythonType = { kind: "int" | "float" | "str" | "none" | "error" }
@@ -111,6 +116,8 @@ export interface PythonFunction {
     node: Fn;
     parameters: PythonVariable[];
     variables: Map<string, PythonVariable>;
+    /** 関数全体に適用するglobal宣言。これらの変数はglobalsにだけ格納する。 */
+    globalNames: ReadonlySet<string>;
     type: PythonType | undefined;
 }
 
@@ -483,7 +490,7 @@ class PythonResolver {
             else if (statement instanceof CallStatement && statement.app instanceof App && statement.app.isAssignmentApp()) {
                 const target = statement.app.args[0];
                 if (target instanceof RefVar) {
-                    this.addVariable(target.name, target, scope);
+                    this.addVariable(target.name, target, scope?.globalNames.has(target.name) ? undefined : scope);
                 }
             }
             else if (statement instanceof IfStatement) {
@@ -503,7 +510,8 @@ class PythonResolver {
 
     private binding(ref: RefVar): PythonBinding {
         let result: PythonBinding;
-        const variable = this.scope?.variables.get(ref.name) ?? this.globals.get(ref.name);
+        const variable = this.scope?.globalNames.has(ref.name) ? this.globals.get(ref.name)
+            : this.scope?.variables.get(ref.name) ?? this.globals.get(ref.name);
         const owner = this.classes.get(ref.name);
         const native = this.nativeFunctions.get(ref.name);
         const fn = this.functions.get(ref.name);
@@ -866,7 +874,7 @@ class PythonResolver {
     }
 
     private statement(statement: Statement): void {
-        if (statement instanceof Fn) {
+        if (statement instanceof Fn || statement instanceof GlobalStatement) {
             return;
         }
         if (statement instanceof CallStatement) {
@@ -936,6 +944,9 @@ class PythonResolver {
     resolve(): PythonAnalysis {
         let executable = false;
         for (const statement of this.module.block.statements) {
+            if (statement instanceof GlobalStatement) {
+                continue;
+            }
             if (!(statement instanceof Fn)) {
                 executable = true;
                 continue;
@@ -945,8 +956,14 @@ class PythonResolver {
                 this.invalidDeclarations.add(statement);
                 continue;
             }
-            this.functions.set(statement.name, { node: statement, parameters: [], variables: new Map(), type: undefined });
+            const globalNames = collectScopeGlobals(statement.block, statement.args, (node, message) => {
+                this.fail(node, message);
+            });
+            this.functions.set(statement.name, { node: statement, parameters: [], variables: new Map(), globalNames, type: undefined });
         }
+        collectScopeGlobals(this.module.block, [], (node, message) => {
+            this.fail(node, message);
+        });
         this.collect(this.module.block);
         for (const fn of this.functions.values()) {
             for (const parameter of fn.node.args) {
