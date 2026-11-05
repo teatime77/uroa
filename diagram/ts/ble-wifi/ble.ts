@@ -72,6 +72,8 @@ enum BLEOpcode {
     DISABLE = 7,
     ARM_SPEED = 8,
     SET_SPEED = 9,
+    VM_START = 10,
+    VM_STOP = 11,
 }
 
 /** version 1のCommandパケットのサイズと各フィールドの位置。 */
@@ -126,6 +128,8 @@ export class BLEConnection {
     private closing = false;
     /** 更新はsendBytecode()だけが行う。別転送とWi-Fi設定の開始を抑止する。 */
     bytecodeSending = false;
+    /** 現BLE接続で最後に保持完了した転送。同一オブジェクトの間だけ再送を省略できる。 */
+    bytecodeReceipt?: BytecodeReceipt;
     private bytecodeTransferId = 0;
     private sensors   : FunctionBlock[] = [];
     private actuators : FunctionBlock[] = [];
@@ -351,6 +355,7 @@ export class BLEConnection {
 
     private close(phase: BLEPhase, message = ""): void {
         this.closing = true;
+        this.bytecodeReceipt = undefined;
         this.generation++;
         this.wifiDialog?.close(); this.wifiDialog = undefined;
         this.provisioning = false;
@@ -564,7 +569,7 @@ export class BLEConnection {
         const generation = this.generation;
         const task = this.tail.catch(() => {}).then(async () => {
             if (generation !== this.generation || (!this.wifi?.connected && (!this.tx || !this.device?.gatt?.connected))) throw new Error("機器の接続が切れました。");
-            if (!isCurrent()) throw new Error("サーボ操作を取り消しました。");
+            if (!isCurrent()) throw new Error("機器操作を取り消しました。");
             const sequence = this.sequence = this.sequence % BLE_COMMAND.maxSequence + 1;
             const bytes = new Uint8Array(BLE_COMMAND.byteLength);
             const packet = new DataView(bytes.buffer);
@@ -603,7 +608,7 @@ export class BLEConnection {
                 throw error;
             }
             if (operation) console.log("BLE servo ACK", details);
-            if (generation !== this.generation || !isCurrent()) throw new Error("サーボ操作を取り消しました。");
+            if (generation !== this.generation || !isCurrent()) throw new Error("機器操作を取り消しました。");
             accepted();
         });
         this.tail = task;
@@ -682,6 +687,7 @@ export class BLEConnection {
             }
         };
         check();
+        this.bytecodeReceipt = undefined;
         this.bytecodeSending = true;
         this.state = { ...this.state, message: "バイトコードを送信しています…" };
         this.notify();
@@ -692,6 +698,7 @@ export class BLEConnection {
             this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
             const receipt = await uploadBytecode(payload, this.bytecodeTransferId, write, result, run, check);
             check();
+            this.bytecodeReceipt = receipt;
             this.state = { ...this.state, message: `${receipt.byteLength}バイトをESP32で受信しました。` };
             return receipt;
         }
@@ -704,6 +711,38 @@ export class BLEConnection {
         finally {
             this.bytecodeSending = false;
             this.notify();
+        }
+    }
+
+    /** 保持済みコードを先頭から実行する。通信形式とPythonBlockとの分担はpython-block.tsを参照。
+     * 同じ接続・最後の転送だけを許し、キュー待機中の上書き・取消も書込み直前に検査する。
+     * ACKはVM初期化の成否までを表し、HALT・実行時エラーはシリアルで確認する。
+     */
+    async startBytecode(receipt: BytecodeReceipt, isCurrent = () => true): Promise<void> {
+        const current = () => isCurrent() && this.bytecodeReceipt === receipt && !this.bytecodeSending
+            && !this.provisioning && this.state.phase === "connected" && this.state.transport !== "wifi";
+        if (!current()) {
+            throw new Error("現在のESP32へPythonをBLE送信してから開始してください。");
+        }
+        await this.sendControl(BLEOpcode.VM_START, 0, BLE_COMMAND.allChannels, 0, current);
+    }
+
+    /** VMとその所有する機器を停止する。保持コードは残す。全体STOPは既存のstopServos()も使う。 */
+    async stopBytecode(): Promise<void> {
+        this.resetServos();
+        this.notify();
+        if (this.state.phase !== "connected" || this.state.transport === "wifi") {
+            return;
+        }
+        const generation = this.generation;
+        try {
+            await this.sendControl(BLEOpcode.VM_STOP);
+        }
+        catch (error) {
+            if (generation === this.generation) {
+                this.close("error", "VMの停止を確認できません。再接続してください。");
+            }
+            throw error;
         }
     }
 
@@ -808,7 +847,7 @@ export class BLEConnectionBlock extends FunctionBlock {
      *
      * ESP32へ対応ファームウェアを書き込み、diagramのBLE接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析、semantic.tsによるdevice-api.jsonの読込み・名前解決・型推論、その結果を使うversion=3のバイナリ生成、BLE転送を行う。意味解析の仕様はsemantic.ts先頭を参照する。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。a.pyは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
      *
-     * バイナリ化とBLE送受信まで実装し、構造体・ネイティブ呼出し・f文字列を含むversion=3をESP32で形式検証してRAMへ保持する。受信の共通仕様とVM・ABI照合の境界はbytecode-transfer.ts先頭を参照する。現行VMはversion=1のみ対応し、version=2・3の開始は形式エラーになる。新形式のVM実行と専用Pythonブロックの画面への組込みは後続の範囲とする。
+     * version=3をESP32へ転送して保持完了を待ち、VM_STARTを明示的に送る。受信の共通仕様とVM・ABI照合の境界はbytecode-transfer.ts先頭を参照する。PythonBlockとの開始・停止の契約はpython/python-block.tsを参照する。
      */
     private async sendPythonFile(): Promise<void> {
         if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending) {
@@ -827,7 +866,8 @@ export class BLEConnectionBlock extends FunctionBlock {
             controller.signal.throwIfAborted();
             const module = parsePython(source);
             const analysis = await analyzePython(module, controller.signal);
-            await diagramBLE.sendBytecode(generateBytecode(module, analysis), controller.signal);
+            const receipt = await diagramBLE.sendBytecode(generateBytecode(module, analysis), controller.signal);
+            await diagramBLE.startBytecode(receipt, () => !controller.signal.aborted && !this.removed);
         }
         catch (error) {
             if (!controller.signal.aborted && !this.removed) {

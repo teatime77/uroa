@@ -16,6 +16,7 @@ import { SpeechRecognitionBlock } from "./ai/speech-recognition";
 import { ObjectDetectionBlock } from "./ai/object-detection";
 import { ImageCaptionBlock } from "./ai/image-caption";
 import { PIDBlock } from "./control/pid";
+import { PythonBlock } from "./python/python-block";
 export { Variable, Field, Struct, DataType } from "./data_type";
 
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
@@ -31,7 +32,8 @@ export function stopDiagram(): void {
 const listeners = new AbortController();
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
-export const BlockClassCount = 26;
+// 既存の型番号を維持し、PythonBlockは末尾へ追加する。
+export const BlockClassCount = 27;
 
 export function makeBlock(idx : number) : Block {
     switch(idx){
@@ -62,6 +64,8 @@ export function makeBlock(idx : number) : Block {
     case 24: return new ImageCaptionBlock({});
         case 25:
             return new PIDBlock({});
+        case 26:
+            return new PythonBlock({});
     default: throw new MyError();
     }
 }
@@ -95,6 +99,8 @@ export function geBlockName(idx : number) : string {
     case 24: return "ImageCaptionBlock";
         case 25:
             return "PIDBlock";
+        case 26:
+            return "PythonBlock";
     default: throw new MyError();
     }
 }

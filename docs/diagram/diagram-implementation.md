@@ -25,7 +25,7 @@
 
 `control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
 
-`python/`はESP32向けPython VMの準備用ソースを置く。共通`Token`を返す字句解析、Python用構文木を作る構文解析、構文木の`toString()`によるPythonソース生成を持つ。`bytecode.ts`の`generateAssembly()`は構文木から代入・分岐・while・関数呼出し等のアセンブリを生成し、`generateBytecode()`は変数位置・命令アドレスを数値化したUint8Arrayを生成する。API・対応範囲は[Python字句・構文解析](python/parser.md)と[バイトコード仕様](python/bytecode.md)を参照する。BLE接続ブロックの「a.pyを送信」と`diagramBLE.sendBytecode()`が[分割BLE転送](../../diagram/ts/ble-wifi/bytecode-transfer.ts)を行い、ESP32が検証後にRAMへ保持する。ESP32のVMが正常受信後に実行する。専用Pythonブロックは未実装。
+`python/`はPythonの字句・構文・意味解析、アセンブリ・バイトコード生成と、編集・実行用のPythonBlockを置く。PythonBlockのUI・保存・取消・BLE転送とVM開始・停止の分担は[python-block.tsの仕様コメント](../../diagram/ts/python/python-block.ts)を参照する。解析と生成のAPI・対応範囲は各ソースの仕様コメント、転送は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、ESP32の実行制御は[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を参照する。
 
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 
@@ -89,7 +89,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 
 ## 4. 現在のブロックと実装範囲
 
-ツールボックスは現在26種類。以下はソースの実装説明で、実機で動いたという保証ではない。
+ツールボックスは現在27種類。以下はソースの実装説明で、実機で動いたという保証ではない。
 
 | ブロック | 入出力・動作 | 主な制約 |
 |---|---|---|
@@ -105,6 +105,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
 | SpeechRecognitionBlock | 入力なし、TextPort出力。Startで単発の発話とセッション終了を待つ | ja-JPが既定。Web Speech API／webkit接頭辞を機能検出。30秒タイムアウト、権限・無音・空結果・通信失敗で後続を止める。実音声・Androidは別途確認 |
 | TTSBlock／SleepBlock | 文字列の読み上げ／数値秒の取消可能な待機 | ActionBlock。runの入力は未取得値を許す読み取りではない |
+| PythonBlock | Pythonの編集・BLE転送・VM開始／停止 | ActionBlock。UI・保存・実行の待機範囲は[ソースの仕様コメント](../../diagram/ts/python/python-block.ts)を参照 |
 | IfBlock／InfiniteLoop | 条件値1で内側を実行／内側を繰り返す | NestBlock。IfのconditionPortは型未指定Portで、isTrueは値1を判定する |
 | PlayMovieBlock／PlayGameBlock／PlayWebGPUBlock | 子アプリを実行してdiagramへ戻る | game・webgpuはTextPortで対象を指定。共通入口の停止接続も確認する |
 | CameraBlock | 「端末のカメラ／XIAO」の選択、端末カメラの開始・停止、画像表示 | 既定はXIAO。端末は明示操作・カメラ権限とHTTPS／localhostが必要。画像のポート値伝播は未実装。物体検出はObjectDetectionBlockが画像を参照 |

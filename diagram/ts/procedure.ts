@@ -478,7 +478,18 @@ export class PlayWebGPUBlock extends ActionBlock {
     }
 }
 
+/** 外部ActionBlockはここへ登録し、procedure.tsから派生モジュールへの循環importを避ける。 */
+const actionBlockFactories = new Map<string, () => ActionBlock>();
+
+export function registerActionBlock(typeName: string, factory: () => ActionBlock): void {
+    actionBlockFactories.set(typeName, factory);
+}
+
 export function makeActionBlockByTypeName(typeName : string) : ActionBlock | undefined {
+    const factory = actionBlockFactories.get(typeName);
+    if (factory !== undefined) {
+        return factory();
+    }
     switch(typeName){
 
     case IfBlock.name:                       return new IfBlock({});

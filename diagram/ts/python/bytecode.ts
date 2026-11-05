@@ -136,11 +136,12 @@
  * 既存の0x01〜0x18の命令番号・長さ、関数表の8バイト形式は維持する。
  * 命令PCは命令列先頭を0とし、文字列表・データの長さを分岐先・CALL先へ加算しない。
  *
- * 関係するble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppはversion=1・2の
- * BLE転送・検証・RAM保持に対応する。bytecode_vm.cppのversion=2実行は後続の範囲。
- * 受信完了のACKはVMの開始・正常終了を表さず、現行VMはversion=2を形式エラーにする。
+ * ble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppはversion=1・2・3の
+ * BLE転送・検証・RAM保持、bytecode_vm.cppは各版の実行に対応する。
+ * 受信完了のACKはVMの開始・正常終了を表さない。PythonBlockとBLE接続ブロックは
+ * 保持完了後にVM_STARTを送る。開始・停止の共通契約はpython-block.tsを参照する。
  * f文字列（関数名f"）・@formatは意味解析指定時にversion=3で生成する。
- * ESP32での実行は後続の範囲とする。
+ * 実BLE・実機の実行確認はビルドと区別する。
  *
  * ### 実装時の確認方針（当時の記録）
  *

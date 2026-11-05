@@ -2,6 +2,14 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## PythonBlock（2026-11-05）
+
+編集・実行用ActionBlockを追加した。UI・保存・転送済みコードの再利用・取消とVM指令の契約は[python-block.tsの仕様コメント](../diagram/ts/python/python-block.ts)を参照する。ESP32側の開始・停止は[main.cpp](../../esp32/app/diagram-control/src/main.cpp)、ビルド手順は[ESP32の検証記録](../../esp32/docs/build-and-test.md)を参照する。
+
+uroaルートで`npm.cmd run verify`を実行し、TypeScript・公開ビルド・配信成果物の静的確認を行う。従来のユーザー指定に従い、模擬・単体・ブラウザーテストは作成・実行しない。ブラウザーの編集操作、実BLE、UploadとVMの実機実行は未確認。
+
+最終ソースで`npm.cmd run verify`は成功した。既存gameの動的／静的import併用の警告2件は継続。SVGのXML構文と公開成果物への同一内容のコピーを確認した。両リポジトリーの差分は既存CRLFを許可した`git -c core.whitespace=cr-at-eol diff --check`で確認した。
+
 ## Python機器スタブ生成・ESP32接続（2026-11-05）
 
 uroaルートで`python diagram/python/generate-device-api.py`を実行し、JSONと、別リポジトリーesp32の`device_api.generated.h/.cpp`を同時に生成する。生成後の一致確認は`--check`、JSONだけを生成する場合は`--json-only`。出力先の変更は`--output`・`--cpp-header`・`--cpp-source`で指定する。生成・変換の仕様は[生成プログラム](../diagram/python/generate-device-api.py)と[変換処理](../diagram/python/device_api_cpp.py)を参照する。
