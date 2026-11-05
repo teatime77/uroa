@@ -3,6 +3,7 @@
  * ble-wifi/ble.tsが転送・VM指令を担当する。index.tsがツール、procedure.tsが復元を登録する。
  * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
  * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
+ * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
  */
 import { Vec2 } from "@i18n";
 import { diagramBLE } from "../ble-wifi/ble";
@@ -14,6 +15,7 @@ import type { Attr } from "../ui";
 import { generateBytecode } from "./bytecode";
 import { parsePython } from "./parser";
 import { analyzePython } from "./semantic";
+import { PythonHighlightEditor } from "./highlight-editor";
 
 /**
  * Startでビルド・転送・VM_START、StopでVM_STOPを行う。Actionチェーンのrun()も同じ開始処理を待つ。
@@ -25,6 +27,7 @@ import { analyzePython } from "./semantic";
  */
 export class PythonBlock extends ActionBlock {
     readonly sourceEditor: HTMLTextAreaElement;
+    private readonly highlightEditor: PythonHighlightEditor;
     private readonly panel = document.createElement("div");
     private readonly maximizeButton = document.createElement("button");
     private readonly minimizeButton = document.createElement("button");
@@ -88,11 +91,7 @@ export class PythonBlock extends ActionBlock {
         editor.spellcheck = false;
         editor.autocomplete = "off";
         editor.wrap = "off";
-        Object.assign(editor.style, {
-            display: "none", flex: "1", minHeight: "0", width: "100%", boxSizing: "border-box",
-            resize: "none", font: "16px/1.5 monospace", tabSize: "4", padding: "12px",
-            background: "#fffef8", color: "#172c24", pointerEvents: "auto"
-        });
+        this.highlightEditor = new PythonHighlightEditor(editor);
         // 1回でも編集したら、元の文字列へ戻した場合も再ビルド・再送する。
         editor.addEventListener("input", () => {
             this.editRevision++;
@@ -110,7 +109,7 @@ export class PythonBlock extends ActionBlock {
         }, { signal: this.events.signal });
         this.statusView.setAttribute("role", "status");
         Object.assign(this.statusView.style, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minHeight: "18px" });
-        panel.append(heading, controls, editor, this.statusView);
+        panel.append(heading, controls, this.highlightEditor.element, this.statusView);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
         this.releaseBLE = diagramBLE.subscribe(state => {
             if (state.phase !== "connected" || state.transport === "wifi") {
@@ -143,6 +142,7 @@ export class PythonBlock extends ActionBlock {
     loadObj(obj: any): void {
         super.loadObj(obj);
         this.sourceEditor.value = typeof obj.source === "string" ? obj.source : "";
+        this.highlightEditor.refresh();
         this.receipt = undefined;
         this.uploadedSource = undefined;
     }
@@ -151,6 +151,7 @@ export class PythonBlock extends ActionBlock {
         const block = new PythonBlock({});
         this.copyUI(block);
         block.sourceEditor.value = this.sourceEditor.value;
+        block.highlightEditor.refresh();
         block.setContext2D(this.ctx);
         block.setBlockPortPosition(block.position);
         return block;
@@ -162,7 +163,8 @@ export class PythonBlock extends ActionBlock {
             return;
         }
         this.expanded = expanded;
-        this.sourceEditor.style.display = expanded ? "block" : "none";
+        this.highlightEditor.element.style.display = expanded ? "block" : "none";
+        this.highlightEditor.refresh();
         this.positionPanel();
         this.updateControls();
         if (expanded) {
@@ -330,6 +332,7 @@ export class PythonBlock extends ActionBlock {
         this.releaseStop();
         this.releaseBLE();
         this.events.abort();
+        this.highlightEditor.dispose();
         this.panel.remove();
         super.clearBlock();
     }

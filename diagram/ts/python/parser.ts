@@ -551,6 +551,13 @@ export async function testPython(){
     msg(`  module:\n${mod.block}`);
 
     const analysis = await analyzePython(mod);
+    // 意味解析は診断を返して続行する。開発用入口でも不完全な結果から生成しない。
+    if (analysis.diagnostics.length !== 0) {
+        for (const diagnostic of analysis.diagnostics) {
+            msg(`  semantic error: ${diagnostic.message} (charPos=${diagnostic.charPos})`);
+        }
+        return;
+    }
     for (const [name, variable] of analysis.globals) {
         msg(`  type ${name}: ${JSON.stringify(variable.type)}`);
     }

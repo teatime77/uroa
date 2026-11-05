@@ -11,6 +11,7 @@
  *
  * generateAssembly(module, analysis)とgenerateBytecode(module, analysis)は
  * semantic.tsのPythonAnalysisを使う拡張入口で、同じ命令列からテキストとバイナリを作る。
+ * 意味診断が1件以上ある部分的な解析結果は、両生成入口で命令生成前に拒否する。
  * analysis.moduleとmoduleは同じ木を指定する。未指定時は従来の数値・通常文字列用の
  * アセンブリとversion=2のバイナリ生成を維持する。構文木と意味解析結果は書き換えない。
  *
@@ -318,6 +319,12 @@ class BytecodeGenerator {
     constructor(private readonly module: Module, private readonly analysis?: PythonAnalysis) {
         if (analysis !== undefined && analysis.module !== module) {
             throw new Error("コード生成には同じ構文木の意味解析結果を指定してください");
+        }
+        // 意味解析は診断を蓄積して正常に戻るため、部分的な解析結果を命令へ変換する前に拒否する。
+        // generateAssembly/generateBytecodeの両入口とBLE送信元に共通の境界。契約はsemantic.tsを参照。
+        if (analysis !== undefined && analysis.diagnostics.length !== 0) {
+            const first = analysis.diagnostics[0];
+            throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
         }
         this.globalScope = { fn: undefined, block: module.block, variables: new Map() };
         this.scope = this.globalScope;

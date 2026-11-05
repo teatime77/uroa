@@ -3,6 +3,16 @@
  *
  * analyzePython(module, signal?)は/diagram/device/device-api.jsonを毎回読み直し、
  * resolvePython(module, api)で解析する。parsePython()は同期の構文解析APIとして維持する。
+ * ソースの意味エラーでは例外を投げず、PythonAnalysis.diagnosticsへ位置・メッセージ・
+ * 対応ノードを蓄積し、独立した引数・式・後続文の解析を続ける。構文解析の例外は従来どおり。
+ * undefinedは推論途中、kind=errorは既知の問題に依存する値として区別する。
+ * errorを式・束縛・戻り値へ伝播し、その影響による未定型・型不一致の連鎖報告を抑える。
+ * 同じノード・メッセージは反復をまたいで重複させず、診断はcharPos順に返す。
+ * 衝突・配置違反の関数定義は登録せず、その本体は解析対象から外す。
+ * 診断がある結果は部分的な解決情報を含み、slot=-1で返す。bytecode.tsは両生成入口で
+ * 診断を検査し、1件以上なら生成前に拒否する。python-block.tsとble-wifi/ble.tsは
+ * この境界を通して送信を止める。parser.tsの開発用入口は診断を記録して生成を省く。
+ * 画面への問題箇所表示はここでは行わない。API読込み・不正JSON・取消の例外は維持する。
  * JSONの形式はdiagram/python/generate-device-api.pyの先頭コメントを参照する。
  * 形式の版、IDの重複、型参照、コンストラクター、表示APIの型制限を検証する。
  * abiHashは解析結果へ保持するが、ここでは指紋の再計算やVMとの照合は行わない。
@@ -35,7 +45,7 @@
  *
  * 結果のreferencesは実際の名前参照から束縛への対応、typesは式の型、calls/fieldsは
  * 呼出し・属性式からAPI定義（IDを含む）への対応。globals/functionsで変数と関数型を
- * 参照できる。返却成功時はすべての変数型・戻り値型が確定している。
+ * 参照できる。diagnosticsが空の場合だけ全変数型・戻り値型とスロット配置が確定している。
  * 元の構文木、parent、charPos、toString()のキャッシュは変更しない。
  * parser.tsの開発用入口とble-wifi/ble.tsの送信前処理が構文解析後に呼び出す。
  * アセンブリ・version=3のバイトコード生成はbytecode.tsがこの結果を利用する。
@@ -48,7 +58,8 @@ import {
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
 
-export type PythonType = { kind: "int" | "float" | "str" | "none" }
+/** errorは意味解析の回復用で、機器APIのJSON・バイトコードには出力しない。 */
+export type PythonType = { kind: "int" | "float" | "str" | "none" | "error" }
     | { kind: "object"; classId: number };
 
 export interface DeviceCallable {
@@ -86,7 +97,7 @@ export interface DeviceApi {
     functions: DeviceCallable[];
 }
 
-/** typeは推論中だけundefined。slotは解析完了時に値の幅込みで再配置する。 */
+/** undefinedは推論未定、errorは既知の問題に依存する値。slotは診断0件の場合だけ確定する。 */
 export interface PythonVariable {
     name: string;
     scope: "global" | "local";
@@ -106,13 +117,23 @@ export type PythonBinding = { kind: "variable"; variable: PythonVariable }
     | { kind: "class"; definition: DeviceClass }
     | { kind: "native"; definition: DeviceCallable }
     | { kind: "function"; definition: PythonFunction }
-    | { kind: "constant"; name: string; type: PythonType };
+    | { kind: "constant"; name: string; type: PythonType }
+    | { kind: "error" };
 
 export type PythonCall = { kind: "constructor" | "method"; owner: DeviceClass; definition: DeviceCallable }
     | { kind: "native"; definition: DeviceCallable }
     | { kind: "function"; definition: PythonFunction };
 
+/** ソース中の意味エラー。charPosは元ソースのUTF-16位置で、nodeは問題に対応する構文木。 */
+export interface PythonDiagnostic {
+    charPos: number;
+    message: string;
+    node: AbstractSyntaxNode;
+}
+
 export interface PythonAnalysis {
+    /** 同じノード・メッセージの重複を除き、ソース位置順で返す。1件以上ならコード生成禁止。 */
+    diagnostics: readonly PythonDiagnostic[];
     module: Module;
     api: DeviceApi;
     globals: ReadonlyMap<string, PythonVariable>;
@@ -298,6 +319,9 @@ export function readDeviceApi(value: unknown): DeviceApi {
 
 /** recordを末端フィールドの型列へ展開する。ID順ではなくJSONの宣言順で配置する。 */
 export function valueSlotTypes(type: PythonType, api: DeviceApi, ancestors: readonly number[] = []): PythonType[] {
+    if (type.kind === "error") {
+        throw new Error("意味エラーを含む型はスロットへ配置できません");
+    }
     if (type.kind !== "object") {
         return [type];
     }
@@ -337,6 +361,7 @@ const intType: PythonType = { kind: "int" };
 const floatType: PythonType = { kind: "float" };
 const noneType: PythonType = { kind: "none" };
 const strType: PythonType = { kind: "str" };
+const errorType: PythonType = { kind: "error" };
 
 function sameType(left: PythonType, right: PythonType): boolean {
     return left.kind === right.kind && (left.kind !== "object" || right.kind === "object" && left.classId === right.classId);
@@ -354,6 +379,11 @@ class PythonResolver {
     private readonly types = new Map<Term, PythonType>();
     private readonly calls = new Map<App, PythonCall>();
     private readonly fields = new Map<App, { owner: DeviceClass; definition: DeviceField }>();
+    private readonly diagnostics: PythonDiagnostic[] = [];
+    private readonly reported = new Map<AbstractSyntaxNode, Set<string>>();
+    private readonly invalidDeclarations = new Set<AbstractSyntaxNode>();
+    private readonly invalidCalls = new Set<PythonFunction>();
+    private readonly validCalls = new Set<PythonFunction>();
     private readonly classes: Map<string, DeviceClass>;
     private readonly nativeFunctions: Map<string, DeviceCallable>;
     private scope: PythonFunction | undefined;
@@ -365,15 +395,29 @@ class PythonResolver {
         this.nativeFunctions = new Map(api.functions.map(item => [item.name, item]));
     }
 
-    private fail(node: AbstractSyntaxNode, message: string): never {
-        throw new SyntaxError(`${message} (charPos=${node.charPos})`);
+    /** 解析を中断せず記録する。反復中の同じ問題を重複登録しない。 */
+    private fail(node: AbstractSyntaxNode, message: string): PythonType {
+        let messages = this.reported.get(node);
+        if (messages === undefined) {
+            messages = new Set();
+            this.reported.set(node, messages);
+        }
+        if (!messages.has(message)) {
+            messages.add(message);
+            this.diagnostics.push({ node, charPos: node.charPos, message });
+        }
+        return errorType;
     }
 
     private typeName(type: PythonType): string {
         return type.kind === "object" ? this.api.classes.find(item => item.id === type.classId)!.name : type.kind;
     }
 
+    /** errorを伝播し、その値に依存する式では原因と同じ型エラーを追加しない。 */
     private merge(left: PythonType | undefined, right: PythonType | undefined, node: AbstractSyntaxNode): PythonType | undefined {
+        if (left?.kind === "error" || right?.kind === "error") {
+            return errorType;
+        }
         if (left === undefined || right === undefined) {
             return left ?? right;
         }
@@ -395,15 +439,9 @@ class PythonResolver {
     }
 
     private remember(term: Term, type: PythonType | undefined): PythonType | undefined {
-        if (type === undefined) {
-            if (this.checking) {
-                this.fail(term, "式の型を推論できません。関数の呼出し元・引数・戻り値を確認してください");
-            }
-            return undefined;
-        }
         const previous = this.types.get(term);
-        const merged = this.merge(previous, type, term)!;
-        if (previous === undefined || !sameType(previous, merged)) {
+        const merged = this.merge(previous, type, term);
+        if (merged !== undefined && (previous === undefined || !sameType(previous, merged))) {
             this.types.set(term, merged);
             this.changed = true;
         }
@@ -414,15 +452,18 @@ class PythonResolver {
         return ["True", "False", "None"].includes(name) || this.classes.has(name) || this.nativeFunctions.has(name);
     }
 
-    private addVariable(name: string, declaration: AbstractSyntaxNode, scope?: PythonFunction): PythonVariable {
+    /** 不正な宣言は既存のAPI・関数を隠さず、右辺や他の文の解析を続ける。 */
+    private addVariable(name: string, declaration: AbstractSyntaxNode, scope?: PythonFunction): PythonVariable | undefined {
         if (this.reserved(name) || this.functions.has(name)) {
             this.fail(declaration, `API・関数・定数の名前には束縛できません: ${name}`);
+            this.invalidDeclarations.add(declaration);
+            return undefined;
         }
         const variables = scope?.variables ?? this.globals;
         let variable = variables.get(name);
         if (variable === undefined) {
             variable = { name, scope: scope === undefined ? "global" : "local",
-                slot: variables.size + (scope === undefined ? 0 : 2), declaration, type: undefined };
+                slot: -1, declaration, type: undefined };
             variables.set(name, variable);
         }
         return variable;
@@ -432,8 +473,10 @@ class PythonResolver {
     private collect(block: BlockStatement, scope?: PythonFunction): void {
         for (const statement of block.statements) {
             if (statement instanceof Fn) {
-                if (scope !== undefined || this.functions.get(statement.name)?.node !== statement) {
+                if (!this.invalidDeclarations.has(statement)
+                    && (scope !== undefined || this.functions.get(statement.name)?.node !== statement)) {
                     this.fail(statement, "関数定義はモジュール先頭だけに置けます");
+                    this.invalidDeclarations.add(statement);
                 }
             }
             else if (statement instanceof CallStatement && statement.app instanceof App && statement.app.isAssignmentApp()) {
@@ -479,174 +522,242 @@ class PythonResolver {
             result = { kind: "constant", name: ref.name, type: ref.name === "None" ? noneType : intType };
         }
         else {
-            return this.fail(ref, `未定義の名前です: ${ref.name}`);
+            this.fail(ref, `未定義の名前です: ${ref.name}`);
+            result = { kind: "error" };
         }
         this.references.set(ref, result);
         return result;
     }
 
-    private requireNumeric(type: PythonType | undefined, term: Term, integer = false): void {
+    private requireNumeric(type: PythonType | undefined, term: Term, integer = false): boolean {
+        if (type?.kind === "error") {
+            return false;
+        }
         if (type !== undefined && (!numeric(type) || integer && type.kind !== "int")) {
             this.fail(term, `${integer ? "int" : "数値"}が必要です: ${this.typeName(type)}`);
+            return false;
         }
+        return true;
     }
 
-    private compatible(actual: PythonType | undefined, expected: PythonType, node: AbstractSyntaxNode): void {
+    private compatible(actual: PythonType | undefined, expected: PythonType, node: AbstractSyntaxNode): boolean {
+        if (actual?.kind === "error" || expected.kind === "error") {
+            return false;
+        }
         if (this.checking && actual !== undefined && !sameType(actual, expected)
             && !(actual.kind === "int" && expected.kind === "float")) {
             this.fail(node, `${this.typeName(expected)}が必要です: ${this.typeName(actual)}`);
+            return false;
         }
+        return true;
     }
 
     private owner(term: Term): DeviceClass | undefined {
         const type = this.expression(term);
-        if (type === undefined) {
+        if (type === undefined || type.kind === "error") {
             return undefined;
         }
         if (type.kind !== "object") {
-            this.fail(term, `属性の対象はAPIオブジェクトにしてください: ${this.typeName(type)}`);
+            this.remember(term, this.fail(term, `属性の対象はAPIオブジェクトにしてください: ${this.typeName(type)}`));
+            return undefined;
         }
-        return this.api.classes.find(item => item.id === type.classId)!;
+        return this.api.classes.find(item => item.id === type.classId);
     }
 
     private field(app: App, write = false): DeviceField | undefined {
         const owner = this.owner(app.args[0]);
         const member = app.args[1];
         if (!(member instanceof RefVar)) {
-            this.fail(app, "属性名が不正です");
+            this.remember(app, this.fail(app, "属性名が不正です"));
+            return undefined;
         }
         if (owner === undefined) {
+            if (this.types.get(app.args[0])?.kind === "error") {
+                this.remember(app, errorType);
+            }
             return undefined;
         }
         const definition = owner.fields.find(item => item.name === member.name);
         if (owner.kind !== "record" || definition === undefined || !(write ? definition.writable : definition.readable)) {
-            this.fail(app, `${owner.name}.${member.name}は${write ? "代入" : "参照"}できるフィールドではありません`);
+            this.remember(app, this.fail(member, `${owner.name}.${member.name}は${write ? "代入" : "参照"}できるフィールドではありません`));
+            return undefined;
         }
         this.fields.set(app, { owner, definition });
         this.remember(app, definition.type);
         return definition;
     }
 
-    private nativeArguments(app: App, args: Term[], callable: DeviceCallable): void {
-        if (args.length !== callable.parameters.length) {
+    /** 個数不一致でも実在する引数を全件解析し、余分な引数の未定義名も検出する。 */
+    private nativeArguments(app: App, args: Term[], callable: DeviceCallable): boolean {
+        let valid = args.length === callable.parameters.length;
+        if (!valid) {
             this.fail(app, `${callable.name}の引数は${callable.parameters.length}個必要です`);
         }
         for (const [index, argument] of args.entries()) {
-            const expected = callable.parameters[index].type;
-            this.compatible(this.expression(argument, expected.kind === "str"), expected, argument);
+            const expected = callable.parameters[index]?.type;
+            const actual = this.expression(argument, expected === undefined || expected.kind === "str");
+            if (actual?.kind === "error" || expected !== undefined && !this.compatible(actual, expected, argument)) {
+                valid = false;
+            }
         }
+        return valid;
     }
 
     private call(app: App): PythonType | undefined {
         if (app.fncName === "()") {
             const attribute = app.args[0];
             if (!(attribute instanceof App) || attribute.fncName !== "." || !(attribute.args[1] instanceof RefVar)) {
-                this.fail(app, "動的な関数呼出しには対応していません");
+                for (const argument of app.args) {
+                    this.expression(argument, true);
+                }
+                return this.fail(app, "動的な関数呼出しには対応していません");
             }
             const member = attribute.args[1];
             const owner = this.owner(attribute.args[0]);
             if (owner === undefined) {
                 for (const argument of app.args.slice(1)) {
-                    // 所有クラスが決まるまで表示引数かどうかを確定せず、次の反復で検査する。
                     this.expression(argument, true);
                 }
-                return undefined;
+                return this.types.get(attribute.args[0])?.kind === "error" ? errorType : undefined;
             }
             const method = owner.methods.find(item => item.name === member.name);
             if (method === undefined) {
-                this.fail(attribute, `${owner.name}に指定のメソッドがありません: ${member.name}`);
+                for (const argument of app.args.slice(1)) {
+                    this.expression(argument, true);
+                }
+                return this.fail(member, `${owner.name}に指定のメソッドがありません: ${member.name}`);
             }
             this.calls.set(app, { kind: "method", owner, definition: method });
-            this.nativeArguments(app, app.args.slice(1), method);
-            return method.returnType;
+            return this.nativeArguments(app, app.args.slice(1), method) ? method.returnType : errorType;
         }
         const binding = this.binding(app.fnc);
         if (binding.kind === "class") {
             const owner = binding.definition;
             if (owner.constructor === null) {
-                this.fail(app, `${owner.name}にはコンストラクターが宣言されていません`);
+                for (const argument of app.args) {
+                    this.expression(argument, true);
+                }
+                return this.fail(app, `${owner.name}にはコンストラクターが宣言されていません`);
             }
             this.calls.set(app, { kind: "constructor", owner, definition: owner.constructor });
-            this.nativeArguments(app, app.args, owner.constructor);
-            return owner.constructor.resultType;
+            return this.nativeArguments(app, app.args, owner.constructor) ? owner.constructor.resultType : errorType;
         }
         if (binding.kind === "native") {
             this.calls.set(app, { kind: "native", definition: binding.definition });
-            this.nativeArguments(app, app.args, binding.definition);
-            return binding.definition.returnType;
+            return this.nativeArguments(app, app.args, binding.definition) ? binding.definition.returnType : errorType;
         }
         if (binding.kind === "function") {
             const fn = binding.definition;
-            if (app.args.length !== fn.parameters.length) {
+            let valid = app.args.length === fn.parameters.length;
+            if (!valid) {
                 this.fail(app, `${fn.node.name}の引数は${fn.parameters.length}個必要です`);
+                this.invalidCalls.add(fn);
+            }
+            else {
+                this.validCalls.add(fn);
             }
             this.calls.set(app, { kind: "function", definition: fn });
             for (const [index, argument] of app.args.entries()) {
-                this.update(fn.parameters[index], this.expression(argument), argument);
+                const actual = this.expression(argument);
+                const parameter = fn.parameters[index];
+                // 個数が違う呼出しは仮引数の推論へ混ぜず、他の正しい呼出しからの推論を維持する。
+                if (parameter !== undefined && app.args.length === fn.parameters.length) {
+                    this.update(parameter, actual, argument);
+                }
+                if (actual?.kind === "error" || parameter?.type?.kind === "error") {
+                    valid = false;
+                }
             }
-            return fn.type;
+            return valid ? fn.type : errorType;
         }
-        return this.fail(app, `この名前は呼び出せません: ${app.fncName}`);
+        for (const argument of app.args) {
+            this.expression(argument, true);
+        }
+        return binding.kind === "error" ? errorType
+            : this.fail(app.fnc, `この名前は呼び出せません: ${app.fncName}`);
     }
 
     private formatted(app: App): PythonType {
+        let valid = true;
         for (const part of app.args) {
             if (part instanceof Str) {
                 this.remember(part, strType);
             }
             else if (part instanceof App && part.fncName === "@format") {
                 const value = this.expression(part.args[0]);
-                this.requireNumeric(value, part.args[0]);
+                if (!this.requireNumeric(value, part.args[0])) {
+                    valid = false;
+                }
                 const format = part.args[1];
                 if (!(format instanceof Str) || !/^(?:\d+)?(?:\.\d+)?[bcdeEfFgGnosxX%]?$/.test(format.text)) {
                     this.fail(part, "未対応の書式指定です");
+                    this.remember(part, errorType);
+                    valid = false;
+                    continue;
                 }
-                if (/[bcdoxX]$/.test(format.text)) {
-                    this.requireNumeric(value, part.args[0], true);
+                if (/[bcdoxX]$/.test(format.text) && !this.requireNumeric(value, part.args[0], true)) {
+                    valid = false;
                 }
                 if (/s$/.test(format.text)) {
                     this.fail(format, "文字列の置換式には対応していません");
+                    valid = false;
                 }
                 this.remember(format, strType);
-                this.remember(part, strType);
+                this.remember(part, value?.kind === "error" ? errorType : strType);
             }
-            else {
-                this.requireNumeric(this.expression(part), part);
+            else if (!this.requireNumeric(this.expression(part), part)) {
+                valid = false;
             }
         }
-        return strType;
+        return valid ? strType : errorType;
     }
 
     private operation(app: App): PythonType | undefined {
         const operator = app.fncName;
         if (operator === ".") {
-            return this.field(app)?.type;
+            this.field(app);
+            return this.types.get(app);
         }
         if (["[]", ",", "t[i]", "@format", "**"].includes(operator) || isAssignmentToken(operator)) {
-            this.fail(app, `未対応の式です: ${operator}`);
+            for (const argument of app.args) {
+                this.expression(argument, true);
+            }
+            return this.fail(app, `未対応の式です: ${operator}`);
         }
         if (operator === "<compare>") {
             const types = app.args.map(term => this.expression(term));
+            let valid = !types.some(type => type?.kind === "error");
             for (const [index, comparison] of app.comparisonOperators.entries()) {
                 if (["in", "not in"].includes(comparison)) {
                     this.fail(app, "コンテナの比較には対応していません");
+                    valid = false;
                 }
                 if (!["==", "!=", "is", "is not"].includes(comparison)) {
-                    this.requireNumeric(types[index], app.args[index]);
-                    this.requireNumeric(types[index + 1], app.args[index + 1]);
+                    const left = this.requireNumeric(types[index], app.args[index]);
+                    const right = this.requireNumeric(types[index + 1], app.args[index + 1]);
+                    valid = left && right && valid;
                 }
             }
-            return intType;
+            return valid ? intType : errorType;
         }
         if (["not", "and", "or"].includes(operator)) {
-            const left = this.expression(app.args[0]);
-            return operator === "not" ? intType : this.merge(left, this.expression(app.args[1]), app);
+            const types = app.args.map(term => this.expression(term));
+            if (types.some(type => type?.kind === "error")) {
+                return errorType;
+            }
+            return operator === "not" ? intType : this.merge(types[0], types[1], app);
         }
         if (["+", "-", "*", "/", "//", "%", "~", "&", "|", "^", "<<", ">>"].includes(operator)) {
             const types = app.args.map(term => this.expression(term));
             const integer = ["~", "&", "|", "^", "<<", ">>"].includes(operator);
+            let valid = true;
             for (const [index, type] of types.entries()) {
-                this.requireNumeric(type, app.args[index], integer);
+                if (!this.requireNumeric(type, app.args[index], integer)) {
+                    valid = false;
+                }
+            }
+            if (!valid) {
+                return errorType;
             }
             if (types.some(type => type === undefined)) {
                 return undefined;
@@ -663,22 +774,27 @@ class PythonResolver {
         }
         else if (term instanceof RefVar) {
             const binding = this.binding(term);
-            if (binding.kind !== "variable" && binding.kind !== "constant") {
-                this.fail(term, "クラス・関数・メソッドを値として扱う処理には対応していません");
+            if (binding.kind === "variable") {
+                type = binding.variable.type;
             }
-            type = binding.kind === "variable" ? binding.variable.type : binding.type;
+            else if (binding.kind === "constant") {
+                type = binding.type;
+            }
+            else {
+                type = binding.kind === "error" ? errorType
+                    : this.fail(term, "クラス・関数・メソッドを値として扱う処理には対応していません");
+            }
         }
         else if (term instanceof Str || term instanceof App && term.fncName === 'f"') {
-            if (!text) {
-                this.fail(term, "文字列・f文字列は表示APIの引数だけに使用できます");
-            }
-            type = term instanceof Str ? strType : this.formatted(term);
+            // 使用位置が不正でもf文字列の置換式を解析し、独立した未定義名を拾う。
+            const formatted = term instanceof Str ? strType : this.formatted(term);
+            type = text ? formatted : this.fail(term, "文字列・f文字列は表示APIの引数だけに使用できます");
         }
         else if (term instanceof App) {
             type = this.operation(term);
         }
         else {
-            this.fail(term, "未対応の式です");
+            type = this.fail(term, "未対応の式です");
         }
         return this.remember(term, type);
     }
@@ -693,18 +809,29 @@ class PythonResolver {
         else {
             const leftType = this.expression(target);
             const rightType = this.expression(right);
-            if (!["+=", "-=", "*=", "/=", "//=", "%=", "&=", "|=", "^=", "<<=", ">>="].includes(app.fncName)) {
-                this.fail(app, `未対応の複合代入です: ${app.fncName}`);
-            }
             const integer = ["&=", "|=", "^=", "<<=", ">>="].includes(app.fncName);
-            this.requireNumeric(leftType, target, integer);
-            this.requireNumeric(rightType, right, integer);
-            type = app.fncName === "/=" ? floatType : this.merge(leftType, rightType, app);
+            const leftValid = this.requireNumeric(leftType, target, integer);
+            const rightValid = this.requireNumeric(rightType, right, integer);
+            if (!["+=", "-=", "*=", "/=", "//=", "%=", "&=", "|=", "^=", "<<=", ">>="].includes(app.fncName)) {
+                type = this.fail(app, `未対応の複合代入です: ${app.fncName}`);
+            }
+            else if (!leftValid || !rightValid) {
+                type = errorType;
+            }
+            else {
+                type = app.fncName === "/=" ? floatType : this.merge(leftType, rightType, app);
+            }
+        }
+        if (this.invalidDeclarations.has(target)) {
+            return;
         }
         if (target instanceof RefVar) {
             const binding = this.binding(target);
             if (binding.kind !== "variable") {
-                this.fail(target, "変数に代入してください");
+                if (binding.kind !== "error") {
+                    this.fail(target, "変数に代入してください");
+                }
+                return;
             }
             this.update(binding.variable, type, app);
             this.remember(target, binding.variable.type);
@@ -717,6 +844,7 @@ class PythonResolver {
         }
         else {
             this.fail(target, "代入先は変数または公開フィールドにしてください");
+            this.expression(target, true);
         }
     }
 
@@ -749,10 +877,12 @@ class PythonResolver {
             }
         }
         else if (statement instanceof ReturnStatement) {
+            const type = statement.value === undefined ? noneType : this.expression(statement.value);
             if (this.scope === undefined) {
                 this.fail(statement, "returnは関数内だけに使用できます");
+                return;
             }
-            this.update(this.scope, statement.value === undefined ? noneType : this.expression(statement.value), statement);
+            this.update(this.scope, type, statement);
         }
         else if (statement instanceof IfStatement) {
             this.expression(statement.condition);
@@ -779,33 +909,8 @@ class PythonResolver {
         }
     }
 
-    resolve(): PythonAnalysis {
-        let executable = false;
-        for (const statement of this.module.block.statements) {
-            if (!(statement instanceof Fn)) {
-                executable = true;
-                continue;
-            }
-            if (executable || this.reserved(statement.name) || this.functions.has(statement.name)) {
-                this.fail(statement, "関数名の重複・API名との衝突、または先頭以外の関数定義です");
-            }
-            this.functions.set(statement.name, { node: statement, parameters: [], variables: new Map(), type: undefined });
-        }
-        this.collect(this.module.block);
-        for (const fn of this.functions.values()) {
-            for (const parameter of fn.node.args) {
-                if (fn.variables.has(parameter.name)) {
-                    this.fail(parameter, `仮引数が重複しています: ${parameter.name}`);
-                }
-                fn.parameters.push(this.addVariable(parameter.name, parameter, fn));
-            }
-            this.collect(fn.node.block, fn);
-        }
-        const nodes: AbstractSyntaxNode[] = [];
-        this.module.getAll(nodes);
-        // 各型は未定→具体型→数値のfloatへの拡張だけ。ノード数と束縛数から反復を制限する。
-        const variableCount = this.globals.size + [...this.functions.values()].reduce((count, fn) => count + fn.variables.size + 1, 0);
-        const limit = 2 * (nodes.length + variableCount) + 2;
+    /** 確定した型の検査でerrorになった値も、収束まで後続の式・関数へ伝播させる。 */
+    private infer(limit: number): void {
         for (let pass = 0; pass < limit; pass++) {
             this.changed = false;
             this.scope = undefined;
@@ -817,55 +922,127 @@ class PythonResolver {
                     this.update(fn, noneType, fn.node);
                 }
             }
-            if (this.checking) {
-                break;
-            }
             if (!this.changed) {
+                if (this.checking) {
+                    return;
+                }
                 this.checking = true;
             }
-            if (pass === limit - 1) {
-                this.fail(this.module, "型推論が収束しませんでした");
+        }
+        this.fail(this.module, "型推論が収束しませんでした");
+    }
+
+    resolve(): PythonAnalysis {
+        let executable = false;
+        for (const statement of this.module.block.statements) {
+            if (!(statement instanceof Fn)) {
+                executable = true;
+                continue;
+            }
+            if (executable || this.reserved(statement.name) || this.functions.has(statement.name)) {
+                this.fail(statement, "関数名の重複・API名との衝突、または先頭以外の関数定義です");
+                this.invalidDeclarations.add(statement);
+                continue;
+            }
+            this.functions.set(statement.name, { node: statement, parameters: [], variables: new Map(), type: undefined });
+        }
+        this.collect(this.module.block);
+        for (const fn of this.functions.values()) {
+            for (const parameter of fn.node.args) {
+                let variable: PythonVariable | undefined;
+                if (fn.variables.has(parameter.name)) {
+                    this.fail(parameter, `仮引数が重複しています: ${parameter.name}`);
+                }
+                else {
+                    variable = this.addVariable(parameter.name, parameter, fn);
+                }
+                // 不正な仮引数も位置を残し、後続の引数番号をずらさない。名前の束縛は追加しない。
+                fn.parameters.push(variable ?? { name: parameter.name, scope: "local", slot: -1,
+                    declaration: parameter, type: errorType });
+            }
+            this.collect(fn.node.block, fn);
+        }
+        const nodes: AbstractSyntaxNode[] = [];
+        this.module.getAll(nodes);
+        // 型は未定→具体型→floatへの拡張→errorの順。errorは具体型へ戻さない。
+        const variableCount = this.globals.size + [...this.functions.values()].reduce((count, fn) => count + fn.variables.size + 1, 0);
+        const limit = 3 * (nodes.length + variableCount) + 3;
+        this.infer(limit);
+        // 個数不一致の呼出ししかない関数では、未定の仮引数を二次的な推論エラーとして報告しない。
+        // 正しい個数の呼出しが1つでもあれば、その呼出しから得た型を引き続き使用する。
+        let blocked = false;
+        for (const fn of this.invalidCalls) {
+            if (!this.validCalls.has(fn)) {
+                for (const parameter of fn.parameters) {
+                    if (parameter.type === undefined) {
+                        parameter.type = errorType;
+                        blocked = true;
+                    }
+                }
             }
         }
+        if (blocked) {
+            this.infer(limit);
+        }
+        // errorに依存する値は既に伝播済み。独立して未定の束縛だけを診断する。
+        let unresolved = false;
         for (const fn of this.functions.values()) {
             for (const variable of fn.variables.values()) {
                 if (variable.type === undefined) {
-                    this.fail(variable.declaration, `変数の型を推論できません: ${variable.name}`);
+                    variable.type = this.fail(variable.declaration, `変数の型を推論できません: ${variable.name}`);
+                    unresolved = true;
                 }
             }
             if (fn.type === undefined) {
-                this.fail(fn.node, `戻り値の型を推論できません: ${fn.node.name}`);
+                fn.type = this.fail(fn.node, `戻り値の型を推論できません: ${fn.node.name}`);
+                unresolved = true;
             }
         }
         for (const variable of this.globals.values()) {
             if (variable.type === undefined) {
-                this.fail(variable.declaration, `変数の型を推論できません: ${variable.name}`);
+                variable.type = this.fail(variable.declaration, `変数の型を推論できません: ${variable.name}`);
+                unresolved = true;
             }
         }
-        for (const [variables, start] of [
-            [this.globals, 0] as const,
-            ...[...this.functions.values()].map(fn => [fn.variables, 2] as const)
-        ]) {
-            let slot = start;
-            for (const variable of variables.values()) {
-                variable.slot = slot;
-                slot += valueSlotTypes(variable.type!, this.api).length;
-                if (slot > 65536) {
-                    this.fail(variable.declaration, "変数のスロット位置がuint16の範囲を超えています");
+        if (unresolved) {
+            this.infer(limit);
+        }
+        // 診断を含む結果のslotは全て-1のまま返し、部分的な配置を生成器へ渡さない。
+        if (this.diagnostics.length === 0) {
+            for (const [variables, start] of [
+                [this.globals, 0] as const,
+                ...[...this.functions.values()].map(fn => [fn.variables, 2] as const)
+            ]) {
+                let slot = start;
+                for (const variable of variables.values()) {
+                    variable.slot = slot;
+                    slot += valueSlotTypes(variable.type!, this.api).length;
+                    if (slot > 65536) {
+                        this.fail(variable.declaration, "変数のスロット位置がuint16の範囲を超えています");
+                    }
                 }
             }
         }
-        return { module: this.module, api: this.api, globals: this.globals, functions: this.functions,
-            references: this.references, types: this.types, calls: this.calls, fields: this.fields };
+        if (this.diagnostics.length !== 0) {
+            for (const variables of [this.globals, ...[...this.functions.values()].map(fn => fn.variables)]) {
+                for (const variable of variables.values()) {
+                    variable.slot = -1;
+                }
+            }
+        }
+        this.diagnostics.sort((left, right) => left.charPos - right.charPos);
+        return { diagnostics: this.diagnostics, module: this.module, api: this.api,
+            globals: this.globals, functions: this.functions, references: this.references,
+            types: this.types, calls: this.calls, fields: this.fields };
     }
 }
 
-/** 読込済みの検証済みAPIを用いて、同期的に名前解決と型推論を行う。 */
+/** ソースの意味エラーはdiagnosticsへ蓄積し、部分的な解析結果も返す。apiは検証済みを渡す。 */
 export function resolvePython(module: Module, api: DeviceApi): PythonAnalysis {
     return new PythonResolver(module, api).resolve();
 }
 
-/** 構文解析の後に呼ぶ入口。APIの読込み・意味解析が成功した場合だけ結果を返す。 */
+/** 意味エラーではrejectしない。API読込み・形式不正・取消は解析の前提がないため例外を維持する。 */
 export async function analyzePython(module: Module, signal?: AbortSignal): Promise<PythonAnalysis> {
     const api = await loadDeviceApi(signal);
     signal?.throwIfAborted();
