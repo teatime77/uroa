@@ -1,6 +1,6 @@
 # ESP32向けPython VMのバイトコード
 
-2026-11-03: [bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`が、以下の命令・疑似指示をテキストで生成する。`generateBytecode(module: Module): Uint8Array`は同じ命令列から文字列を含まないバイナリを生成する。[BLE転送](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)とESP32の形式検証・RAM保持まで実装し、ESP32の[VM](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)が24命令を実行する。CALL／RETのフレーム操作は以下の契約に従う。
+2026-11-03: [bytecode.ts](../../../diagram/ts/python/bytecode.ts)の`generateAssembly(module: Module): string`が、以下の命令・疑似指示をテキストで生成する。`generateBytecode(module: Module): Uint8Array`は同じ命令列から文字列を含まないバイナリを生成する。[BLE／Wi-Fi転送](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)とESP32の形式検証・RAM保持まで実装し、ESP32の[VM](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)が24命令を実行する。CALL／RETのフレーム操作は以下の契約に従う。
 
 ## バイトコードの説明
 

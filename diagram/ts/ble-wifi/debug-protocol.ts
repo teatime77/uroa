@@ -1,6 +1,6 @@
 /**
- * Python BLEデバッグ通信version=1の中心契約。
- * ble.tsがBLE接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
+ * Python BLE／Wi-Fiデバッグ通信version=1の中心契約。
+ * ble.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
  * 本ファイルが一覧転送と停止値の復号を行う。
  * ESP32のbytecode_debugger.cppがloop()で要求を処理し、bytecode_vm.cppが停止値を作る。
  *
@@ -45,7 +45,7 @@
  * SnapshotはPaused中だけ有効。Stop・Start・プログラム置換・接続世代変更で無効化し、
  * 全チャンク・CRC・構造を検証するまで公開しない。大域・スタック・PC/BP/SPは同じ停止の値。
  * ブレークポイント停止はVMだけを止め、機器出力・補間は維持する。StopとPINGは既存経路を維持する。
- * チャンクごとにGATT排他を返し、長いSnapshotでPINGを塞がない。再開・ステップは未実装。
+ * チャンクごとに共通待ち列を返し、長いSnapshotでPINGを塞がない。再開・ステップは未実装。
  */
 import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
 
@@ -55,11 +55,26 @@ export const debugProtocol = {
         "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
 } as const;
 
-export interface DebugCharacteristic extends EventTarget {
-    value?: DataView;
-    startNotifications(): Promise<unknown>;
-    readValue(): Promise<DataView>;
-    writeValueWithResponse(data: Uint8Array): Promise<void>;
+/**
+ * 通信経路から独立した要求・ACK・停止Event・選択Dataの窓口。
+ * BLEは従来の4 Characteristic、Wi-FiはPOST /debug-controlまたはWS op=debug-controlと、
+ * GET /debug-result、/debug-event、/debug-dataを使う。各バイト形式は同じで20バイト以下。
+ * Wi-FiのReadはWS利用時もHTTPを使い、1秒周期で停止Eventを確認する。センサー通知へ混在させない。
+ * Readの応答と署名形式はbytecode-transfer.tsのResultと同じで、署名のresourceだけを各窓口名にする。
+ * 要求はsession|counter|path|payload、応答はsession|resource|counter|dataをHMACで検証する。
+ * ACK・Event・DataはESP32で別々に保持し、同一接続内でも通知によってACKを上書きしない。
+ * BLE Notifyは読出しの契機に使い、どちらの経路もEvent Readで最新の停止状態を確定する。
+ * 切断・切替では接続の経路と世代を組で照合し、旧要求・Snapshot・要求番号を失効させる。
+ * プログラム世代・stopId・PC・CRC・Data選択とACK照合は共通のPythonDebugTransportが担当する。
+ * 再開・ステップ・F9の行番号からPCへの変換を追加する変更ではない。
+ */
+export interface DebugChannel {
+    writeControl(data: Uint8Array): Promise<void>;
+    readResult(): Promise<DataView>;
+    readEvent(): Promise<DataView>;
+    readData(): Promise<DataView>;
+    subscribeEvents?(listener: () => void): () => void;
+    startEvents?(): Promise<unknown>;
 }
 
 export interface DebugEvent {
@@ -88,7 +103,7 @@ export interface DebugSnapshot {
     stack: readonly DebugValue[];
 }
 
-type RunGatt = <T>(operation: () => Promise<T>) => Promise<T>;
+type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
 
 /** パケットの共通版・長さ・予約領域を先に検査する。 */
 function parseEvent(view: DataView): DebugEvent {
@@ -156,10 +171,10 @@ export class PythonDebugTransport {
     private downloading?: number;
     private completed?: number;
     private ignored?: number;
+    private releaseEvents?: () => void;
 
-    constructor(private readonly control: DebugCharacteristic, private readonly result: DebugCharacteristic,
-        private readonly events: DebugCharacteristic, private readonly data: DebugCharacteristic,
-        private readonly run: RunGatt, private readonly current: () => void,
+    constructor(private readonly channel: DebugChannel,
+        private readonly run: RunTransport, private readonly current: () => void,
         private readonly nextRequestId: () => number,
         private readonly publish: (snapshot?: DebugSnapshot, error?: Error) => void) {
     }
@@ -172,7 +187,7 @@ export class PythonDebugTransport {
         }
     }
 
-    /** 同じControl/Result/Dataを使う要求を直列化する。PING用GATT排他は操作ごとに返す。 */
+    /** 同じControl/Result/Dataを使う要求を直列化する。PING用の共通待ち列は操作ごとに返す。 */
     private request(op: number, revision: number, body = new Uint8Array(), signal?: AbortSignal,
         readData = false): Promise<{ revision: number; value: number; extra: number; data?: Uint8Array }> {
         const task = this.tail.catch(() => {}).then(async () => {
@@ -185,11 +200,11 @@ export class PythonDebugTransport {
             view.setUint16(2, id, true);
             view.setUint32(4, revision, true);
             packet.set(body, 8);
-            await this.run(() => this.control.writeValueWithResponse(packet));
+            await this.run(() => this.channel.writeControl(packet));
             const deadline = performance.now() + debugProtocol.timeoutMs;
             while (performance.now() < deadline) {
                 this.check(signal);
-                const reply = await this.run(() => this.result.readValue());
+                const reply = await this.run(() => this.channel.readResult());
                 this.check(signal);
                 if (reply.byteLength !== 20 || reply.getUint8(0) !== 1 || reply.getUint8(5) > 5
                     || reply.getUint16(6, true) !== 0) {
@@ -206,7 +221,7 @@ export class PythonDebugTransport {
                         throw new Error("デバッグ対象のプログラムが変わりました。");
                     }
                     if (readData) {
-                        const chunk = await this.run(() => this.data.readValue());
+                        const chunk = await this.run(() => this.channel.readData());
                         response.data = new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength).slice();
                     }
                     this.check(signal);
@@ -264,8 +279,10 @@ export class PythonDebugTransport {
             throw error;
         }
         if (this.timer === undefined) {
-            this.events.addEventListener("characteristicvaluechanged", this.changed);
-            await this.run(() => this.events.startNotifications());
+            this.releaseEvents = this.channel.subscribeEvents?.(this.changed);
+            if (this.channel.startEvents) {
+                await this.run(() => this.channel.startEvents!());
+            }
             this.check(signal);
             this.timer = setInterval(() => {
                 void this.poll().catch(error => this.fail(error));
@@ -291,7 +308,7 @@ export class PythonDebugTransport {
         }
         this.polling = true;
         try {
-            const value = await this.run(() => this.events.readValue());
+            const value = await this.run(() => this.channel.readEvent());
             this.check();
             this.accept(parseEvent(value));
         }
@@ -349,7 +366,7 @@ export class PythonDebugTransport {
             offset += expected;
         }
         // 最終チャンク後にもデバイスの停止ID・版を照合し、Stop/再開始との競合を検出する。
-        const latest = parseEvent(await this.run(() => this.events.readValue()));
+        const latest = parseEvent(await this.run(() => this.channel.readEvent()));
         this.check();
         if (epoch !== this.epoch) {
             return;
@@ -372,11 +389,12 @@ export class PythonDebugTransport {
         this.publish();
     }
 
-    /** 接続終了時に通知とポーリングを解除する。実行中GATTの結果はcheck()で破棄する。 */
+    /** 接続終了時に通知とポーリングを解除する。実行中の通信結果はcheck()で破棄する。 */
     dispose(): void {
         this.disposed = true;
         this.epoch++;
         clearInterval(this.timer);
-        this.events.removeEventListener("characteristicvaluechanged", this.changed);
+        this.releaseEvents?.();
+        this.releaseEvents = undefined;
     }
 }

@@ -4,10 +4,11 @@
  * ble.tsは接続UI・機器登録・ブロックへの状態反映を担当し、本層へ通信経路を渡す。
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
- * 機器一覧・Python転送・VM指令を両経路へ配送する。デバッグはBLE専用で、カメラ画像は本層を通さない。
+ * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt } from "./bytecode-transfer";
+import type { DebugChannel } from "./debug-protocol";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
 export type ControlPacketKind = "status" | "telemetry";
@@ -19,6 +20,7 @@ export interface ControlTransport {
     write(bytes: Uint8Array): Promise<void>;
     writeDeviceInfo(bytes: Uint8Array): Promise<void>;
     openBytecode(): Promise<BytecodeChannel>;
+    openDebug(): Promise<DebugChannel>;
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void;
 }
 
@@ -81,7 +83,7 @@ interface PendingCommand {
 /**
  * 通信経路を交換できる通常指令・通知の所有者。
  * bind/closeで世代を更新し、旧経路の通知・キュー待機・ACKを次の接続へ適用しない。
- * 機器登録とGATT専用の転送もenqueue()を使い、同じ待ち列で排他する。
+ * 機器登録・プログラム・デバッグ転送もenqueue()を使い、同じ待ち列で排他する。
  * 転送全体ではなく各フレームを並べ、PING・STOPを間に処理できるようにする。
  */
 export class ControlConnection {
@@ -123,7 +125,7 @@ export class ControlConnection {
         this.pending.clear();
     }
 
-    /** 通常指令とBLE専用処理の共通待ち列。各処理が開始時と完了時に所有元を照合する。 */
+    /** 通常指令と各転送の共通待ち列。各処理が開始時と完了時に所有元を照合する。 */
     enqueue<T>(operation: () => Promise<T>): Promise<T> {
         const task = this.tail.catch(() => {
         }).then(operation);
@@ -134,7 +136,7 @@ export class ControlConnection {
     /**
      * 共通待ち列の1操作に2.5秒の期限と取消を付ける。ネイティブ操作自体の取消可否に依存せず、
      * 失敗時は現接続を終了し、古い処理が新しい通信経路へ進まないよう前後で世代を照合する。
-     * BLE専用デバッグも同じ待ち列を使い、要求・結果・停止値の途中へ別操作を挟まない。
+     * デバッグも同じ待ち列を使い、要求・結果・停止値の途中へ別操作を挟まない。
      */
     runOperation<T>(operation: () => Promise<T>, check: () => void, signal?: AbortSignal): Promise<T> {
         const generation = this.generation;
@@ -194,6 +196,12 @@ export class ControlConnection {
         const receipt = await uploadBytecode(bytes, this.bytecodeTransferId, channel, run, check);
         check();
         return receipt;
+    }
+
+    /** デバッグ窓口を現経路から取得する。接続とReceiptの照合は呼出元のcheckが担当する。 */
+    openDebug(check: () => void): Promise<DebugChannel> {
+        const transport = this.transport;
+        return this.runOperation(() => transport!.openDebug(), check);
     }
 
     /**

@@ -2,6 +2,12 @@
 
 更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## プログラム・VM・デバッグ通信のBLE／Wi-Fi共通化（2026-11-05）
+
+プログラム転送の共通契約は[bytecode-transfer.ts](../diagram/ts/ble-wifi/bytecode-transfer.ts)、デバッグの共通契約は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)、通信経路・待ち列は[control-connection.ts](../diagram/ts/ble-wifi/control-connection.ts)、PythonBlockとの連携は[python-block.ts](../diagram/ts/python/python-block.ts)を参照する。両経路で同じPC一覧・Snapshot取得APIを使い、F9の行からPCへの変換・変数画面・再開／ステップの追加は今回の範囲に含めない。
+
+`npm.cmd run verify`は成功し、TypeScript・公開ビルド・配信成果物を静的確認した。既存gameの動的／静的import併用警告2件は継続。ESP32はユーザー指定によりesp32devだけをビルドし、結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記載する。テストは作成・実行していない。ブラウザー操作、実BLE／Wi-Fi、認証・切断・切替・取消・最大プログラム／Snapshotの通信時間と空きRAM、VM・機器出力の実動作、Uploadは未確認。
+
 ## 機器一覧のWi-Fi対応（2026-11-05）
 
 機器一覧の形式は[device-telemetry.ts](../diagram/ts/ble-wifi/device-telemetry.ts)、共通の配送・完了範囲は[control-connection.tsのsendDeviceInfo()](../diagram/ts/ble-wifi/control-connection.ts)、Wi-Fi接続時の登録は[ble.ts](../diagram/ts/ble-wifi/ble.ts)、HTTP／WebSocketの送信は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。

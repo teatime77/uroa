@@ -1,6 +1,7 @@
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import { DeviceInfoMaxLength } from "./device-telemetry";
 import { bytecodeTransfer, type BytecodeChannel } from "./bytecode-transfer";
+import type { DebugChannel } from "./debug-protocol";
 
 /** Wi-Fi transport and authenticated BLE provisioning. No live credentials are serialized. */
 export interface RobotEndpoint {
@@ -179,7 +180,8 @@ export class RobotWifi implements ControlTransport {
                 signal: request.signal, credentials: "omit", redirect: "error", cache: "no-store" });
             if (!response.ok) throw new Error("Wi-Fi機器から応答を得られません。接続先・ファームウェア・ネットワークのアクセス許可を確認してください。");
             const reply = await response.json();
-            if ((path === "/events" || path === "/bytecode-result") && reply.counter !== String(requestCount)) {
+            if (["/events", "/bytecode-result", "/debug-result", "/debug-event", "/debug-data"].includes(path) &&
+                reply.counter !== String(requestCount)) {
                 throw new Error("応答の番号が一致しません。");
             }
             return reply;
@@ -272,7 +274,7 @@ export class RobotWifi implements ControlTransport {
         } catch { if (!this.closed) this.fail("Wi-Fiの応答が途切れました。再接続してください。"); }
     }
     /** 通常指令と機器一覧を同じ認証・要求番号の窓で送る。受付と内容検証の区別は共通層を参照。 */
-    private async writeControl(op: "command" | "device-info" | "bytecode", bytes: Uint8Array): Promise<void> {
+    private async writeControl(op: "command" | "device-info" | "bytecode" | "debug-control", bytes: Uint8Array): Promise<void> {
         if (!this.connected) {
             throw new Error("Wi-Fi接続が切れました。");
         }
@@ -329,21 +331,44 @@ export class RobotWifi implements ControlTransport {
                 }
                 await this.writeControl("bytecode", bytes);
             },
-            readResult: async () => {
-                if (!this.connected || session !== this.session) {
-                    throw new Error("プログラム転送の接続が変わりました。");
+            readResult: () => this.readControlValue("bytecode-result", 20, 20, session),
+        };
+    }
+
+    /** 同じ接続・要求番号・窓口の署名付きRead値だけを復号する。契約はbytecode-transfer.ts/debug-protocol.ts。 */
+    private async readControlValue(resource: "bytecode-result" | "debug-result" | "debug-event" | "debug-data",
+        minLength: number, maxLength: number, session: string): Promise<DataView> {
+        if (!this.connected || session !== this.session) {
+            throw new Error("機器の接続が変わりました。");
+        }
+        const reply = await this.json(`/${resource}`, undefined, true);
+        if (!this.connected || session !== this.session || reply.session !== session || typeof reply.data !== "string") {
+            throw new Error("機器の応答の接続が一致しません。");
+        }
+        await this.verify(`${session}|${resource}|${reply.counter}|${reply.data}`, reply.proof);
+        const bytes = decodeHex(reply.data);
+        if (bytes.length < minLength || bytes.length > maxLength) {
+            throw new Error("機器の応答の長さが不正です。");
+        }
+        return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    }
+
+    /** ACK・停止Event・選択Dataを独立したHTTP Readで取得し、停止検出は共通の1秒ポーリングを使う。 */
+    async openDebug(): Promise<DebugChannel> {
+        if (!this.connected) {
+            throw new Error("Wi-Fi接続が切れました。");
+        }
+        const session = this.session;
+        return {
+            writeControl: async bytes => {
+                if (!this.connected || session !== this.session || bytes.length < 8 || bytes.length > 20) {
+                    throw new Error("デバッグ要求の接続または長さが不正です。");
                 }
-                const reply = await this.json("/bytecode-result", undefined, true);
-                if (!this.connected || session !== this.session || reply.session !== session || typeof reply.data !== "string") {
-                    throw new Error("プログラム受付結果の接続が一致しません。");
-                }
-                await this.verify(`${session}|bytecode-result|${reply.counter}|${reply.data}`, reply.proof);
-                const bytes = decodeHex(reply.data);
-                if (bytes.length !== bytecodeTransfer.resultLength) {
-                    throw new Error("プログラム受付結果の長さが不正です。");
-                }
-                return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                await this.writeControl("debug-control", bytes);
             },
+            readResult: () => this.readControlValue("debug-result", 20, 20, session),
+            readEvent: () => this.readControlValue("debug-event", 20, 20, session),
+            readData: () => this.readControlValue("debug-data", 1, 20, session),
         };
     }
     async image(signal: AbortSignal): Promise<Blob> {

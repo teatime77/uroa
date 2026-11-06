@@ -1,6 +1,7 @@
 /** GATTの通常指令・機器一覧・通知をcontrol-connection.tsの共通通信経路へ接続する。 */
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import type { BytecodeChannel } from "./bytecode-transfer";
+import type { DebugChannel } from "./debug-protocol";
 
 /** Web Bluetoothの通常通信に使う構造型。GATT参照は保存データへ含めない。 */
 export interface ControlCharacteristic extends EventTarget {
@@ -19,7 +20,8 @@ export class BLEControlTransport implements ControlTransport {
 
     constructor(private command: ControlCharacteristic, private status: ControlCharacteristic,
         private telemetry: ControlCharacteristic, private deviceInfo: ControlCharacteristic,
-        private isConnected: () => boolean, private loadBytecode: () => Promise<BytecodeChannel>) {
+        private isConnected: () => boolean, private loadBytecode: () => Promise<BytecodeChannel>,
+        private loadDebug: () => Promise<DebugChannel>) {
     }
 
     /** ネイティブGATTの現在の接続状態を照合する。 */
@@ -40,6 +42,11 @@ export class BLEControlTransport implements ControlTransport {
     /** 通常接続は追加UUIDを要求せず、プログラム送信時だけ既存のWrite/Result窓口を取得する。 */
     openBytecode(): Promise<BytecodeChannel> {
         return this.loadBytecode();
+    }
+
+    /** 4個のデバッグCharacteristicは利用時だけ遅延取得する。 */
+    openDebug(): Promise<DebugChannel> {
+        return this.loadDebug();
     }
 
     /** 通知購読の解除関数を返す。Wi-Fi切替後は旧GATT通知を共通層へ渡さない。 */

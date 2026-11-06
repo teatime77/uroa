@@ -25,7 +25,7 @@
 
 `control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
 
-`python/`はPythonの字句・構文・意味解析、アセンブリ・バイトコード生成と、編集・実行用のPythonBlockを置く。PythonBlockのUI・保存・取消・BLE転送とVM開始・停止の分担は[python-block.tsの仕様コメント](../../diagram/ts/python/python-block.ts)を参照する。解析と生成のAPI・対応範囲は各ソースの仕様コメント、転送は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、ESP32の実行制御は[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を参照する。
+`python/`はPythonの字句・構文・意味解析、アセンブリ・バイトコード生成と、編集・実行用のPythonBlockを置く。PythonBlockのUI・保存・取消・BLE／Wi-Fi転送とVM開始・停止の分担は[python-block.tsの仕様コメント](../../diagram/ts/python/python-block.ts)を参照する。解析と生成のAPI・対応範囲は各ソースの仕様コメント、転送は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、ESP32の実行制御は[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を参照する。
 
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 
@@ -105,7 +105,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | AIChatBlock | TextPort入力・出力。Startで1問の回答全文を待つ | Google直接通信。キーはブロック内で一時保持。会話履歴・ストリーミング・サーボ操作は実装しない |
 | SpeechRecognitionBlock | 入力なし、TextPort出力。Startで単発の発話とセッション終了を待つ | ja-JPが既定。Web Speech API／webkit接頭辞を機能検出。30秒タイムアウト、権限・無音・空結果・通信失敗で後続を止める。実音声・Androidは別途確認 |
 | TTSBlock／SleepBlock | 文字列の読み上げ／数値秒の取消可能な待機 | ActionBlock。runの入力は未取得値を許す読み取りではない |
-| PythonBlock | Pythonの編集・BLE転送・VM開始／停止 | ActionBlock。UI・保存・実行の待機範囲は[ソースの仕様コメント](../../diagram/ts/python/python-block.ts)を参照 |
+| PythonBlock | Pythonの編集・BLE／Wi-Fi転送・VM開始／停止 | ActionBlock。UI・保存・実行の待機範囲は[ソースの仕様コメント](../../diagram/ts/python/python-block.ts)を参照 |
 | IfBlock／InfiniteLoop | 条件値1で内側を実行／内側を繰り返す | NestBlock。IfのconditionPortは型未指定Portで、isTrueは値1を判定する |
 | PlayMovieBlock／PlayGameBlock／PlayWebGPUBlock | 子アプリを実行してdiagramへ戻る | game・webgpuはTextPortで対象を指定。共通入口の停止接続も確認する |
 | CameraBlock | 「端末のカメラ／XIAO」の選択、端末カメラの開始・停止、画像表示 | 既定はXIAO。端末は明示操作・カメラ権限とHTTPS／localhostが必要。画像のポート値伝播は未実装。物体検出はObjectDetectionBlockが画像を参照 |

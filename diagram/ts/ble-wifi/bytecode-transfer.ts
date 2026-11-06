@@ -34,7 +34,7 @@
  * ESP32のbytecode_receiver.cppは両経路を同じ受信器で処理する。受信元と接続世代を組で照合し、
  * 切替・切断では未完了転送を破棄する。保持済みコードは残すが、自動実行・自動再開はしない。
  * VM_START/VM_STOPは両経路の通常指令を使う。開始ACKはVM初期化までで、実行終了を保証しない。
- * デバッガの通信はdebug-protocol.tsのBLE専用経路を維持する。
+ * デバッガの通信も両経路に対応し、別窓口のdebug-protocol.tsを参照する。
  *
  * ## 確認範囲
  *
@@ -170,7 +170,7 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
  * runはパケット単位で直列化・タイムアウトを行い、PING等が間に入れるようにする。
  *
  * @remarks
- * WebはBEGIN→DATA列→COMMITの順で1フレームずつ結果を待つ。パケット単位で既存のGATT待ち列へ入り、間にPING・STOP等を処理できるようにする。1操作の上限は2.5秒。古い結果は転送ID・sequence・操作の一致で除外し、成功時には状態・受信済み長・全体長・CRCも照合する。Readの結果がまだ更新されていなければ10ms待って再読出しする。自動再送・転送の途中再開は行わない。Webの取消は接続を閉じて行い、ABORTは将来の明示取消にも使える受信操作として実装する。
+ * WebはBEGIN→DATA列→COMMITの順で1フレームずつ結果を待つ。パケット単位で共通の待ち列へ入り、間にPING・STOP等を処理できるようにする。1操作の上限は2.5秒。古い結果は転送ID・sequence・操作の一致で除外し、成功時には状態・受信済み長・全体長・CRCも照合する。Readの結果がまだ更新されていなければ10ms待って再読出しする。自動再送・転送の途中再開は行わない。Webの取消は接続を閉じて行い、ABORTは将来の明示取消にも使える受信操作として実装する。
  */
 export async function uploadBytecode(
     input: Uint8Array,

@@ -65,9 +65,9 @@ export interface BLEConnectionState { phase: BLEPhase; deviceName: string; messa
 export type ServoMode = "angle" | "speed";
 
 /**
- * 図の接続UI・機器登録・機器状態・BLE専用転送の窓口。GATT参照は保存しない。
+ * 図の接続UI・機器登録・機器状態・プログラム通信の窓口。GATT参照は保存しない。
  * 通常指令・ACK・通知検証・PING・共通待ち列はcontrol-connection.tsへ委譲する。
- * BLE/Wi-Fiの切替とブロックへの反映を担当する。デバッグ通信は引き続きBLE専用。
+ * BLE/Wi-Fiの切替・プログラム・デバッグ窓口とブロックへの反映を担当する。
  */
 export class BLEConnection {
     state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
@@ -388,6 +388,29 @@ export class BLEConnection {
                         write: bytes => write.writeValueWithResponse(bytes),
                         readResult: () => result.readValue(),
                     };
+                }, async () => {
+                    check();
+                    const control = await service.getCharacteristic(BLE_UUID.debugControl);
+                    check();
+                    const result = await service.getCharacteristic(BLE_UUID.debugResult);
+                    check();
+                    const event = await service.getCharacteristic(BLE_UUID.debugEvent);
+                    check();
+                    const data = await service.getCharacteristic(BLE_UUID.debugData);
+                    check();
+                    return {
+                        writeControl: bytes => control.writeValueWithResponse(bytes),
+                        readResult: () => result.readValue(),
+                        readEvent: () => event.readValue(),
+                        readData: () => data.readValue(),
+                        startEvents: () => event.startNotifications(),
+                        subscribeEvents: listener => {
+                            event.addEventListener("characteristicvaluechanged", listener);
+                            return () => {
+                                event.removeEventListener("characteristicvaluechanged", listener);
+                            };
+                        },
+                    };
                 }));
             stage = "状態通知登録";
             await status.startNotifications();
@@ -482,6 +505,7 @@ export class BLEConnection {
             this.wifi = wifi;
             const generation = ++this.generation;
             this.bytecodeReceipt = undefined;
+            this.debugRequestId = 0;
             this.requestedRate = 0;
             this.control.bind(wifi);
             wifi.onLost = message => { if (this.generation === generation) this.close("error", message); };
@@ -613,11 +637,9 @@ export class BLEConnection {
             throw new Error("バイトコードまたはブレークポイントを送信中です。");
         }
         const generation = this.generation;
-        const service = this.service;
         const check = () => {
-            if (generation !== this.generation || !service || service !== this.service
-                || this.bytecodeReceipt !== receipt || this.state.phase !== "connected" || !this.device?.gatt?.connected
-                || this.state.transport === "wifi" || this.provisioning) {
+            if (generation !== this.generation || this.bytecodeReceipt !== receipt ||
+                this.state.phase !== "connected" || this.provisioning) {
                 throw new Error("現在のESP32へ送信済みのコードだけをデバッグできます。");
             }
         };
@@ -627,26 +649,23 @@ export class BLEConnection {
         this.debuggerSending = true;
         try {
             if (!this.debugger) {
-                // コード置換・Wi-Fi準備で受信を解除しても、進行中のGATT完了を通信障害にしない。
+                // コード置換・Wi-Fi準備で受信を解除しても、進行中の通信完了を通信障害にしない。
                 // receipt/所有者の照合は通信の前後にPythonDebugTransport.check()が行う。
-                const checkGatt = () => {
-                    if (generation !== this.generation || service !== this.service || !this.device?.gatt?.connected) {
-                        throw new Error("デバッグ用のBLE接続が切れました。");
+                const checkTransport = () => {
+                    if (generation !== this.generation || this.state.phase !== "connected") {
+                        throw new Error("デバッグ用の接続が切れました。");
                     }
                 };
-                const run = <T>(operation: () => Promise<T>) => this.control.runOperation(operation, checkGatt);
-                const control = await run(() => service!.getCharacteristic(BLE_UUID.debugControl));
-                const result = await run(() => service!.getCharacteristic(BLE_UUID.debugResult));
-                const event = await run(() => service!.getCharacteristic(BLE_UUID.debugEvent));
-                const data = await run(() => service!.getCharacteristic(BLE_UUID.debugData));
+                const run = <T>(operation: () => Promise<T>) => this.control.runOperation(operation, checkTransport);
+                const channel = await this.control.openDebug(check);
                 // プログラム再送・通信オブジェクト再作成でも、同じ接続内の要求番号を再利用しない。
                 const nextRequestId = () => {
                     if (this.debugRequestId === 65535) {
-                        throw new Error("デバッグ要求番号の上限です。BLEを再接続してください。");
+                        throw new Error("デバッグ要求番号の上限です。再接続してください。");
                     }
                     return ++this.debugRequestId;
                 };
-                const client = new PythonDebugTransport(control, result, event, data, run, check, nextRequestId, (snapshot, error) => {
+                const client = new PythonDebugTransport(channel, run, check, nextRequestId, (snapshot, error) => {
                     if (this.debugger === client && generation === this.generation) {
                         this.publishDebug(snapshot, error);
                     }
@@ -762,7 +781,7 @@ export class BLEConnectionBlock extends FunctionBlock {
     children(): UI[] { return [this.button, this.wifiButton, this.bytecodeButton]; }
     setBoxSize(): void { this.boxSize = new Vec2(280, this.inToolbox ? 60 : 302); }
 
-    /** 開発用Pythonファイルを生成器へ渡し、現在のBLE接続へ手動送信する。
+    /** 開発用Pythonファイルを生成器へ渡し、現在のBLE／Wi-Fi接続へ手動送信する。
      *
      * @remarks
      * ## 操作とAPI
