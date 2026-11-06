@@ -73,6 +73,11 @@ async function deadline<T>(promise: Promise<T>, signal: AbortSignal, ms = 15000)
         promise.then(value => { finish(); if (signal.aborted) abort(); else resolve(value); }, error => { finish(); reject(error); });
     });
 }
+/**
+ * BLE接続成立とWi-Fi設定に必要なペアリング認証は別の状態。
+ * ESP32のuroa_ble.cppが接続時に認証を開始し、設定窓口で暗号化・MITM認証を検査する。
+ * Not pairedは操作案内へ変換する。資格情報や設定要求をログへ出さず、自動再送しない。
+ */
 export class BLEWifiSetup {
     private tail: Promise<unknown> = Promise.resolve();
     constructor(private tx: ConfigCharacteristic, private rx: ConfigCharacteristic) {}
@@ -91,6 +96,11 @@ export class BLEWifiSetup {
                 const reply = JSON.parse(decoder.decode(value));
                 if (typeof reply.error === "string" && reply.error) throw new Error("Wi-Fi設定に失敗しました。入力または機器の接続状態を確認してください。");
                 return reply;
+            } catch (error) {
+                if (error instanceof Error && /GATT Error: Not paired/i.test(error.message)) {
+                    throw new Error("BLEのペアリング認証が完了していません。Windowsのペアリング要求で123456を入力し、もう一度操作してください。要求が出ない場合はWindowsのBluetooth設定でこの基板の登録を削除し、diagramからBLE接続し直してください。");
+                }
+                throw error;
             } finally { bytes.fill(0); bytes = new Uint8Array(); }
         });
         this.tail = task; return task;

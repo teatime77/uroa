@@ -228,7 +228,7 @@ export class PythonHighlightEditor {
     /**
      * 修飾なしF9でselectionStartの1始まり行番号を切り替える。IME変換中・キーリピートは除外する。
      * 空行・コメントを含む任意の行が対象。Start時にpython-block.tsが実行可能PCへの変換を検証する。
-     * 実行・停止中はreadOnlyとして変更を拒否する。変更後の再開・ステップは未対応。
+     * 実行・一時停止中はreadOnlyとして変更を拒否する。一時停止中のブレークポイント変更は未対応。
      * 状態はこのエディタ内だけに保持し、PythonBlockの保存・コピーには含めない。
      */
     private toggleBreakpoint(): void {

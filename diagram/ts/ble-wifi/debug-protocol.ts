@@ -17,7 +17,15 @@
  * op=4 STATUS: 8バイト、revision=0。保持イメージのrevision・元CRC・全体長を取得する。
  * op=5 CHUNK: 16バイト、stopId:u32@8、Snapshot内offset:u32@12。
  * op=6 ABORT: 8バイト。未完了一覧だけを破棄する。
- * BEGIN/DATA/COMMITはRunningでは拒否する。0個COMMITで全解除。最大4096個、受信無進捗期限5秒。
+ * op=7/8/9 POINTS_BEGIN/DATA/COMMIT: 1/2/3と同じ形式で、ステップ用PC表を別に全置換する。
+ * ステップ用は最大65536点。Pythonの文開始・条件評価・関数入口・暗黙return前を同一生成から送る。
+ * VMは1PC=1bitで保持する。CALL継続は表へ含めず、In/Overで文の途中に停止しない。
+ * op=10 CONTINUE、11 OVER、12 IN、13 OUT: 12バイト、現在のstopId:u32@8。
+ * PausedかつSnapshot/世代/stopId一致、一覧受信中でない場合だけ受け付け、Result.valueで消費したstopIdを返す。
+ * 成功後は旧Snapshotを破棄する。同じ直前requestId・内容の再送は再実行せず同じACKを返す。
+ * 古いstopIdの操作は再開後や別の停止へ適用しない。モジュールのOUTは拒否する。
+ * 両一覧のBEGIN/DATA/COMMITはRunningでは拒否する。0個COMMITでその表を全解除。
+ * ブレークポイントは最大4096個、ステップ用は最大65536個、受信無進捗期限5秒。
  * STATUS以外は現在revision一致を必須とし、同じ接続世代の要求だけを処理する。
  *
  * Resultは20バイト: version:u8@0、op:u8@1、requestId:u16@2、code:u8@4、VM state:u8@5、
@@ -35,7 +43,7 @@
  * stopIdはデバイス稼働中に再利用しない。非PausedではstopId/長さ/CRCは0。
  * CRCは既存bytecode-transfer.tsのCRC-32/ISO-HDLCと同一。Snapshot上限は256KiB。
  *
- * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)、slotBytes:u16@2=8、
+ * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
  * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
  * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
  * classId:u16@2(Object以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
@@ -53,7 +61,11 @@
  * SnapshotはPaused中だけ有効。Stop・Start・プログラム置換・接続世代変更で無効化し、
  * 全チャンク・CRC・構造を検証するまで公開しない。大域・スタック・PC/BP/SPは同じ停止の値。
  * ブレークポイント停止はVMだけを止め、機器出力・補間は維持する。StopとPINGは既存経路を維持する。
- * チャンクごとに共通待ち列を返し、長いSnapshotでPINGを塞がない。再開・ステップは未実装。
+ * チャンクごとに共通待ち列を返し、長いSnapshotでPINGを塞がない。
+ * 再開は現在の到達だけを消費し、ループの次周は同じPCでも停止する。NativePendingの再試行は到達に数えない。
+ * Inは次の停止点または現在フレームの復帰直後、Overは同じフレームの次の停止点または復帰直後、
+ * Outは現在フレームの復帰直後に止める。フレームIDと深さで再帰を区別し、閲覧中のフレームには依存しない。
+ * 有効ブレークポイントを優先し、停止で保留ステップを完了とする。HALTは終了、ネイティブは内部へ入らず完了を待つ。
  */
 import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
 
@@ -62,6 +74,9 @@ export const debugProtocol = {
     errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
         "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
 } as const;
+
+export type DebugAction = "continue" | "over" | "in" | "out";
+const debugActions: Record<DebugAction, number> = { continue: 10, over: 11, in: 12, out: 13 };
 
 /**
  * 通信経路から独立した要求・ACK・停止Event・選択Dataの窓口。
@@ -74,7 +89,7 @@ export const debugProtocol = {
  * BLE Notifyは読出しの契機に使い、どちらの経路もEvent Readで最新の停止状態を確定する。
  * 切断・切替では接続の経路と世代を組で照合し、旧要求・Snapshot・要求番号を失効させる。
  * プログラム世代・stopId・PC・CRC・Data選択とACK照合は共通のPythonDebugTransportが担当する。
- * 再開・ステップ・F9の行番号からPCへの変換を追加する変更ではない。
+ * F9の行からPCへの変換はpython/debug-info.tsが担当する。
  */
 export interface DebugChannel {
     writeControl(data: Uint8Array): Promise<void>;
@@ -104,6 +119,7 @@ export interface DebugValue {
 export interface DebugSnapshot {
     stopId: number;
     revision: number;
+    reason: 1 | 2;
     pc: number;
     bp: number;
     sp: number;
@@ -143,7 +159,8 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
     const stack = view.getUint32(20, true);
     const version = view.getUint8(0);
     const valuesEnd = 24 + 8 * (globals + stack);
-    if ((version !== 1 && version !== 2) || view.getUint8(1) !== 1 || view.getUint16(2, true) !== 8
+    const reason = view.getUint8(1);
+    if ((version !== 1 && version !== 2) || (reason !== 1 && reason !== 2) || view.getUint16(2, true) !== 8
         || pc > 65535 || globals > 1024 || sp > 1024 || stack !== sp || bp > sp
         || (version === 1 ? bytes.length !== valuesEnd : bytes.length < valuesEnd + 4)) {
         throw new Error("デバッグ停止データのヘッダーが不正です。");
@@ -191,7 +208,7 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
             throw new Error("停止データの末尾に余分なデータがあります。");
         }
     }
-    return { stopId: event.stopId, revision: event.revision, pc, bp, sp,
+    return { stopId: event.stopId, revision: event.revision, reason, pc, bp, sp,
         globals: values.slice(0, globals), stack: values.slice(globals), strings };
 }
 
@@ -208,6 +225,7 @@ export class PythonDebugTransport {
     private completed?: number;
     private ignored?: number;
     private releaseEvents?: () => void;
+    private executing = false;
 
     constructor(private readonly channel: DebugChannel,
         private readonly run: RunTransport, private readonly current: () => void,
@@ -236,8 +254,13 @@ export class PythonDebugTransport {
             view.setUint16(2, id, true);
             view.setUint32(4, revision, true);
             packet.set(body, 8);
-            await this.run(() => this.channel.writeControl(packet));
+            const write = () => {
+                this.check(signal);
+                return this.channel.writeControl(packet);
+            };
+            await this.run(write);
             const deadline = performance.now() + debugProtocol.timeoutMs;
+            let retryAt = performance.now() + 400;
             while (performance.now() < deadline) {
                 this.check(signal);
                 const reply = await this.run(() => this.channel.readResult());
@@ -245,6 +268,11 @@ export class PythonDebugTransport {
                 if (reply.byteLength !== 20 || reply.getUint8(0) !== 1 || reply.getUint8(5) > 5
                     || reply.getUint16(6, true) !== 0) {
                     throw new Error("デバッグ受付結果の形式が不正です。");
+                }
+                if (performance.now() >= retryAt) {
+                    // 同じ要求番号・内容を再送する。VM操作もデバイスの直前ACK再公開で二重実行しない。
+                    await this.run(write);
+                    retryAt = performance.now() + 400;
                 }
                 if (reply.getUint16(2, true) === id && reply.getUint8(1) === op) {
                     const code = reply.getUint8(4);
@@ -271,17 +299,14 @@ export class PythonDebugTransport {
         return task;
     }
 
-    /** 元イメージの保持結果と照合し、PC一覧を全置換してから自動受信を開始する。 */
-    async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal): Promise<void> {
+    /** 1/2/3と7/8/9の共通段階転送。どちらも確定まで部分一覧を実行へ使わない。 */
+    private async sendPcList(receipt: BytecodeReceipt, pcs: readonly number[], points: boolean, signal?: AbortSignal): Promise<void> {
         const sorted = [...new Set(pcs)].sort((a, b) => a - b);
-        if (sorted.length > debugProtocol.maxBreakpoints || sorted.some(pc => !Number.isInteger(pc) || pc < 0 || pc > 65535)) {
-            throw new RangeError("ブレークポイントは0〜65535の命令PCを最大4096個指定してください。");
+        if (sorted.length > (points ? 65536 : debugProtocol.maxBreakpoints)
+            || sorted.some(pc => !Number.isInteger(pc) || pc < 0 || pc > 65535)) {
+            throw new RangeError("デバッグ用PC一覧の範囲または個数が不正です。");
         }
-        const status = await this.request(4, 0, undefined, signal);
-        if (status.revision === 0 || status.value !== receipt.crc32 || status.extra !== receipt.byteLength) {
-            throw new Error("保持中のバイトコードとブレークポイントの対象が一致しません。");
-        }
-        this.revision = status.revision;
+        const base = points ? 6 : 0;
         const bytes = new Uint8Array(sorted.length * 2);
         const values = new DataView(bytes.buffer);
         sorted.forEach((pc, index) => values.setUint16(index * 2, pc, true));
@@ -290,19 +315,19 @@ export class PythonDebugTransport {
         header.setUint32(0, sorted.length, true);
         header.setUint32(4, bytecodeCrc32(bytes), true);
         header.setUint32(8, receipt.crc32, true);
-        await this.request(1, this.revision, begin, signal);
+        await this.request(base + 1, this.revision, begin, signal);
         try {
             for (let index = 0; index < sorted.length; index += 4) {
                 const part = bytes.slice(index * 2, Math.min(index + 4, sorted.length) * 2);
                 const body = new Uint8Array(4 + part.length);
                 new DataView(body.buffer).setUint32(0, index, true);
                 body.set(part, 4);
-                const ack = await this.request(2, this.revision, body, signal);
+                const ack = await this.request(base + 2, this.revision, body, signal);
                 if (ack.value !== index + part.length / 2) {
                     throw new Error("ブレークポイントの受付件数が不正です。");
                 }
             }
-            const ack = await this.request(3, this.revision, undefined, signal);
+            const ack = await this.request(base + 3, this.revision, undefined, signal);
             if (ack.value !== sorted.length) {
                 throw new Error("ブレークポイントの確定件数が不正です。");
             }
@@ -313,6 +338,20 @@ export class PythonDebugTransport {
                 await this.request(6, this.revision).catch(() => undefined);
             }
             throw error;
+        }
+    }
+
+    /** 元イメージと照合し、ブレークポイントと任意のステップ表を確定してから自動受信を開始する。 */
+    async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal,
+        stepPcs?: readonly number[]): Promise<void> {
+        const status = await this.request(4, 0, undefined, signal);
+        if (status.revision === 0 || status.value !== receipt.crc32 || status.extra !== receipt.byteLength) {
+            throw new Error("保持中のバイトコードとデバッグ対象が一致しません。");
+        }
+        this.revision = status.revision;
+        await this.sendPcList(receipt, pcs, false, signal);
+        if (stepPcs !== undefined) {
+            await this.sendPcList(receipt, stepPcs, true, signal);
         }
         if (this.timer === undefined) {
             this.releaseEvents = this.channel.subscribeEvents?.(this.changed);
@@ -327,8 +366,41 @@ export class PythonDebugTransport {
         await this.poll();
     }
 
+    /** 全受信済みの現在停止だけを操作する。送信開始時に旧値を失効させ、ACK後も新しいEventを取得する。 */
+    async execute(action: DebugAction, snapshot: DebugSnapshot, signal?: AbortSignal): Promise<void> {
+        this.check(signal);
+        if (this.executing || snapshot.revision !== this.revision || snapshot.stopId !== this.completed
+            || snapshot.stopId !== this.event?.stopId || this.event.state !== 5 || this.event.code !== 0) {
+            throw new Error("最新の停止データを取得してから操作してください。");
+        }
+        this.executing = true;
+        this.invalidateSnapshot();
+        const body = new Uint8Array(4);
+        new DataView(body.buffer).setUint32(0, snapshot.stopId, true);
+        try {
+            const ack = await this.request(debugActions[action], this.revision, body, signal);
+            if (ack.value !== snapshot.stopId) {
+                throw new Error("デバッグ操作の停止IDが一致しません。");
+            }
+        }
+        catch (error) {
+            // ACKだけが失われた場合も、現在のEventから実際の停止・実行状態を復旧する。
+            this.ignored = undefined;
+            throw error;
+        }
+        finally {
+            this.executing = false;
+            this.event = undefined;
+            if (!signal?.aborted) {
+                await this.poll().catch(error => this.fail(error));
+            }
+        }
+    }
+
     private fail(error: unknown): void {
         if (!this.disposed && !(error instanceof DOMException && error.name === "AbortError")) {
+            // 取得済み停止のEvent Read失敗でも、次回の成功時に全データを再取得して表示を復旧する。
+            this.completed = undefined;
             this.publish(undefined, error instanceof Error ? error : new Error("デバッグ停止データを取得できませんでした。"), this.event);
         }
     }
@@ -339,7 +411,7 @@ export class PythonDebugTransport {
     };
 
     private async poll(): Promise<void> {
-        if (this.polling || this.disposed) {
+        if (this.polling || this.disposed || this.executing) {
             return;
         }
         this.polling = true;

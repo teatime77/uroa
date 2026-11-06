@@ -2,6 +2,16 @@
 
 更新日: 2026-11-06。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## BLE接続後のWi-Fi設定認証（2026-11-06）
+
+ESP32の認証開始は[uroa_ble.cpp](../../esp32/lib/ble/src/uroa_ble.cpp)、Not pairedの案内は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。ユーザー指定により確認は`xiao_esp32s3`のビルドだけとし、成功した。コマンドとメモリー量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に置く。テスト・uroaのビルド・Upload・WindowsのペアリングとWi-Fi接続の実機確認は行っていない。
+
+## Pythonの再開・ステップ操作（2026-11-06）
+
+要求・ACK・停止ID・PC表・停止理由の正本は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)、同一生成のステップ用PCは[bytecode.ts](../diagram/ts/python/bytecode.ts)、操作と取消・所有権は[PythonBlock](../diagram/ts/python/python-block.ts)、アイコンの有効化は[debugger-view.ts](../diagram/ts/python/debugger-view.ts)、VM制御は[bytecode_vm.cpp](../../esp32/app/diagram-control/src/bytecode_vm.cpp)を参照する。
+
+変更した7ソースをTypeScript Compiler APIの`noEmit`で静的確認し、型診断は0件。ESP32はこの会話で指定された`esp32dev`だけをビルドし、結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に置く。差分・空白・追加リンクも静的確認した。テストは作成・実行せず、公開ビルド・Upload・ブラウザー操作・実BLE／Wi-Fi・再帰・ループ・ネイティブ待機・取消・再送・最大PC表とSnapshotの実機確認は行っていない。
+
 ## Pythonデバッグ情報の右側パネル（2026-11-06）
 
 エディタと右側パネルの配置・最大化は[python-block.ts](../diagram/ts/python/python-block.ts)、操作アイコン・各情報欄・スクロール・数値表記は[debugger-view.ts](../diagram/ts/python/debugger-view.ts)の仕様コメントを参照する。

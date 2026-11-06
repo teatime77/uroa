@@ -318,6 +318,7 @@ class BytecodeGenerator {
     private readonly allocations = new Map<Scope, SlotAllocation>();
     private readonly nativeIds = new Set<number>();
     private readonly statementStarts: { index: number; charPos: number; owner?: string }[] = [];
+    private readonly implicitReturns: number[] = [];
     private labelCount = 0;
     private readonly globalScope: Scope;
     private readonly sourceLines: string[];
@@ -1258,6 +1259,8 @@ class BytecodeGenerator {
             const fn = this.analysis!.functions.get(scope.fn!.name)!;
             this.label(fn.node.name, fn.node);
             this.block(scope.block);
+            // 暗黙returnはステップ専用。def行や末尾の別行へ行ブレークポイントを作らない。
+            this.implicitReturns.push(this.entries.length);
             if (fn.type!.kind === "none") {
                 this.emit("PUSH_NONE");
             }
@@ -1604,6 +1607,9 @@ class BytecodeGenerator {
         }
         const info: PythonDebugInfo = {
             source: this.module.source, api: this.analysis.api, instructions,
+            stepPcs: [...new Set([...this.statementStarts.map(point => positions[point.index]),
+                ...functions.map(fn => fn.entryPc), ...this.implicitReturns.map(index => positions[index])])]
+                .sort((left, right) => left - right),
             globals: [...this.analysis.globals.values()],
             functions: [{ name: "<module>", entryPc: 0, endPc: functions[0]?.entryPc ?? pc,
                 slots: 0, variables: [] }, ...functions],

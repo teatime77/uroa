@@ -6,7 +6,7 @@
  * 欄全体を必要時に縦スクロールする。clear()でも操作と各欄の見出しを残し、古い停止値だけを破棄する。
  * DOMはtextContentで構築し、値をHTMLとして解釈しない。
  */
-import type { DebugSnapshot, DebugValue } from "../ble-wifi/debug-protocol";
+import type { DebugSnapshot, DebugValue, DebugAction } from "../ble-wifi/debug-protocol";
 import type { PythonDebugFunction, PythonDebugInfo } from "./debug-info";
 import { valueSlotTypes, type PythonType, type PythonVariable } from "./semantic";
 
@@ -75,23 +75,23 @@ const floatFormat = new Intl.NumberFormat("en-US", {
     useGrouping: false, minimumFractionDigits: 3, maximumFractionDigits: 3
 });
 
-/** 再開とステップの操作アイコン。VMの制御処理は未実装なのでボタンは常に無効とする。 */
-function debugControls(): HTMLElement {
+/** 操作は所有するPythonBlockへ通知する。表示するフレームの選択は実行対象へ渡さない。 */
+function debugControls(execute: (action: DebugAction) => void, buttons: Map<DebugAction, HTMLButtonElement>): HTMLElement {
     const panel = document.createElement("div");
     panel.setAttribute("role", "toolbar");
     panel.setAttribute("aria-label", "デバッグ操作");
     Object.assign(panel.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
-    const icons = [
-        { label: "再開", path: "M8 5 L19 12 L8 19 Z" },
-        { label: "Step Over", path: "M4 11 C4 2 20 2 20 11 V14 M16 10 L20 14 L24 10 M8 20 H16" },
-        { label: "Step In", path: "M12 3 V15 M7 10 L12 15 L17 10 M5 21 H19" },
-        { label: "Step Out", path: "M12 21 V7 M7 12 L12 7 L17 12 M5 3 H19" }
+    const icons: { action: DebugAction; label: string; path: string }[] = [
+        { action: "continue", label: "再開", path: "M8 5 L19 12 L8 19 Z" },
+        { action: "over", label: "Step Over", path: "M4 11 C4 2 20 2 20 11 V14 M16 10 L20 14 L24 10 M8 20 H16" },
+        { action: "in", label: "Step In", path: "M12 3 V15 M7 10 L12 15 L17 10 M5 21 H19" },
+        { action: "out", label: "Step Out", path: "M12 21 V7 M7 12 L12 7 L17 12 M5 3 H19" }
     ];
     for (const icon of icons) {
         const button = document.createElement("button");
         button.type = "button";
         button.disabled = true;
-        button.title = `${icon.label}（未実装）`;
+        button.title = icon.label;
         button.setAttribute("aria-label", button.title);
         Object.assign(button.style, { display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: "36px", height: "36px", padding: "5px", border: "1px solid #a2ad97",
@@ -111,6 +111,8 @@ function debugControls(): HTMLElement {
         path.setAttribute("stroke-linejoin", "round");
         svg.append(path);
         button.append(svg);
+        button.addEventListener("click", () => execute(icon.action));
+        buttons.set(icon.action, button);
         panel.append(button);
     }
     return panel;
@@ -125,8 +127,10 @@ export class PythonDebuggerView {
     private readonly locals = document.createElement("div");
     private readonly calls = document.createElement("div");
     private readonly raw = document.createElement("pre");
+    private readonly controlButtons = new Map<DebugAction, HTMLButtonElement>();
+    private canStepOut = false;
 
-    constructor() {
+    constructor(execute: (action: DebugAction) => void) {
         this.element.setAttribute("aria-label", "Pythonデバッグ情報");
         Object.assign(this.element.style, { flex: "0 0 auto", width: "clamp(240px, 32%, 380px)", maxWidth: "50%",
             minWidth: "0", minHeight: "0", boxSizing: "border-box", overflowY: "auto", overflowX: "hidden",
@@ -134,7 +138,7 @@ export class PythonDebuggerView {
         const controls = document.createElement("section");
         Object.assign(controls.style, { position: "sticky", top: "-8px", zIndex: "1", background: "#f4f6ef",
             padding: "8px 0", borderBottom: "1px solid #c4cbbd" });
-        controls.append(this.heading("操作パネル"), debugControls(), textElement("div", "再開・ステップは未実装です。"), this.registers);
+        controls.append(this.heading("操作パネル"), debugControls(execute, this.controlButtons), this.registers);
         const globals = document.createElement("section");
         globals.append(this.heading("大域変数"), this.globals);
         const locals = document.createElement("section");
@@ -159,6 +163,8 @@ export class PythonDebuggerView {
 
     /** 停止データの失効後もパネルを残す。関数選択のイベントは旧ボタンと一緒に破棄する。 */
     clear(): void {
+        this.canStepOut = false;
+        this.setControlsEnabled(false);
         this.registers.textContent = "停止データなし";
         this.globals.textContent = "停止データなし";
         this.localTitle.textContent = "局所変数";
@@ -167,9 +173,20 @@ export class PythonDebuggerView {
         this.raw.textContent = "停止データなし";
     }
 
+    /** 最新停止データの取得後だけ有効化する。Outの可否は最上位フレームだけで判定し、閲覧先に依存しない。 */
+    setControlsEnabled(enabled: boolean): void {
+        for (const [action, button] of this.controlButtons) {
+            button.disabled = !enabled || action === "out" && !this.canStepOut;
+            button.style.color = button.disabled ? "#7a8470" : "#254b15";
+            button.style.background = button.disabled ? "#e7ebdf" : "#fff";
+            button.style.cursor = button.disabled ? "not-allowed" : "pointer";
+        }
+    }
+
     /** 現フレームを初期選択し、クリック・キーボードで呼出し元へ切り替える。 */
     show(info: PythonDebugInfo, snapshot: DebugSnapshot): void {
         const frames = restoreFrames(info, snapshot);
+        this.canStepOut = frames.length > 1;
         // 大域の一時領域もSnapshotにあるが、利用者変数だけを通常欄へ出す。
         const globalView = this.variables(info.globals, snapshot.globals, 0, snapshot.globals.length, info, snapshot);
         const localViews = frames.map(frame => this.variables(frame.fn.variables, snapshot.stack, frame.bp, frame.limit, info, snapshot));
@@ -200,7 +217,7 @@ export class PythonDebuggerView {
         select(0);
         const rawText = [...snapshot.globals.map((value, slot) => `G[${slot}] ${this.value(value, snapshot)}`),
             ...snapshot.stack.map((value, slot) => `S[${slot}] ${this.value(value, snapshot)}`)].join("\n");
-        this.registers.textContent = `ブレークポイントで停止\nPC=${snapshot.pc}　SP=${snapshot.sp}　BP=${snapshot.bp}`;
+        this.registers.textContent = `${snapshot.reason === 2 ? "ステップで停止" : "ブレークポイントで停止"}\nPC=${snapshot.pc}　SP=${snapshot.sp}　BP=${snapshot.bp}`;
         this.globals.replaceChildren(globalView);
         this.calls.replaceChildren(calls);
         this.raw.textContent = rawText || "スロットなし";

@@ -2,7 +2,8 @@
  * bytecode.tsが同一コンパイルから作る、diagram内だけの名前・型・最終命令PCの対応。
  * python-block.tsが転送Receiptと一緒に保持し、編集・再送・切断で失効させる。
  * debugger-view.tsが停止SnapshotのBPチェーンとCALL命令を検証してフレームを復元する。
- * バイナリとデバッグ情報は保存・コピーしない。送信する停止点は文を評価する前のPCだけ。
+ * バイナリとデバッグ情報は保存・コピーしない。行ブレークポイントは文を評価する前のPCだけ。
+ * stepPcsは文開始に加えて関数入口と暗黙return前を含み、VMへ別表として送る。
  */
 import type { DeviceApi, PythonVariable } from "./semantic";
 
@@ -20,6 +21,7 @@ export interface PythonDebugInfo {
     globals: readonly PythonVariable[];
     functions: readonly PythonDebugFunction[];
     stops: readonly { pc: number; line: number; charPos: number; owner?: string }[];
+    stepPcs: readonly number[];
     instructions: Map<number, { charPos: number; owner?: string; opcode: string; operand?: string }>;
 }
 

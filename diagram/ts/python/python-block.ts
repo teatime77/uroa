@@ -18,13 +18,15 @@
  * Startは同一生成のDebugInfoとReceiptを保持し、行ブレークポイントを文開始PCへ変換して確定後にVMを開始する。
  * 停止通知で自動最大化し、取得完了した同一停止の大域・局所・Call Stack・PC/SP/BPと全スロットを表示する。
  * 構造体とフレーム選択はdebugger-view.ts、ワイヤー仕様はble-wifi/debug-protocol.tsを参照する。
- * 実行中・ブレークポイント停止中は編集とブレークポイント変更を禁止する。再開・ステップは未実装、Stop後に新規Startする。
+ * 実行中・一時停止中は編集とブレークポイント変更を禁止する。再開・3種のステップは全停止データ取得後に許す。
+ * 操作時は旧停止値を破棄し、新しい停止・終了まで操作ボタンを無効化する。Stop・削除・切断では送信待ちも取り消す。
  * ブレークポイントがある実行は手動Startに限定し、Actionチェーンからは開始前に拒否する。
  * 所有Receiptの失効・切断・Stop・編集・読込・削除で旧停止値を破棄し、保存・コピーには含めない。
  */
 import { Vec2 } from "@i18n";
 import { diagramDevice } from "../ble-wifi/device-connection";
 import type { BytecodeReceipt } from "../ble-wifi/bytecode-transfer";
+import type { DebugAction } from "../ble-wifi/debug-protocol";
 import { theCanvas } from "../diagram_util";
 import { ActionBlock, registerActionBlock } from "../procedure";
 import { getProcedureSignal, subscribeDiagramStop } from "../runtime";
@@ -61,7 +63,9 @@ export class PythonBlock extends ActionBlock {
     private readonly startButton = document.createElement("button");
     private readonly stopButton = document.createElement("button");
     private readonly statusView = document.createElement("div");
-    private readonly debuggerView = new PythonDebuggerView();
+    private readonly debuggerView = new PythonDebuggerView(action => {
+        void this.executeDebug(action);
+    });
     private readonly events = new AbortController();
     private readonly releaseConnection: () => void;
     private readonly releaseStop: () => void;
@@ -69,6 +73,8 @@ export class PythonBlock extends ActionBlock {
     private request?: AbortController;
     private checkRequest?: AbortController;
     private openRequest?: AbortController;
+    private debugRequest?: AbortController;
+    private debugValuesReady = false;
     private sourceFilename = "";
     private stopping?: Promise<void>;
     private receipt?: BytecodeReceipt;
@@ -173,12 +179,14 @@ export class PythonBlock extends ActionBlock {
                 this.receipt = undefined;
                 this.ownsVM = false;
                 this.request?.abort();
+                this.debugRequest?.abort();
                 this.debugInfo = undefined;
                 this.clearDebugView();
             }
             if (this.vmReceipt && diagramDevice.bytecodeReceipt !== this.vmReceipt) {
                 this.ownsVM = false;
                 this.vmReceipt = undefined;
+                this.debugRequest?.abort();
                 this.clearDebugView();
             }
             this.updateControls();
@@ -205,15 +213,19 @@ export class PythonBlock extends ActionBlock {
             if (snapshot && this.debugInfo) {
                 try {
                     this.debuggerView.show(this.debugInfo, snapshot);
+                    this.debugValuesReady = true;
                     this.highlightEditor.setExecutionLine(debugLine(this.debugInfo, snapshot.pc));
-                    this.showStatus("ブレークポイントで停止しました。関数名を選ぶと局所変数を表示します。再開・ステップは未実装です。");
+                    this.showStatus(`${snapshot.reason === 2 ? "ステップ" : "ブレークポイント"}で停止しました。再開・ステップ操作、または関数名を選んで局所変数を確認できます。`);
                 }
                 catch (failure) {
                     this.showStatus(failure instanceof Error ? failure.message : "停止情報を表示できませんでした。");
                 }
             }
             else if (event?.state === 5) {
-                this.showStatus("ブレークポイントで停止しました。デバッグ情報を取得しています…");
+                this.showStatus("VMが一時停止しました。デバッグ情報を取得しています…");
+            }
+            else if (event?.state === 1) {
+                this.showStatus("VMを実行しています。次の停止・終了を待っています…");
             }
             else if (event && (event.state === 2 || event.state === 3 || event.state === 4)) {
                 // HALTでも機器出力は保持されるため、Stopの所有権は残して編集と新規Startだけを許す。
@@ -402,14 +414,17 @@ export class PythonBlock extends ActionBlock {
         this.checkButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined
             || this.checkRequest !== undefined || this.stopping !== undefined || this.openRequest !== undefined;
         this.startButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined || this.stopping !== undefined
-            || this.checkRequest !== undefined || this.openRequest !== undefined
+            || this.checkRequest !== undefined || this.openRequest !== undefined || this.debugRequest !== undefined
             || diagramDevice.bytecodeSending || diagramDevice.state.phase !== "connected";
         this.stopButton.disabled = disabled || this.stopping !== undefined || (!this.request && !this.ownsVM);
         this.sourceEditor.readOnly = this.request !== undefined || this.openRequest !== undefined || this.ownsVM && !this.vmFinished;
+        this.debuggerView.setControlsEnabled(!disabled && this.debugValuesReady && !this.debugRequest && !this.request
+            && !this.stopping && this.ownsVM && this.vmReceipt === diagramDevice.bytecodeReceipt);
     }
 
     /** 部分受信・失効時には古い値を残さない。最大化状態は維持する。 */
     private clearDebugView(): void {
+        this.debugValuesReady = false;
         this.debuggerView.clear();
         this.highlightEditor.setExecutionLine();
     }
@@ -487,7 +502,8 @@ export class PythonBlock extends ActionBlock {
 
     /** チェックは毎回行い、未編集・同じAPI・現接続・最後の転送の場合だけ生成と転送を省略する。 */
     private async start(signal?: AbortSignal): Promise<void> {
-        if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest || this.stopping || this.openRequest) {
+        if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest
+            || this.stopping || this.openRequest || this.debugRequest) {
             return;
         }
         const controller = new AbortController();
@@ -530,7 +546,7 @@ export class PythonBlock extends ActionBlock {
             }
             this.showStatus("ブレークポイントを送信しています…");
             await diagramDevice.sendBreakpoints(receipt,
-                resolveBreakpoints(this.debugInfo!, this.highlightEditor.getBreakpointLines()), controller.signal);
+                resolveBreakpoints(this.debugInfo!, this.highlightEditor.getBreakpointLines()), controller.signal, this.debugInfo!.stepPcs);
             controller.signal.throwIfAborted();
             this.showStatus("VMを開始しています…");
             // 書込み直後から所有扱いにし、ACK待機中のStopでもVM_STOPを必ず送る。
@@ -568,8 +584,34 @@ export class PythonBlock extends ActionBlock {
         await this.start(getProcedureSignal());
     }
 
+    /** 現在停止している最上位フレームを操作する。表示フレームを変更しても、送信先PC/BPは指定しない。 */
+    private async executeDebug(action: DebugAction): Promise<void> {
+        const receipt = this.vmReceipt;
+        const snapshot = diagramDevice.debugSnapshot;
+        if (this.removed || this.inToolbox || !this.ownsVM || !receipt || !snapshot || !this.debugValuesReady
+            || this.debugRequest || this.request || this.stopping) {
+            return;
+        }
+        const controller = new AbortController();
+        this.debugRequest = controller;
+        this.showStatus(action === "continue" ? "VMを再開しています…" : "ステップを実行しています…");
+        try {
+            await diagramDevice.executeDebug(receipt, snapshot, action, controller.signal);
+        }
+        catch (error) {
+            if (!controller.signal.aborted && !this.removed) {
+                this.showStatus(error instanceof Error ? error.message : "デバッグ操作に失敗しました。");
+            }
+        }
+        finally {
+            this.debugRequest = undefined;
+            this.updateControls();
+        }
+    }
+
     /** 開始待機を無効化してから停止指令を送る。転送の取消で切断した場合は機器側の切断停止を使う。 */
     private stop(): Promise<void> {
+        this.debugRequest?.abort();
         this.openRequest?.abort();
         this.checkRequest?.abort();
         if (this.stopping) {

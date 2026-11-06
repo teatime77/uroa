@@ -13,7 +13,7 @@ import { checkBytecodeTransfer, type BytecodeReceipt } from "./bytecode-transfer
 import { parsePython } from "../python/parser.js";
 import { analyzePython } from "../python/semantic.js";
 import { generateBytecode } from "../python/bytecode.js";
-import { PythonDebugTransport, type DebugSnapshot, type DebugEvent } from "./debug-protocol";
+import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
 
 // GATT service shared with esp32/app/diagram-control.
 /**
@@ -626,6 +626,7 @@ export class DeviceConnection {
 
     /**
      * 最後に保持したコードへ命令PCの一覧を送る。PythonBlockは同一ビルドのDebugInfoからF9の行を変換する。
+     * stepPcs指定時は同じ生成のステップ用停止点も確定する。未対応ファームウェアでは開始前にエラーとする。
      * 完了後、同じ接続・同じ保持コードのPaused通知から停止値を自動取得し、購読者へ公開する。
      * 通信・フラグ・停止値の共通仕様はdebug-protocol.ts。旧ファームウェアの通常接続には影響しない。
      * ```typescript
@@ -638,7 +639,8 @@ export class DeviceConnection {
      * // 利用終了時はrelease()で購読を解除する。
      * ```
      */
-    async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal): Promise<void> {
+    async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal,
+        stepPcs?: readonly number[]): Promise<void> {
         if (this.bytecodeSending || this.debuggerSending) {
             throw new Error("バイトコードまたはブレークポイントを送信中です。");
         }
@@ -678,7 +680,22 @@ export class DeviceConnection {
                 });
                 this.debugger = client;
             }
-            await this.debugger.sendBreakpoints(receipt, list, signal);
+            await this.debugger.sendBreakpoints(receipt, list, signal, stepPcs);
+        }
+        finally {
+            this.debuggerSending = false;
+        }
+    }
+
+    /** 現接続・所有Receipt・全受信した最新Snapshotを照合し、停止ID付きの再開／ステップを送る。Stopは常に優先できる。 */
+    async executeDebug(receipt: BytecodeReceipt, snapshot: DebugSnapshot, action: DebugAction, signal?: AbortSignal): Promise<void> {
+        if (!this.debugger || this.bytecodeReceipt !== receipt || this.debugSnapshot !== snapshot || this.debugError
+            || this.state.phase !== "connected" || this.provisioning || this.bytecodeSending || this.debuggerSending) {
+            throw new Error("現在の機器・Pythonの停止情報だけを操作できます。");
+        }
+        this.debuggerSending = true;
+        try {
+            await this.debugger.execute(action, snapshot, signal);
         }
         finally {
             this.debuggerSending = false;
