@@ -6,7 +6,7 @@ import { saveJson, theEditor, initDiagramOpen } from "./json-util";
 import { IfBlock, InfiniteLoop, TTSBlock, SleepBlock, TriggerGate, ActionBlock, makeBlockByTypeName, PlayMovieBlock, PlayGameBlock, PlayWebGPUBlock } from "./procedure";
 import { Block } from "./block"
 import { Port } from "./port";
-import { BLEConnectionBlock, diagramBLE, initBLE } from "./ble-wifi/ble";
+import { DeviceConnectionBlock, diagramDevice, initDeviceConnection } from "./ble-wifi/device-connection";
 import { IMUBlock } from "./hardware/imu";
 import { UltrasonicDistanceSensorBlock } from "./hardware/ultrasonic";
 import { PlotBlock } from "./plot/plot";
@@ -24,8 +24,8 @@ import { testPython } from "./python/parser";
 
 export function stopDiagram(): void {
     stopProcedures();
-    if (diagramBLE.state.phase === "connected") {
-        void diagramBLE.stopServos().catch(error => console.error("Servo stop failed", error));
+    if (diagramDevice.state.phase === "connected") {
+        void diagramDevice.stopServos().catch(error => console.error("Servo stop failed", error));
     }
 }
 
@@ -37,7 +37,7 @@ export const BlockClassCount = 27;
 
 export function makeBlock(idx : number) : Block {
     switch(idx){
-    case  0: return new BLEConnectionBlock({});
+    case  0: return new DeviceConnectionBlock({});
     case  1: return new IMUBlock({});
     case  2: return new PlotBlock({});
     case  3: return new IfBlock({});
@@ -72,7 +72,7 @@ export function makeBlock(idx : number) : Block {
 
 export function geBlockName(idx : number) : string {
     switch(idx){
-    case  0: return "BLEConnectionBlock";
+    case  0: return "DeviceConnectionBlock";
     case  1: return "IMUBlock";
     case  2: return "PlotBlock";
     case  3: return "IfBlock";
@@ -233,7 +233,7 @@ async function startProcedures() {
 export async function initDiagram(_signal?: AbortSignal){
     await testPython()
     initUI();
-    initBLE(listeners.signal);
+    initDeviceConnection(listeners.signal);
     
     $("clear-btn").addEventListener("click", (ev : MouseEvent)=>{
         theEditor.clearBlock();
@@ -396,7 +396,7 @@ function setDragDrop(canvas : HTMLCanvasElement){
 
 export function disposeDiagram(): void {
     stopDiagram();
-    diagramBLE.disconnect();
+    diagramDevice.disconnect();
     theEditor?.clearBlock();
     listeners.abort();
     clearTimeout(periodicTimer);

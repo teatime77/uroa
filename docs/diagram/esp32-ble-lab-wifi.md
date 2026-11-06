@@ -31,7 +31,7 @@
 | [uroa_wifi.cpp](../../../esp32/lib/wifi/src/uroa_wifi.cpp) | WifiNetwork: Wi-Fi検索／接続、NVS・mDNS、HTTP／WebSocket・認証 |
 | [uroa_ble.cpp](../../../esp32/lib/ble/src/uroa_ble.cpp) | BleTransport: BLEサービス・通知と、認証済みWi-Fi設定JSONの分割転送 |
 | [camera.cpp](../../../esp32/app/diagram-control/src/camera.cpp) | SenseのPSRAMを使う320×240 JPEG。DevKitとSuperMiniはカメラなし |
-| [ble.ts](../../diagram/ts/ble-wifi/ble.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
+| [device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts) | 共有接続、既存ブロックのBLE／Wi-Fi通信、切り替え・取消 |
 | [robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts) | BLE設定、Wi-Fi認証・通知、SSID名だけの接続履歴保存 |
 | [robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | SSID一覧／手入力、Wi-Fiパスワード入力・Chrome保存要求、BLE接続中の基板への設定送信 |
 | [camera-feed.ts](../../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の画像取得、取消・URL破棄・再描画 |
@@ -41,7 +41,7 @@
 ## 初回の操作
 
 1. PC／AndroidとESP32が同じLANで通信できるようにする。ESP32には2.4GHzのSSIDを指定する。PC／Androidは同じルーターの5GHzでも、端末間通信が許可されていればよい。XIAOへ付属アンテナを取り付ける。別リポジトリーのdiagram-controlを対象ボード環境でUploadする。XIAOは`xiao_esp32s3`、DevKitは`esp32dev`、SuperMiniは`supermini_esp32s3`とし、実際のCOMポートを指定する。Serial Monitorは診断でログが必要な場合に115200bpsで開く。
-2. diagramにBLEConnectionBlockを配置し、「接続」で機器を選ぶ。サーボを有効化せず「Wi-Fi設定／接続」を押す。
+2. diagramにDeviceConnectionBlockを配置し、「接続」で機器を選ぶ。サーボを有効化せず「Wi-Fi設定／接続」を押す。
 3. OSがBLEペアリングを要求したら、固定コード`123456`を入力する。Serial Monitorでの確認は不要。BLE開始時と`BLE connected`の直後にも`BLE setup pairing code: 123456`を表示し、再起動後も同じ値を使う。Wi-Fi設定Characteristicは暗号化・MITM認証済み接続でのみアクセスできる。この教材用コードは全基板共通で、基板ごとの秘密情報ではない。Wi-Fiパスワード・接続キーはシリアルへ出力しない。
 4. 「以前接続したSSID」から選ぶか、「Wi-Fiを検索」でSSIDを選択するか手入力し、パスワードを入力する。オープンネットワークは「パスワードなし」を明示する。
 5. 「Wi-Fiへ接続」を押す。機器の選択は不要で、BLE接続中の基板へ設定を送る。Wi-Fi接続とサーバー開始の成功後、SSID・パスワードをNVSへ保存する。失敗時は以前の保存値を上書きしない。

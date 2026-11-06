@@ -117,6 +117,7 @@ export class PythonHighlightEditor {
     private lines: string[] = [];
     private lineStarts: number[] = [];
     private readonly breakpointLines = new Set<number>();
+    private executionLine?: number;
     private breakpointSource: string;
     private composing = false;
     private diagnostics: readonly PythonEditorDiagnostic[] = [];
@@ -226,10 +227,14 @@ export class PythonHighlightEditor {
 
     /**
      * 修飾なしF9でselectionStartの1始まり行番号を切り替える。IME変換中・キーリピートは除外する。
-     * 空行・コメントを含む任意の行が対象で、実行可能行の検証・BLE送信・VM停止はまだ行わない。
+     * 空行・コメントを含む任意の行が対象。Start時にpython-block.tsが実行可能PCへの変換を検証する。
+     * 実行・停止中はreadOnlyとして変更を拒否する。変更後の再開・ステップは未対応。
      * 状態はこのエディタ内だけに保持し、PythonBlockの保存・コピーには含めない。
      */
     private toggleBreakpoint(): void {
+        if (this.textarea.readOnly) {
+            return;
+        }
         // 直前に代入されたソースの変更も反映してから、新しい行を登録する。
         this.refresh();
         const line = this.textarea.value.slice(0, this.textarea.selectionStart).split("\n").length;
@@ -238,6 +243,24 @@ export class PythonHighlightEditor {
         }
         else {
             this.breakpointLines.add(line);
+        }
+        this.refresh();
+    }
+
+    /** Startが読み取る行番号のコピー。保存・コピーには含めない。 */
+    getBreakpointLines(): number[] {
+        return [...this.breakpointLines].sort((left, right) => left - right);
+    }
+
+    /** 次に実行する文を黄色で示す。最初の停止通知だけスクロールし、閲覧中は位置を保つ。 */
+    setExecutionLine(line?: number): void {
+        const changed = this.executionLine !== line;
+        this.executionLine = line;
+        if (changed && line !== undefined) {
+            const top = (line - 1) * lineHeight;
+            if (top < this.textarea.scrollTop || top + lineHeight > this.textarea.scrollTop + this.textarea.clientHeight) {
+                this.textarea.scrollTop = Math.max(0, top - this.textarea.clientHeight / 3);
+            }
         }
         this.refresh();
     }
@@ -408,6 +431,14 @@ export class PythonHighlightEditor {
             if (y + lineHeight > 0 && y < height) {
                 ctx.fillRect(0, y, width, lineHeight);
             }
+        }
+        if (this.executionLine !== undefined) {
+            const y = padding + (this.executionLine - 1) * lineHeight - this.textarea.scrollTop;
+            ctx.fillStyle = "#655315";
+            ctx.fillRect(0, y, width, lineHeight);
+            ctx.fillStyle = "#ffd866";
+            ctx.font = "bold 12px sans-serif";
+            ctx.fillText("→", 0, y + 17);
         }
     }
 

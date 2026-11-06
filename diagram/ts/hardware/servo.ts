@@ -1,6 +1,6 @@
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
-import { diagramBLE, type ServoMode } from "../ble-wifi/ble";
+import { diagramDevice, type ServoMode } from "../ble-wifi/device-connection";
 import { PortType, theCanvas } from "../diagram_util";
 import { NumberPort } from "../port";
 import { Button, type Attr, type UI } from "../ui";
@@ -62,7 +62,7 @@ export class ServoMotorBlock extends FunctionBlock {
             this.actionVersion++; this.moveVersion++;
             this.busy = false; this.message = "";
             if (Number.isInteger(previous) && previous >= 0 && previous < 16 && previous !== this.configuredChannel) {
-                void diagramBLE.disableServo(previous).catch(error => this.showError(error));
+                void diagramDevice.disableServo(previous).catch(error => this.showError(error));
             }
             this.refresh();
         });
@@ -72,7 +72,7 @@ export class ServoMotorBlock extends FunctionBlock {
         this.stopButton = new Button({ text: "全サーボ停止", click: () => this.stop() });
         this.zeroButton = new Button({ text: "速度0で停止", fontSize: "14px", click: () => this.zeroSpeed() });
         this.setBoxSize();
-        if (!this.inToolbox) this.unsubscribe = diagramBLE.subscribe(state => {
+        if (!this.inToolbox) this.unsubscribe = diagramDevice.subscribe(state => {
             if (state.phase !== "connected") {
                 this.actionVersion++; this.moveVersion++;
                 this.busy = false;
@@ -164,11 +164,11 @@ export class ServoMotorBlock extends FunctionBlock {
         if (!this.armButton) return;
         const channel = this.input.valueAsNumber;
         const validChannel = Number.isInteger(channel) && channel >= 0 && channel < 16;
-        const connected = !this.removed && !this.inToolbox && diagramBLE.state.phase === "connected";
-        const ready = connected && diagramBLE.state.pcaAvailable && validChannel;
+        const connected = !this.removed && !this.inToolbox && diagramDevice.state.phase === "connected";
+        const ready = connected && diagramDevice.state.pcaAvailable && validChannel;
         this.armButton.disabled = !ready || this.busy;
-        this.moveButton.disabled = !ready || this.busy || !diagramBLE.isServoArmed(channel, this.mode);
-        this.zeroButton.disabled = this.mode !== "speed" || !ready || this.busy || !diagramBLE.isServoArmed(channel, "speed");
+        this.moveButton.disabled = !ready || this.busy || !diagramDevice.isServoArmed(channel, this.mode);
+        this.zeroButton.disabled = this.mode !== "speed" || !ready || this.busy || !diagramDevice.isServoArmed(channel, "speed");
         this.armButton.text = this.mode === "speed" ? "0%で有効化" : "90°で有効化";
         this.moveButton.text = this.mode === "speed" ? "入力速度を設定" : "入力角度へ移動";
         this.disableButton.text = "このCHを無効化";
@@ -189,7 +189,7 @@ export class ServoMotorBlock extends FunctionBlock {
         this.message = "";
         this.refresh();
         try {
-            await diagramBLE.disableServo(this.input.valueAsNumber);
+            await diagramDevice.disableServo(this.input.valueAsNumber);
         }
         catch (error) {
             if (version === this.actionVersion) {
@@ -217,7 +217,7 @@ export class ServoMotorBlock extends FunctionBlock {
         const current = () => !this.removed && version === this.actionVersion && channel === this.input.valueAsNumber;
         this.busy = true; this.message = ""; this.refresh();
         try {
-            await diagramBLE.armServo(channel, current, this.mode);
+            await diagramDevice.armServo(channel, current, this.mode);
             if (current()) this.message = this.mode === "speed" ? "0%の指令で有効化しました。" : "90°の指令を受け付けました。";
         } catch (error) { if (current()) this.showError(error); }
         finally { if (current()) { this.busy = false; this.refresh(); } }
@@ -226,7 +226,7 @@ export class ServoMotorBlock extends FunctionBlock {
     async valueChanged(): Promise<void> {
         const version = ++this.moveVersion;
         if (this.removed || this.inToolbox) return;
-        if (!diagramBLE.isServoArmed(this.input.valueAsNumber, this.mode)) return;
+        if (!diagramDevice.isServoArmed(this.input.valueAsNumber, this.mode)) return;
         const channel = this.input.valueAsNumber, angle = this.inputPort.value, mode = this.mode;
         const current = () => !this.removed && version === this.moveVersion && channel === this.input.valueAsNumber;
         try {
@@ -234,10 +234,10 @@ export class ServoMotorBlock extends FunctionBlock {
                 throw new Error(mode === "speed" ? "入力ポートへ速度（−100～100%）を接続してください。" : "入力ポートへ角度（60～120°）を接続してください。");
             }
             if (mode === "speed") {
-                await diagramBLE.setSpeed(channel, angle, current);
+                await diagramDevice.setSpeed(channel, angle, current);
             }
             else {
-                await diagramBLE.moveAngle(channel, angle, this.durationInput.valueAsNumber, current);
+                await diagramDevice.moveAngle(channel, angle, this.durationInput.valueAsNumber, current);
             }
             if (current()) {
                 this.message = mode === "speed" ? `${angle}%の速度指令を受け付けました。` : `${angle}°の移動指令を受け付けました。`;
@@ -255,7 +255,7 @@ export class ServoMotorBlock extends FunctionBlock {
         const channel = this.input.valueAsNumber;
         const current = () => !this.removed && version === this.moveVersion && channel === this.input.valueAsNumber && this.mode === "speed";
         try {
-            await diagramBLE.setSpeed(channel, 0, current);
+            await diagramDevice.setSpeed(channel, 0, current);
             if (current()) {
                 this.message = "速度0%（中立）の指令を受け付けました。";
             }
@@ -274,7 +274,7 @@ export class ServoMotorBlock extends FunctionBlock {
     async disable(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.actionVersion++; this.moveVersion++; this.busy = false; this.message = "";
-        try { await diagramBLE.disableServo(this.input.valueAsNumber); }
+        try { await diagramDevice.disableServo(this.input.valueAsNumber); }
         catch (error) { this.showError(error); }
         this.refresh();
     }
@@ -282,7 +282,7 @@ export class ServoMotorBlock extends FunctionBlock {
     async stop(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.actionVersion++; this.moveVersion++; this.busy = false; this.message = "";
-        try { await diagramBLE.stopServos(); }
+        try { await diagramDevice.stopServos(); }
         catch (error) { this.showError(error); }
         this.refresh();
     }
@@ -294,10 +294,10 @@ export class ServoMotorBlock extends FunctionBlock {
         ctx.font = "18px sans-serif"; ctx.textBaseline = "top"; ctx.fillStyle = "#17384f";
         ctx.fillText("サーボ", x + 16, y + 22);
         if (!this.inToolbox) {
-            const state = diagramBLE.state;
+            const state = diagramDevice.state;
             ctx.font = "14px sans-serif";
             const label = state.phase !== "connected" ? "未接続" : !state.pcaAvailable ? "PCA9685未検出"
-                : diagramBLE.isServoArmed(this.input.valueAsNumber, this.mode) ? "PWM有効" : "PWM停止中";
+                : diagramDevice.isServoArmed(this.input.valueAsNumber, this.mode) ? "PWM有効" : "PWM停止中";
             ctx.fillText(label, x + 170, y + 254);
             ctx.fillText("CH", x + 16, y + 64);
             if (this.mode === "angle") {
@@ -323,7 +323,7 @@ export class ServoMotorBlock extends FunctionBlock {
         this.children().forEach(button => { (button as Button).disabled = true; });
         const channel = this.input.valueAsNumber;
         if (!this.inToolbox && Number.isInteger(channel) && channel >= 0 && channel < 16) {
-            void diagramBLE.disableServo(channel).catch(error => console.error("Servo removal failed", error));
+            void diagramDevice.disableServo(channel).catch(error => console.error("Servo removal failed", error));
         }
         this.unsubscribe?.(); this.unsubscribe = undefined;
         this.releaseConnection?.(); this.releaseConnection = undefined;

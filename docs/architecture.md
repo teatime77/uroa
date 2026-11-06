@@ -135,9 +135,9 @@ Stop・Clear・図のJSON読込・実行中のブロック削除・pagehide・�
 - 状態取得: `{command: "status"}`。応答キューから画像ファイル名、顔領域、距離を取り込む想定。
 - 現在は `diy_sbc = false` によりキュー初期化・旧センサーの定期取得が無効。
 
-2026-10-12に [ble.ts](../diagram/ts/ble-wifi/ble.ts) を追加した。BLEConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、現行diagram-controlと共通のサービス・Command／Status／Telemetryのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボを有効化しない。利用可能な登録済みIMU・距離ブロックがあれば、共有10Hz STREAMを要求する。
+2026-10-12に [device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts) を追加した。DeviceConnectionBlockはFunctionBlockで、ツールボックスから配置し、canvasの接続ボタンからブラウザー標準のBLE機器選択を開く。周囲のBLE機器を候補にし、現行diagram-controlと共通のサービス・Command／Status／Telemetryのcharacteristicを確認してINFOのACKを受信した後に接続済みとする。接続だけではサーボを有効化しない。利用可能な登録済みIMU・距離ブロックがあれば、共有10Hz STREAMを要求する。
 
-同ファイルのBLEConnectionとdiagramBLEが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（BLEConnectionBlock、IMUBlock、UltrasonicDistanceSensorBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
+同ファイルのDeviceConnectionとdiagramDeviceが1台の接続を管理する。複数の接続ブロックは状態を共有する。選択取消・非対応機器・切断・ACKタイムアウトを表示し、1.5秒周期のPINGとGATT書込／ACK待ちの直列化を行う。接続状態を購読する最後のブロック（DeviceConnectionBlock、IMUBlock、UltrasonicDistanceSensorBlock、ServoMotorBlock）の削除、Clear、別の図の読込、タブ非表示、pagehide、diagram破棄で切断する。取り消した接続試行の遅延完了は現在の接続へ反映しない。再接続はボタン操作で行い、保存・コピー・復元は接続状態を引き継がない。
 
 2026-10-13にServoMotorBlockを [servo.ts](../diagram/ts/hardware/servo.ts) へ移し、既存のFunctionBlock登録方式で生成・コピー・JSON復元するようにした。数値入力は角度（度）または速度指令（%）。CH0～15と角度の移動時間0～10000ms（初期1000ms）を設定し、「90°で有効化」がARM=9000を送る。有効化後の入力変更または「入力角度へ移動」でMOVEを送り、60～120°を0.01°単位へ丸めて送信する。接続・配置・JSON復元だけではARM/MOVEを送らず、再接続後も明示的な有効化が必要。
 
@@ -155,7 +155,7 @@ InputNumberBlockはJSON読込時に数値欄を出力ポートへ反映する。
 
 距離は種別2＋uint16の3バイトを読み、20〜4000mmのNumberPort出力にする。未測定・失敗の0xFFFF、切断・計測停止では出力をundefinedに戻す。`block.ts`からhardware/ultrasonic.tsへ移し、クラス名・ツール番号16・1出力は維持する。測定値は保存・コピーしない。操作と制約は[超音波距離ガイド](diagram/diagram-ultrasonic.md)を参照する。
 
-BLE・Wi-Fiの共通`device-telemetry.ts`が、version=3の8バイトヘッダーとIMU13バイト／距離3バイトの可変長レコードを全件検査する。BLEConnectionはDeviceInfoの件数・種別順を照合してから各readStatus()へ渡す。サーボは含めない。最大268バイト・20レコードで、不正な距離値・未対応種別・途中で切れたレコードは部分反映せず接続エラーにする。IMUの時刻付きStruct出力と、距離の受信時刻による数値プロットは区別する。
+BLE・Wi-Fiの共通`device-telemetry.ts`が、version=3の8バイトヘッダーとIMU13バイト／距離3バイトの可変長レコードを全件検査する。DeviceConnectionはDeviceInfoの件数・種別順を照合してから各readStatus()へ渡す。サーボは含めない。最大268バイト・20レコードで、不正な距離値・未対応種別・途中で切れたレコードは部分反映せず接続エラーにする。IMUの時刻付きStruct出力と、距離の受信時刻による数値プロットは区別する。
 
 2026-11-01に旧倒立アプリ向けのBalance通知version=2/schema=1の受信処理、型、IMUBlockの第2出力、専用サンプルと模擬テストを削除した。現行IMUBlockはgyro・accを持つ1個のStructPortを出力し、配置したブロックで10Hz STREAMを共有する。BLE・Wi-FiのIMU受信はversion=3のみ。旧balanceポートを含む保存JSONは非対応で、自動移行は行わない。通常の1ポートIMU図と汎用PlotBlockは維持する。
 
@@ -175,7 +175,7 @@ Port.getDataType()は明示されたdataTypeを優先し、型未指定なら単
 
 同日の後続変更で、接続成功したSSID名だけを`uroa-wifi-ssids-v1`へ最大20件保存する履歴を追加した。SSID一覧から検索せずに履歴を選べる。パスワード・基板ID・IPは履歴へ含めず、接続先の機器選択画面は追加しない。詳細な操作・保存境界は[接続画面ガイド](diagram/diagram-esp32-connection-ui.md)を参照する。
 
-共有diagramBLEへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)はBLE設定・Wi-Fi認証、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)はSSID選択・手入力・Wi-FiパスワードのChrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有IDを保存する。2026-10-17から接続キーはブラウザーとファームウェアに定義する教材用共通固定値を自動使用し、入力・Chrome保存を削除した。旧NVSの接続キーは更新したファームウェアの起動時に削除する。同日の追加変更で保存済み機器の選択画面と接続先のlocalStorage保存を廃止し、初回・次回ともBLE接続中の基板へSSIDとパスワードを送ってWi-Fi接続する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
+共有diagramDeviceへWi-Fi transportを追加した。[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)はBLE設定・Wi-Fi認証、[robot-wifi-dialog.ts](../diagram/ts/ble-wifi/robot-wifi-dialog.ts)はSSID選択・手入力・Wi-FiパスワードのChrome保存要求を担当する。ESP32は暗号化・認証したBLEでWi-Fi設定を受信し、NVSへ設定・固有IDを保存する。2026-10-17から接続キーはブラウザーとファームウェアに定義する教材用共通固定値を自動使用し、入力・Chrome保存を削除した。旧NVSの接続キーは更新したファームウェアの起動時に削除する。同日の追加変更で保存済み機器の選択画面と接続先のlocalStorage保存を廃止し、初回・次回ともBLE接続中の基板へSSIDとパスワードを送ってWi-Fi接続する。mDNSと制御サーバーを開始し、diagramがWi-Fi側の認証・INFO ACKを確認したらBLE接続・広告を停止する。サーボは自動有効化せず、再接続はユーザーのボタン操作で行う。
 
 WebSocketとHTTP fallbackで同じ10バイト指令・12バイトStatus・20バイトIMUを扱う。HTTPS画面はローカルHTTPを使う。接続キーは署名計算に使い、Wi-Fi上で送らない。localStorage・図JSONには秘密情報を含めない。XIAOのカメラは別HTTPサーバーからJPEGを返し、CameraBlock配置中だけ[camera-feed.ts](../diagram/ts/camera/camera-feed.ts)が取得・描画する。DevKit V1はカメラなしで共通Wi-Fi機能を使う。現在の操作・通信・保存・制約は [esp32-ble-lab-wifi.md](diagram/esp32-ble-lab-wifi.md)を参照する。今回の検証はユーザー指定でビルドまで。実通信・ペアリング・端末・実機は未確認。
 
@@ -313,7 +313,7 @@ npx tsx build/cli.ts build/sims/fem_cg.ts --check
 | 機能 | 現在の方式 |
 |---|---|
 | uroa/diagramの旧カメラ・センサー処理 | HTTP `POST /send_data` |
-| uroa/diagramのBLEConnectionBlock・ServoMotorBlock・IMUBlock・UltrasonicDistanceSensorBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体、距離をmm単位のNumberPortへ出力し、汎用PlotBlockへ配線して表示（IMUのconsole.logはコメントアウト） |
+| uroa/diagramのDeviceConnectionBlock・ServoMotorBlock・IMUBlock・UltrasonicDistanceSensorBlock・PlotBlock | Web BluetoothでESP32へ接続・切断し、サーボをARM/MOVE/DISABLE/STOPで制御。IMUを構造体、距離をmm単位のNumberPortへ出力し、汎用PlotBlockへ配線して表示（IMUのconsole.logはコメントアウト） |
 | 別リポジトリーesp32/app/diagram-control | diagramとBLE／Wi-Fiで通信する現行ESP32アプリ。uroa内の旧BLE Labは廃止対象 |
 | robot/esp32-ble-lab | Web Bluetoothと独自バイナリプロトコル |
 | robot/chat | HTTP `POST /api/ask`経由のGemini応答 |
@@ -351,6 +351,6 @@ KaTeX内部の未使用importを削除し、makeUIFromJSONへButton/Labelの型�
 
 ServoMotorBlockは`mode: "angle" | "speed"`を保存する。旧JSONと不明な値は角度モードとして復元し、有効状態・接続・入力のライブ状態は保存しない。速度モードでは0%で明示ARMし、方向付き−100〜100%を即時送信する。「速度0で停止」は中立指令、「このCHを無効化」と全体STOPはPWM停止である。速度は実測値ではない。
 
-BLEConnectionは有効CHとそのモードを共有し、接続世代・CH操作世代・ブロック操作世代を使って古い指令を取り消す。モード変更ではDISABLEを送り、旧モードの待機指令と遅れたACKによる再有効化を防ぐ。速度用ARM_SPEED=8・SET_SPEED=9を追加し、負の値はi16の0.01%で送る。Status flags bit4は指定CHの速度モード、code=7はモード不一致。STOPでIMU通知を保持する既存の動作も維持する。
+DeviceConnectionは有効CHとそのモードを共有し、接続世代・CH操作世代・ブロック操作世代を使って古い指令を取り消す。モード変更ではDISABLEを送り、旧モードの待機指令と遅れたACKによる再有効化を防ぐ。速度用ARM_SPEED=8・SET_SPEED=9を追加し、負の値はi16の0.01%で送る。Status flags bit4は指定CHの速度モード、code=7はモード不一致。STOPでIMU通知を保持する既存の動作も維持する。
 
 速度対応は別リポジトリーの[diagram-control](../../esp32/app/diagram-control/README.md)と[共通サーボライブラリー](../../esp32/lib/servo/README.md)で管理する。旧BLE Labへの速度指令が明示エラーとなる互換処理は残るが、旧ファームウェアのビルド・書き込みは運用対象外。旧倒立アプリも別リポジトリーへ移行していない。

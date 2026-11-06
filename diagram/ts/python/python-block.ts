@@ -1,11 +1,11 @@
 /**
  * Python編集・実行用ActionBlock。parser.ts、semantic.ts、bytecode.tsでビルドし、
- * ble-wifi/ble.tsが転送・VM指令を担当する。index.tsがツール、procedure.tsが復元を登録する。
+ * ble-wifi/device-connection.tsが転送・VM指令を担当する。index.tsがツール、procedure.tsが復元を登録する。
  * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
  * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
  * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
- * チェックと表示の契約：チェックボタンはBLE未接続でも字句・構文・意味解析だけを行い、
+ * チェックと表示の契約：チェックボタンは機器未接続でも字句・構文・意味解析だけを行い、
  * バイトコード生成・転送・VM操作を行わない。入力時の解析・自動チェックは行わない。
  * Startは送信済みコードを再利用する場合も必ずチェックし、問題があればVMを開始しない。
  * editor-diagnostics.tsが診断をUTF-16範囲へ変換し、highlight-editor.tsが赤い波線、
@@ -13,15 +13,23 @@
  * 構文エラーは最初の1件、意味エラーは診断一覧を表示する。API・通信失敗に仮の波線は付けない。
  * 入力・読込で古い診断を消し、解析中の入力変更・取消・削除後に遅れて届く結果は破棄する。
  * Startで得た解析結果はそのまま生成に使い、同じStart内で解析を繰り返さない。
+ * Startは同一生成のDebugInfoとReceiptを保持し、行ブレークポイントを文開始PCへ変換して確定後にVMを開始する。
+ * 停止通知で自動最大化し、取得完了した同一停止の大域・局所・Call Stack・PC/SP/BPと全スロットを表示する。
+ * 構造体とフレーム選択はdebugger-view.ts、ワイヤー仕様はble-wifi/debug-protocol.tsを参照する。
+ * 実行中・ブレークポイント停止中は編集とブレークポイント変更を禁止する。再開・ステップは未実装、Stop後に新規Startする。
+ * ブレークポイントがある実行は手動Startに限定し、Actionチェーンからは開始前に拒否する。
+ * 所有Receiptの失効・切断・Stop・編集・読込・削除で旧停止値を破棄し、保存・コピーには含めない。
  */
 import { Vec2 } from "@i18n";
-import { diagramBLE } from "../ble-wifi/ble";
+import { diagramDevice } from "../ble-wifi/device-connection";
 import type { BytecodeReceipt } from "../ble-wifi/bytecode-transfer";
 import { theCanvas } from "../diagram_util";
 import { ActionBlock, registerActionBlock } from "../procedure";
 import { getProcedureSignal, subscribeDiagramStop } from "../runtime";
 import type { Attr } from "../ui";
-import { generateBytecode } from "./bytecode";
+import { generateDebugBytecode } from "./bytecode";
+import { resolveBreakpoints, type PythonDebugInfo } from "./debug-info";
+import { PythonDebuggerView, debugLine } from "./debugger-view";
 import { parsePython } from "./parser";
 import { analyzePython, type PythonAnalysis } from "./semantic";
 import { PythonHighlightEditor } from "./highlight-editor";
@@ -46,9 +54,11 @@ export class PythonBlock extends ActionBlock {
     private readonly startButton = document.createElement("button");
     private readonly stopButton = document.createElement("button");
     private readonly statusView = document.createElement("div");
+    private readonly debuggerView = new PythonDebuggerView();
     private readonly events = new AbortController();
-    private readonly releaseBLE: () => void;
+    private readonly releaseConnection: () => void;
     private readonly releaseStop: () => void;
+    private readonly releaseDebug: () => void;
     private request?: AbortController;
     private checkRequest?: AbortController;
     private stopping?: Promise<void>;
@@ -58,8 +68,10 @@ export class PythonBlock extends ActionBlock {
     private expanded = false;
     private removed = false;
     private ownsVM = false;
+    private vmFinished = false;
     private vmReceipt?: BytecodeReceipt;
     private editRevision = 0;
+    private debugInfo?: PythonDebugInfo;
 
     /** 初期状態は縮小表示。編集欄・通信・実行は自動で開始しない。 */
     constructor(data: Attr) {
@@ -117,11 +129,13 @@ export class PythonBlock extends ActionBlock {
             this.receipt = undefined;
             this.uploadedSource = undefined;
             this.uploadedAbiHash = undefined;
+            this.debugInfo = undefined;
+            this.clearDebugView();
             this.showStatus("ソースを変更しました。次のStartでビルド・送信します。");
         }, { signal: this.events.signal });
         // textarea内のTabはフォーカス移動の代わりに4スペースを挿入する。
         editor.addEventListener("keydown", event => {
-            if (event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            if (!editor.readOnly && event.key === "Tab" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
                 event.preventDefault();
                 editor.setRangeText("    ", editor.selectionStart, editor.selectionEnd, "end");
                 editor.dispatchEvent(new Event("input"));
@@ -129,22 +143,62 @@ export class PythonBlock extends ActionBlock {
         }, { signal: this.events.signal });
         this.statusView.setAttribute("role", "status");
         Object.assign(this.statusView.style, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minHeight: "18px" });
-        panel.append(heading, controls, this.highlightEditor.element, this.statusView);
+        panel.append(heading, controls, this.highlightEditor.element, this.debuggerView.element, this.statusView);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
-        this.releaseBLE = diagramBLE.subscribe(state => {
+        this.releaseConnection = diagramDevice.subscribe(state => {
             if (state.phase !== "connected") {
                 this.receipt = undefined;
                 this.ownsVM = false;
                 this.request?.abort();
+                this.debugInfo = undefined;
+                this.clearDebugView();
             }
-            if (this.vmReceipt && diagramBLE.bytecodeReceipt !== this.vmReceipt) {
+            if (this.vmReceipt && diagramDevice.bytecodeReceipt !== this.vmReceipt) {
                 this.ownsVM = false;
                 this.vmReceipt = undefined;
+                this.clearDebugView();
             }
             this.updateControls();
         });
         this.releaseStop = subscribeDiagramStop(() => {
             void this.stop().catch(() => undefined);
+        });
+        this.releaseDebug = diagramDevice.subscribeDebugSnapshots((snapshot, error, event) => {
+            if (this.removed || !this.vmReceipt || diagramDevice.bytecodeReceipt !== this.vmReceipt) {
+                return;
+            }
+            this.clearDebugView();
+            if (event?.state === 1 || event?.state === 5) {
+                this.vmFinished = false;
+                this.updateControls();
+            }
+            if (event?.state === 5) {
+                this.setExpanded(true);
+            }
+            if (error) {
+                this.showStatus(`デバッグ情報取得失敗: ${error.message}。VMの状態を確認し、Stopしてください。`);
+                return;
+            }
+            if (snapshot && this.debugInfo) {
+                try {
+                    this.debuggerView.show(this.debugInfo, snapshot);
+                    this.highlightEditor.element.style.flex = "1 1 55%";
+                    this.highlightEditor.setExecutionLine(debugLine(this.debugInfo, snapshot.pc));
+                    this.showStatus("ブレークポイントで停止しました。関数名を選ぶと局所変数を表示します。再開・ステップは未実装です。");
+                }
+                catch (failure) {
+                    this.showStatus(failure instanceof Error ? failure.message : "停止情報を表示できませんでした。");
+                }
+            }
+            else if (event?.state === 5) {
+                this.showStatus("ブレークポイントで停止しました。デバッグ情報を取得しています…");
+            }
+            else if (event && (event.state === 2 || event.state === 3 || event.state === 4)) {
+                // HALTでも機器出力は保持されるため、Stopの所有権は残して編集と新規Startだけを許す。
+                this.vmFinished = true;
+                this.showStatus(event.state === 2 ? "VMの実行が終了しました。" : event.state === 4
+                    ? "VMで実行時エラーが発生しました。ESP32のシリアルで詳細を確認してください。" : "VMを停止しました。");
+            }
         });
         this.showStatus("最大化してPythonコードを編集してください。");
         this.positionPanel();
@@ -161,6 +215,7 @@ export class PythonBlock extends ActionBlock {
     }
 
     loadObj(obj: any): void {
+        void this.stop().catch(() => undefined);
         super.loadObj(obj);
         this.sourceEditor.value = typeof obj.source === "string" ? obj.source : "";
         this.editRevision++;
@@ -172,6 +227,8 @@ export class PythonBlock extends ActionBlock {
         this.receipt = undefined;
         this.uploadedSource = undefined;
         this.uploadedAbiHash = undefined;
+        this.debugInfo = undefined;
+        this.clearDebugView();
     }
 
     copy(): PythonBlock {
@@ -191,6 +248,7 @@ export class PythonBlock extends ActionBlock {
         }
         this.expanded = expanded;
         this.highlightEditor.element.style.display = expanded ? "flex" : "none";
+        this.debuggerView.element.style.display = expanded && this.debuggerView.element.childElementCount !== 0 ? "block" : "none";
         this.highlightEditor.refresh();
         this.positionPanel();
         this.updateControls();
@@ -239,12 +297,20 @@ export class PythonBlock extends ActionBlock {
         const disabled = this.removed || this.inToolbox;
         this.maximizeButton.disabled = disabled || this.expanded;
         this.minimizeButton.disabled = disabled || !this.expanded;
-        this.checkButton.disabled = disabled || this.request !== undefined || this.checkRequest !== undefined || this.stopping !== undefined;
-        this.startButton.disabled = disabled || this.request !== undefined || this.stopping !== undefined
+        this.checkButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined
+            || this.checkRequest !== undefined || this.stopping !== undefined;
+        this.startButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined || this.stopping !== undefined
             || this.checkRequest !== undefined
-            || diagramBLE.bytecodeSending || diagramBLE.state.phase !== "connected";
+            || diagramDevice.bytecodeSending || diagramDevice.state.phase !== "connected";
         this.stopButton.disabled = disabled || this.stopping !== undefined || (!this.request && !this.ownsVM);
-        this.sourceEditor.readOnly = this.request !== undefined;
+        this.sourceEditor.readOnly = this.request !== undefined || this.ownsVM && !this.vmFinished;
+    }
+
+    /** 部分受信・失効時には古い値を残さない。最大化状態は維持する。 */
+    private clearDebugView(): void {
+        this.debuggerView.clear();
+        this.highlightEditor.setExecutionLine();
+        this.highlightEditor.element.style.flex = "1";
     }
 
     private showStatus(message: string): void {
@@ -320,7 +386,7 @@ export class PythonBlock extends ActionBlock {
 
     /** チェックは毎回行い、未編集・同じAPI・現接続・最後の転送の場合だけ生成と転送を省略する。 */
     private async start(signal?: AbortSignal): Promise<void> {
-        if (this.removed || this.inToolbox || this.request || this.checkRequest || this.stopping) {
+        if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest || this.stopping) {
             return;
         }
         const controller = new AbortController();
@@ -341,30 +407,41 @@ export class PythonBlock extends ActionBlock {
                 // Actionチェーンでも後続へ進まない。画面の波線・診断説明は保持する。
                 throw new Error("Pythonに問題があります。表示された問題箇所を修正してください。");
             }
-            if (diagramBLE.state.phase !== "connected") {
-                throw new Error("BLE接続ブロックでESP32へ接続してください。");
+            if (diagramDevice.state.phase !== "connected") {
+                throw new Error("機器接続ブロックでESP32へ接続してください。");
             }
             let receipt = this.receipt;
-            if (!receipt || this.uploadedSource !== source || this.uploadedAbiHash !== analysis.api.abiHash
-                || diagramBLE.bytecodeReceipt !== receipt) {
+            if (!receipt || !this.debugInfo || this.uploadedSource !== source || this.uploadedAbiHash !== analysis.api.abiHash
+                || diagramDevice.bytecodeReceipt !== receipt) {
                 this.showStatus("Pythonをビルドしています…");
-                const bytes = generateBytecode(analysis.module, analysis);
+                const build = generateDebugBytecode(analysis);
+                // 不可行はプログラムの置換より先に説明する。
+                resolveBreakpoints(build.info, this.highlightEditor.getBreakpointLines());
                 this.showStatus("バイトコードを送信しています…");
-                receipt = await diagramBLE.sendBytecode(bytes, controller.signal);
+                receipt = await diagramDevice.sendBytecode(build.bytes, controller.signal);
                 controller.signal.throwIfAborted();
                 if (this.sourceEditor.value === source && this.editRevision === editRevision) {
                     this.receipt = receipt;
                     this.uploadedSource = source;
                     this.uploadedAbiHash = analysis.api.abiHash;
+                    this.debugInfo = build.info;
                 }
             }
+            this.showStatus("ブレークポイントを送信しています…");
+            await diagramDevice.sendBreakpoints(receipt,
+                resolveBreakpoints(this.debugInfo!, this.highlightEditor.getBreakpointLines()), controller.signal);
+            controller.signal.throwIfAborted();
             this.showStatus("VMを開始しています…");
             // 書込み直後から所有扱いにし、ACK待機中のStopでもVM_STOPを必ず送る。
             this.ownsVM = true;
+            this.vmFinished = false;
             this.vmReceipt = receipt;
-            await diagramBLE.startBytecode(receipt, current);
+            await diagramDevice.startBytecode(receipt, current);
             controller.signal.throwIfAborted();
-            this.showStatus("VM開始を受け付けました。実行結果はESP32のシリアルで確認できます。");
+            // 短いプログラムは開始ACKより前に停止通知が届くことがある。
+            if (!diagramDevice.debugEvent || diagramDevice.debugEvent.state === 1) {
+                this.showStatus("VM開始を受け付けました。ブレークポイントに到達するとデバッグ情報を表示します。");
+            }
         }
         catch (error) {
             if (!this.removed) {
@@ -384,6 +461,9 @@ export class PythonBlock extends ActionBlock {
     }
 
     async run(): Promise<void> {
+        if (this.highlightEditor.getBreakpointLines().length !== 0) {
+            throw new Error("ブレークポイントがあるPythonは、PythonBlockのStartボタンで手動実行してください。");
+        }
         await this.start(getProcedureSignal());
     }
 
@@ -397,10 +477,11 @@ export class PythonBlock extends ActionBlock {
         this.request?.abort();
         this.ownsVM = false;
         this.vmReceipt = undefined;
+        this.clearDebugView();
         if (!active) {
             return Promise.resolve();
         }
-        const task = diagramBLE.stopBytecode().then(() => {
+        const task = diagramDevice.stopBytecode().then(() => {
             if (!this.removed) {
                 this.showStatus("VMを停止しました。");
             }
@@ -431,7 +512,8 @@ export class PythonBlock extends ActionBlock {
         void this.stop().catch(() => undefined);
         this.removed = true;
         this.releaseStop();
-        this.releaseBLE();
+        this.releaseConnection();
+        this.releaseDebug();
         this.events.abort();
         this.highlightEditor.dispose();
         this.panel.remove();

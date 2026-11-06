@@ -25,7 +25,7 @@
 
 `control/`は制御用のブロックを置き、現在はIMUの傾きから2個のモータ速度を計算するPIDBlock（初版はP制御）を持つ。
 
-`python/`はPythonの字句・構文・意味解析、アセンブリ・バイトコード生成と、編集・実行用のPythonBlockを置く。PythonBlockのUI・保存・取消・BLE／Wi-Fi転送とVM開始・停止の分担は[python-block.tsの仕様コメント](../../diagram/ts/python/python-block.ts)を参照する。解析と生成のAPI・対応範囲は各ソースの仕様コメント、転送は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、ESP32の実行制御は[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を参照する。
+`python/`はPythonの字句・構文・意味解析、アセンブリ・バイトコード・デバッグ情報生成と、編集・実行用のPythonBlockを置く。PythonBlockのUI・保存・取消・BLE／Wi-Fi転送とVM開始・停止・停止時表示の分担は[python-block.tsの仕様コメント](../../diagram/ts/python/python-block.ts)、変数・構造体・Call Stackは[debugger-view.ts](../../diagram/ts/python/debugger-view.ts)を参照する。解析と生成のAPI・対応範囲は各ソースの仕様コメント、転送は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、デバッグ通信は[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、ESP32の実行制御は[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を参照する。
 
 主な編集対象は `diagram/ts/`。`diagram/lib/` とルート `dist/` は生成物で、`tmp/` のコピーは現行実装ではない。
 
@@ -42,7 +42,7 @@
 | [data_type.ts](../../diagram/ts/data_type.ts) | Struct・Field・DataType、値の検証・複製・freeze、vec3・IMUの登録。UI・BLE・parserへの依存なし |
 | [json-util.ts](../../diagram/ts/json-util.ts) | theEditorの保持、saveJsonでの採番・Download |
 | [diagram_util.ts](../../diagram/ts/diagram_util.ts) | PortType、共有canvas、UI要素、再描画回数、レイヤー切替、旧sendData |
-| [ble.ts](../../diagram/ts/ble-wifi/ble.ts) | BLEConnectionBlockと共有diagramBLE、接続・ACK・指令・IMU通知 |
+| [device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts) | DeviceConnectionBlockと共有diagramDevice、接続・ACK・指令・IMU通知 |
 | [robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts)、[robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts) | BLE接続中の基板へのWi-Fi設定、教材用固定キーのWi-Fi transport、SSID履歴・検索・手入力とパスワードの設定画面、Wi-FiパスワードのChrome保存 |
 | [camera-feed.ts](../../diagram/ts/camera/camera-feed.ts) | CameraBlock配置中の共有Wi-Fi画像取得、取消・Blob URL破棄 |
 | [device-camera.ts](../../diagram/ts/camera/device-camera.ts) | CameraBlockごとの端末カメラ取得、video描画更新、MediaStreamTrack解放、遅延取得の無効化 |
@@ -83,7 +83,7 @@ classDiagram
 | Startで完了を待つ関数 | FunctionBlock.runOnStart=true、resetForRun、async run | AIChatBlock |
 | Startで連続制御を開始する関数 | runOnStart=trueのrunで開始し、valueChangedで更新。indexでActionチェーン後にwaitUntilStoppedを待つ | PIDBlock |
 | 手続き順に完了を待つ処理 | ActionBlock.async run | TTSBlock、SleepBlock |
-| 専用ボタンで操作する | childrenにButtonを返し、clickに処理を接続 | BLEConnectionBlock、ServoMotorBlock、AIChatBlock |
+| 専用ボタンで操作する | childrenにButtonを返し、clickに処理を接続 | DeviceConnectionBlock、ServoMotorBlock、AIChatBlock |
 
 FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポートを自動追加しない。ActionBlockはtopPort・bottomPortを持ち、nextBlockで次の手続きをたどる。両者の配線と待機方式を混同しない。
 
@@ -97,7 +97,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | InputNumberBlock | NumberPort出力。非有限値はundefined | JSON読込時に値を反映する |
 | InputRangeBlock | range、最小・最大の入力欄、出力 | 現在の出力は型未指定Port。DOMの所有・解除を確認する |
 | CalcBlock／CompareBlock | 数値入力、数値の式評価。比較結果は0/1 | calcは明示的な呼出し。構造体の式評価・一般的な自動計算スケジューラーは未実装 |
-| BLEConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
+| DeviceConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
 | ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度60～120°、速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
 | IMUBlock | imuはtime（ミリ秒）・gyro・accのvec3を持つ1個のStructPort | 距離ブロックと10Hz STREAMを共有。version=3をreadStatus(time, data, offset)で読み、切断・計測停止で出力を消去。旧balance受信・第2出力は削除済みで、そのポートを含む保存JSONは非対応。現行console.logはコメントアウト |
 | PIDBlock | IMUValue入力、2個の速度NumberPort出力。Start後の最初のacc Yの角度を垂直とするP制御 | Kpのみ計算。Ki・Kdは設定・保存のみ。各モータの停止範囲を補正し−100～100%に制限。入力消失・接続変更・Stop等で停止し再開はStart。通信遅延補償・個別反転なし。[PIDガイド](diagram-pid.md) |
@@ -337,7 +337,7 @@ copyUIは派生設定をコピーしない。独自設定があるブロック�
 
 disposeDiagramは全体Stop、BLE切断、Editor.Clear、イベント・定期タスク・canvasの破棄を行う。アプリ全体の停止と破棄、bfcacheからの復帰、同一documentでの再初期化の制約は [app-lifecycle.md](../app-lifecycle.md) に従う。
 
-BLEではdiagramBLEが共有接続と指令を管理する。新しい実機ブロックが別の接続を勝手に作らず、接続・計測の所有者が増減したときの規則を確認する。ARM/MOVE等のACKは受付で、実際の角度・完了の証明ではない。Stopのサーボ停止と、IMU計測の停止・BLE切断は同じ操作ではない。
+BLEではdiagramDeviceが共有接続と指令を管理する。新しい実機ブロックが別の接続を勝手に作らず、接続・計測の所有者が増減したときの規則を確認する。ARM/MOVE等のACKは受付で、実際の角度・完了の証明ではない。Stopのサーボ停止と、IMU計測の停止・BLE切断は同じ操作ではない。
 
 AI教材ではユーザーの指示により、学習者が入力したキーをAIChatBlockのprivateフィールドに一時保持する。Google直接通信でAPIサーバーは不要。通常Stopでは保持し、切断・そのブロックの削除・Clear・読込・pagehide・破棄で解除する。キーをブロックの文字列ポートや保存設定へ出さない。新しい外部APIを加える場合も、既存.envの上書き、VITE_*へのキー埋込み、SDKエラー・認証ヘッダーのログ出力をしない。ブラウザー内のprivate保持は、開発者ツールからの完全な隠蔽・物理的なメモリ消去の保証ではない。
 

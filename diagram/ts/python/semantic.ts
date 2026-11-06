@@ -10,7 +10,7 @@
  * 同じノード・メッセージは反復をまたいで重複させず、診断はcharPos順に返す。
  * 衝突・配置違反の関数定義は登録せず、その本体は解析対象から外す。
  * 診断がある結果は部分的な解決情報を含み、slot=-1で返す。bytecode.tsは両生成入口で
- * 診断を検査し、1件以上なら生成前に拒否する。python-block.tsとble-wifi/ble.tsは
+ * 診断を検査し、1件以上なら生成前に拒否する。python-block.tsとble-wifi/device-connection.tsは
  * この境界を通して送信を止める。parser.tsの開発用入口は診断を記録して生成を省く。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当する。ここではDOMを操作しない。
  * API読込み・不正JSON・取消の例外は維持する。
@@ -52,7 +52,7 @@
  * 呼出し・属性式からAPI定義（IDを含む）への対応。globals/functionsで変数と関数型を
  * 参照できる。diagnosticsが空の場合だけ全変数型・戻り値型とスロット配置が確定している。
  * 元の構文木、parent、charPos、toString()のキャッシュは変更しない。
- * parser.tsの開発用入口とble-wifi/ble.tsの送信前処理が構文解析後に呼び出す。
+ * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理が構文解析後に呼び出す。
  * アセンブリ・version=3のバイトコード生成はbytecode.tsがこの結果を利用する。
  * 新形式のBLE転送・受信形式検証はble-wifi側、値コピーと呼出しの実行はESP32の
  * bytecode_vm.cppが担当する。生成スタブはdevice_api.generated.cppからdevice_native.cppを呼ぶ。

@@ -1,6 +1,6 @@
 /**
  * Python BLE／Wi-Fiデバッグ通信version=1の中心契約。
- * ble.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
+ * device-connection.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
  * 本ファイルが一覧転送と停止値の復号を行う。
  * ESP32のbytecode_debugger.cppがloop()で要求を処理し、bytecode_vm.cppが停止値を作る。
  *
@@ -30,15 +30,23 @@
  * Eventは20バイト: version:u8@0=1、state:u8@1、code:u8@2、予約:u8@3=0、stopId:u32@4、
  * revision:u32@8、Snapshot長:u32@12、Snapshot CRC32:u32@16。stateは既存0〜4、Paused=5。
  * Paused到達時に自動取得する。Notify欠落は1秒ごとのEvent Readで回復する。
+ * 購読には停止値の全受信前にPausedのEventを渡し、PythonBlockが最大化と取得中の表示を行う。
+ * Halted/Stopped/ErrorもEventとして渡す。Start/Stop時は前回のEvent比較をリセットする。
  * stopIdはデバイス稼働中に再利用しない。非PausedではstopId/長さ/CRCは0。
- * CRCは既存bytecode-transfer.tsのCRC-32/ISO-HDLCと同一。Snapshot上限は16408バイト。
+ * CRCは既存bytecode-transfer.tsのCRC-32/ISO-HDLCと同一。Snapshot上限は256KiB。
  *
- * Snapshotヘッダー24バイト: version:u8@0=1、reason:u8@1=1(ブレークポイント)、slotBytes:u16@2=8、
+ * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)、slotBytes:u16@2=8、
  * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
  * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
  * classId:u16@2(Object以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
  * 4ReturnPc、5SavedBp、6String ID、7Object handle。未初期化/Noneのpayloadは0。
- * 文字列の動的な一時値の本体と専用フレーム表は送らない。名前・型・PC/行対応はdiagram側の後続実装。
+ * スロット列の後に文字列数:u32、続いて各文字列のID:u32、UTF-8バイト長:u32、本体（終端・パディングなし）。
+ * 大域→スタック順で参照されるString IDの初出順に1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
+ * 定数と動的文字列の両方を含む。メモリ不足では明示エラーとし、切り詰めない。
+ * 旧Snapshot version=1の受信は維持し、文字列本体がない値は「取得不可」と表示する。
+ * 専用フレーム表は送らず、BP+0(ReturnPc)、BP+1(SavedBp)と同一ビルドのCALL PC/関数範囲で復元する。
+ * モジュールと最初の関数のBPがともに0でも、所属関数とCALL対応で区別する。
+ * 名前・型・行・変数配置はpython/bytecode.tsが同一コンパイルで作り、python/debugger-view.tsが表示する。
  *
  * 一覧は命令列先頭=0のPCであり、ソース行番号ではない。検証済み命令のbit7だけをESP32で変更し、
  * 元イメージのCRC・programRevisionは維持する。切断・Wi-Fi切替でフラグを解除する。
@@ -50,7 +58,7 @@
 import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
 
 export const debugProtocol = {
-    version: 1, maxBreakpoints: 4096, maxSnapshotLength: 16408, paused: 5, timeoutMs: 2500,
+    version: 1, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
     errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
         "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
 } as const;
@@ -101,6 +109,7 @@ export interface DebugSnapshot {
     sp: number;
     globals: readonly DebugValue[];
     stack: readonly DebugValue[];
+    strings: ReadonlyMap<number, string>;
 }
 
 type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
@@ -132,9 +141,11 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
     const sp = view.getUint32(12, true);
     const globals = view.getUint32(16, true);
     const stack = view.getUint32(20, true);
-    if (view.getUint8(0) !== 1 || view.getUint8(1) !== 1 || view.getUint16(2, true) !== 8
+    const version = view.getUint8(0);
+    const valuesEnd = 24 + 8 * (globals + stack);
+    if ((version !== 1 && version !== 2) || view.getUint8(1) !== 1 || view.getUint16(2, true) !== 8
         || pc > 65535 || globals > 1024 || sp > 1024 || stack !== sp || bp > sp
-        || bytes.length !== 24 + 8 * (globals + stack)) {
+        || (version === 1 ? bytes.length !== valuesEnd : bytes.length < valuesEnd + 4)) {
         throw new Error("デバッグ停止データのヘッダーが不正です。");
     }
     const values: DebugValue[] = [];
@@ -155,8 +166,33 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         }
         values.push({ tag, classId, value });
     }
+    const strings = new Map<number, string>();
+    if (version === 2) {
+        const ids = [...new Set(values.filter(value => value.tag === 6).map(value => value.value as number))];
+        const count = view.getUint32(valuesEnd, true);
+        if (count !== ids.length) {
+            throw new Error("停止データの文字列数が不正です。");
+        }
+        let offset = valuesEnd + 4;
+        const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+        for (const id of ids) {
+            if (offset + 8 > bytes.length || view.getUint32(offset, true) !== id) {
+                throw new Error("停止データの文字列IDが不正です。");
+            }
+            const length = view.getUint32(offset + 4, true);
+            offset += 8;
+            if (length > bytes.length - offset) {
+                throw new Error("停止データの文字列長が不正です。");
+            }
+            strings.set(id, decoder.decode(bytes.subarray(offset, offset + length)));
+            offset += length;
+        }
+        if (offset !== bytes.length) {
+            throw new Error("停止データの末尾に余分なデータがあります。");
+        }
+    }
     return { stopId: event.stopId, revision: event.revision, pc, bp, sp,
-        globals: values.slice(0, globals), stack: values.slice(globals) };
+        globals: values.slice(0, globals), stack: values.slice(globals), strings };
 }
 
 /** 接続単位の通信。GATTオブジェクト・Snapshotは保存せず、dispose()後の結果は破棄する。 */
@@ -176,7 +212,7 @@ export class PythonDebugTransport {
     constructor(private readonly channel: DebugChannel,
         private readonly run: RunTransport, private readonly current: () => void,
         private readonly nextRequestId: () => number,
-        private readonly publish: (snapshot?: DebugSnapshot, error?: Error) => void) {
+        private readonly publish: (snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void) {
     }
 
     private check(signal?: AbortSignal): void {
@@ -293,7 +329,7 @@ export class PythonDebugTransport {
 
     private fail(error: unknown): void {
         if (!this.disposed && !(error instanceof DOMException && error.name === "AbortError")) {
-            this.publish(undefined, error instanceof Error ? error : new Error("デバッグ停止データを取得できませんでした。"));
+            this.publish(undefined, error instanceof Error ? error : new Error("デバッグ停止データを取得できませんでした。"), this.event);
         }
     }
 
@@ -307,9 +343,13 @@ export class PythonDebugTransport {
             return;
         }
         this.polling = true;
+        const epoch = this.epoch;
         try {
             const value = await this.run(() => this.channel.readEvent());
             this.check();
+            if (epoch !== this.epoch) {
+                return;
+            }
             this.accept(parseEvent(value));
         }
         finally {
@@ -319,10 +359,15 @@ export class PythonDebugTransport {
 
     private accept(event: DebugEvent): void {
         if (event.revision !== this.revision || event.state !== debugProtocol.paused) {
+            const changed = this.event?.state !== event.state || this.event?.revision !== event.revision
+                || this.event?.code !== event.code;
             if (this.event?.state === debugProtocol.paused) {
                 this.invalidateSnapshot();
             }
             this.event = event;
+            if (changed && event.revision === this.revision) {
+                this.publish(undefined, undefined, event);
+            }
             return;
         }
         this.event = event;
@@ -334,7 +379,8 @@ export class PythonDebugTransport {
         }
         const epoch = ++this.epoch;
         this.downloading = event.stopId;
-        this.publish();
+        // 最大化と「取得中」の表示は全チャンク受信より先に通知する。部分的な値は公開しない。
+        this.publish(undefined, undefined, event);
         void this.download(event, epoch).catch(error => {
             if (this.epoch === epoch) {
                 this.fail(error);
@@ -377,13 +423,14 @@ export class PythonDebugTransport {
         }
         const snapshot = decodeSnapshot(bytes, event);
         this.completed = event.stopId;
-        this.publish(snapshot);
+        this.publish(snapshot, undefined, event);
     }
 
     /** Start/Stopで古い値を直ちに消し、同じ停止通知を再取得しない。 */
     invalidateSnapshot(): void {
         this.epoch++;
-        this.ignored = this.event?.stopId;
+        this.ignored = this.event?.stopId ?? this.ignored;
+        this.event = undefined;
         this.downloading = undefined;
         this.completed = undefined;
         this.publish();

@@ -9,7 +9,7 @@
 | [app/ts/main.ts](../app/ts/main.ts) | DOM準備後のURL判定、5アプリの初期化、diagramの子アプリ接続、pagehide・HMR時の終了 |
 | [app/ts/lifecycle.ts](../app/ts/lifecycle.ts) | 初期化Promiseの共有、状態・エラー、逆順での停止・破棄 |
 | [diagram/ts/index.ts](../diagram/ts/index.ts) | diagramのUI、読込、実機用HTTP処理、BLEのイベント登録と破棄。全アプリを起動する処理は置かない |
-| [diagram/ts/ble-wifi/ble.ts](../diagram/ts/ble-wifi/ble.ts) | BLE接続ブロックと共有接続・サーボ指令・IMU通知管理。停止時に待機中のサーボ指令を取消。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
+| [diagram/ts/ble-wifi/device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts) | 機器接続ブロックと共有接続・サーボ指令・IMU通知管理。停止時に待機中のサーボ指令を取消。Clear・最後の購読ブロック削除・タブ非表示・pagehide・破棄で切断し、遅れた接続完了を破棄 |
 | [diagram/ts/hardware/servo.ts](../diagram/ts/hardware/servo.ts) | 角度入力からBLEサーボ操作。明示ARM、MOVE、DISABLE/STOP。CH変更・削除で以前のCH停止、削除で購読・DOMを解除 |
 | [diagram/ts/hardware/imu.ts](../diagram/ts/hardware/imu.ts) | IMU構造体を1つのポートへ出力。計測を購読し、削除・切断時に購読と最新値を解除 |
 | [diagram/ts/control/pid.ts](../diagram/ts/control/pid.ts) | Startで垂直基準を取り直してP制御を開始。入力消失・配線変更・Stop・非表示・pagehideで停止し、停止範囲中央を出力。削除で購読と設定DOMを解除 |
@@ -26,7 +26,7 @@
 
 ## ESP32 Wi-Fi追加時の資源管理（2026-10-14）
 
-共有diagramBLEはBLEとWi-Fiの接続を管理する。Clear・図読込・最後の接続所有ブロック削除・タブ非表示・pagehide・破棄でWi-Fi設定ダイアログ、待機、WebSocket／HTTP通知取得、カメラの取得を解除する。保存先localStorageには接続先だけを残し、秘密情報と有効状態は保存しない。CameraBlockは配置中に画像を購読し、削除で解除する。Wi-Fiへ切り替える前にサーボ停止・IMU停止を要求し、接続確認後も手動ARMを要求する。操作と制約は [Wi-Fiガイド](diagram/esp32-ble-lab-wifi.md) を参照する。今回はユーザー指定でビルドまでとし、ライフサイクルテストを実行していない。
+共有diagramDeviceはBLEとWi-Fiの接続を管理する。Clear・図読込・最後の接続所有ブロック削除・タブ非表示・pagehide・破棄でWi-Fi設定ダイアログ、待機、WebSocket／HTTP通知取得、カメラの取得を解除する。保存先localStorageには接続先だけを残し、秘密情報と有効状態は保存しない。CameraBlockは配置中に画像を購読し、削除で解除する。Wi-Fiへ切り替える前にサーボ停止・IMU停止を要求し、接続確認後も手動ARMを要求する。操作と制約は [Wi-Fiガイド](diagram/esp32-ble-lab-wifi.md) を参照する。今回はユーザー指定でビルドまでとし、ライフサイクルテストを実行していない。
 
 2026-10-15にCameraBlockの端末カメラ取得を追加した。端末映像はブロックごとに所有し、明示的な「開始」で取得する。全体Stop・取得元変更・Clear・図読込・削除・タブ非表示・pagehide・破棄でTrackと描画予約を解放する。ブラウザーのカメラ許可待ち自体は取り消せないため、世代を無効化し、後から成功した取得のTrackも停止する。復元・コピー・タブ復帰で端末カメラを自動起動しない。XIAOの共有画像取得は従来どおり通常Stopから独立している。今回はユーザー指定でビルドまでとし、ライフサイクルの実行テストは行わない。
 

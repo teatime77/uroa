@@ -6,13 +6,13 @@
 
 1. 距離の混在Telemetryに対応した[diagram-control](../../../esp32/app/diagram-control/README.md)を書き込む。DOIT ESP32 DEVKIT V1は`esp32dev`環境を使う。
 2. HC-SR04を配線する。現行設定はTRIG=GPIO25、ECHO=GPIO26。ECHOは分圧またはレベル変換して接続する。[配線表](../../../esp32/app/diagram-control/docs/wiring.md#hc-sr04doit-esp32-devkit-v1)を参照する。
-3. BLE接続ブロックと超音波距離ブロックを配置してからESP32へ接続する。接続時に図のセンサー・アクチュエータ一覧をDeviceInfoとして登録する。
+3. 機器接続ブロックと超音波距離ブロックを配置してからESP32へ接続する。接続時に図のセンサー・アクチュエータ一覧をDeviceInfoとして登録する。
 4. 登録された距離ブロックがあれば共有STREAMを10Hzで要求する。Startを押す必要はない。枠に接続・登録・測定状態を表示し、下部の出力はmm単位の数値となる。
 5. PlotBlockへ配線すると距離の推移を表示できる。距離ポートは数値だけを出すため、Plotの横軸にはブラウザーでの受信時刻を使う。
 
-IMUBlockと距離ブロックは`retainSensorStream(this)`で同じ10Hz STREAMを共有する。距離だけの構成ではIMUの検出を必要としない。どちらかの登録済みブロックが残る間はSTREAMを維持し、最後の利用ブロックを削除するとSTREAM=0を要求する。Wi-Fi切替時の再登録とSTREAMの連携は[ble.tsのconnectWifi()](../../diagram/ts/ble-wifi/ble.ts)を参照する。サーボを自動有効化する処理は追加していない。
+IMUBlockと距離ブロックは`retainSensorStream(this)`で同じ10Hz STREAMを共有する。距離だけの構成ではIMUの検出を必要としない。どちらかの登録済みブロックが残る間はSTREAMを維持し、最後の利用ブロックを削除するとSTREAM=0を要求する。Wi-Fi切替時の再登録とSTREAMの連携は[device-connection.tsのconnectWifi()](../../diagram/ts/ble-wifi/device-connection.ts)を参照する。サーボを自動有効化する処理は追加していない。
 
-DeviceInfoは登録時の一覧を固定して使う。接続後に追加・コピーしたブロックは「再接続して機器を登録」と表示し、追加しただけでは測定値を受信しない。登録時期と両経路の送信は[ble.ts](../../diagram/ts/ble-wifi/ble.ts)と[共通登録API](../../diagram/ts/ble-wifi/control-connection.ts)を参照する。削除済みブロックのレコード位置は次の登録まで保持して通知全体の順序を検証するが、そのブロックの出力は更新しない。
+DeviceInfoは登録時の一覧を固定して使う。接続後に追加・コピーしたブロックは「再接続して機器を登録」と表示し、追加しただけでは測定値を受信しない。登録時期と両経路の送信は[device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts)と[共通登録API](../../diagram/ts/ble-wifi/control-connection.ts)を参照する。削除済みブロックのレコード位置は次の登録まで保持して通知全体の順序を検証するが、そのブロックの出力は更新しない。
 
 ## 距離レコードと無効値
 

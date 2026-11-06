@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 // Original vector artwork. Keep bold, simple shapes legible at ToolItem's 32px size.
 const icons = [
-    ['BLEConnectionBlock', 'BLE接続', '#2563eb',
+    ['DeviceConnectionBlock', '機器接続', '#2563eb',
         '<path d="M23 8v32l12-10-20-15m0 18 20-15L23 8"/>'],
     ['IMUBlock', '姿勢・加速度センサー', '#0891b2',
         '<path d="M23 27V9m-4 5 4-5 4 5M23 27h17m-5-4 5 4-5 4M23 27 10 39m0-6v6h6"/><circle cx="23" cy="27" r="3" fill="#0891b2" stroke="none"/>'],

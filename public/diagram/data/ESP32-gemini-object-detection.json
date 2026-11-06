@@ -1,7 +1,7 @@
 [
   {
     "idx": 0,
-    "typeName": "BLEConnectionBlock",
+    "typeName": "DeviceConnectionBlock",
     "x": 261.2391444020819,
     "y": 144.22648805500967,
     "ports": []

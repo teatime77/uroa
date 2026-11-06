@@ -6,7 +6,7 @@
 
 PythonBlockと接続ブロックの「a.pyを送信」は現在の通信経路を利用する。フレーム・Result照合・認証・取消・保持と実行の境界は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、開始・停止との連携は[python-block.ts](../../diagram/ts/python/python-block.ts)と[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を正本とする。
 
-ブレークポイント一覧・停止Event・Snapshot取得の両経路の通信APIは[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、呼出し例は[ble.tsのsendBreakpoints()](../../diagram/ts/ble-wifi/ble.ts)、受信元の識別・配送は[ControlTransport](../../../esp32/app/diagram-control/include/control_transport.h)を参照する。実機での送受信はビルドとは別に確認する。
+ブレークポイント一覧・停止Event・Snapshot取得の両経路の通信APIは[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、呼出し例は[device-connection.tsのsendBreakpoints()](../../diagram/ts/ble-wifi/device-connection.ts)、受信元の識別・配送は[ControlTransport](../../../esp32/app/diagram-control/include/control_transport.h)を参照する。実機での送受信はビルドとは別に確認する。
 
 ## 現行の参照先
 
@@ -21,7 +21,7 @@ PythonBlockと接続ブロックの「a.pyを送信」は現在の通信経路�
 | 指令キュー・機器操作・周期・期限監視 | [main.cpp](../../../esp32/app/diagram-control/src/main.cpp)、[config.h](../../../esp32/app/diagram-control/include/config.h) |
 | 通信ライブラリー | [BLE](../../../esp32/lib/ble/README.md)、[Wi-Fi](../../../esp32/lib/wifi/README.md)、[Protocol](../../../esp32/lib/protocol/README.md) |
 | 機器ライブラリー | [Servo](../../../esp32/lib/servo/README.md)、[IMU](../../../esp32/lib/imu/README.md)、[超音波距離](../../../esp32/lib/ultrasonic/README.md) |
-| ブラウザー側の接続・サーボ・センサー | [ble.ts](../../diagram/ts/ble-wifi/ble.ts)、[servo.ts](../../diagram/ts/hardware/servo.ts)、[imu.ts](../../diagram/ts/hardware/imu.ts) |
+| ブラウザー側の接続・サーボ・センサー | [device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts)、[servo.ts](../../diagram/ts/hardware/servo.ts)、[imu.ts](../../diagram/ts/hardware/imu.ts) |
 | Wi-Fi画面・保存・カメラ | [接続画面](diagram-esp32-connection-ui.md)、[Wi-Fiガイド](esp32-ble-lab-wifi.md) |
 
 仕様と実装が食い違う場合は両側の現行ソースを照合する。特に既定環境はREADMEだけで判断せず`platformio.ini`を確認し、コマンドでは環境を明示する。
@@ -34,7 +34,7 @@ BLE接続時のINFO応答後に`sendDeviceInfo()`を呼び、`writeDeviceInfo()`
 
 ESP32では`Callbacks::deviceInfo`から内容と接続世代を通常指令のキューへコピーし、`loop()`で現在の接続世代・種別・レコード長・サーボCH／モードを検証する。全件が正しい場合だけ受信順の`deviceInfos`・`deviceInfoCount`へ置き換え、STREAMと旧測定を停止する。不正な場合は以前の一覧を保持する。新しい一覧ではSTREAMを再要求する。結果はシリアルの`DeviceInfo accepted`／`DeviceInfo rejected`で確認する。通常のBLE接続・切断、Wi-Fi制御権解除、キュー飽和では一覧を消去する。BLEからWi-Fi制御権を取得するときは一覧を引き継ぐ。機器の存在確認・ドライバー追加・ARM・STREAM開始は行わない。詳細は[現行protocol.md](../../../esp32/app/diagram-control/docs/protocol.md)を参照する。
 
-切断・Wi-Fi切替時にはCharacteristicの参照を解除する。この窓口を持たない旧ファームウェアへのBLE接続は取得段階で失敗するため、両側の対応版を使う。分割転送・DeviceInfo専用のアプリ側ACKは未実装。BLE・Wi-Fiの配送、接続時の再登録、書込成功と内容検証の区別は[control-connection.tsのsendDeviceInfo()](../../diagram/ts/ble-wifi/control-connection.ts)と[ble.ts](../../diagram/ts/ble-wifi/ble.ts)を正本とする。
+切断・Wi-Fi切替時にはCharacteristicの参照を解除する。この窓口を持たない旧ファームウェアへのBLE接続は取得段階で失敗するため、両側の対応版を使う。分割転送・DeviceInfo専用のアプリ側ACKは未実装。BLE・Wi-Fiの配送、接続時の再登録、書込成功と内容検証の区別は[control-connection.tsのsendDeviceInfo()](../../diagram/ts/ble-wifi/control-connection.ts)と[device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts)を正本とする。
 
 従来の確認記録: `node --test tests/device-info-transfer.test.mjs`の8件はソースをメモリー内で評価する模擬BLE試験で、順序・0埋めなし・空一覧・長さ境界・不正な書込位置・送信待ち・旧接続の取消・直列化・タイムアウトを確認した。当時は公開ビルド、C++ビルド、ブラウザー操作、Upload、実BLE／実機動作を確認していない。今回のWi-Fi対応の検証結果は[検証記録](../build-and-test.md)を参照する。
 
@@ -52,7 +52,7 @@ IMUBlockと距離ブロックは`retainSensorStream(this)`で共有10Hz STREAM�
 
 ヘッダーのmillisは`getUint32(4, true)`で読み、IMUBlockは`{ time, gyro, acc }`を出力する。PlotBlockはStructのtimeを横軸へ使い、機器時刻の巻き戻りで履歴を消去する。距離ブロックの出力は数値だけなので、Plotはブラウザーの受信時刻を横軸へ使う。ESP32の距離測定は専用タスクで行い、各処理後に既定100ms待機する。通知では最新値を再利用し、ヘッダー時刻は距離の測定時刻そのものではない。
 
-Wi-Fiも最大268バイトの同じ混在通知を扱い、HTTPは最新のセンサー通知を1件保持する。機器一覧の再登録とSTREAMの連携は[ble.tsのconnectWifi()](../../diagram/ts/ble-wifi/ble.ts)を参照する。旧IMU version=1・旧Balance version=2は受信しない。
+Wi-Fiも最大268バイトの同じ混在通知を扱い、HTTPは最新のセンサー通知を1件保持する。機器一覧の再登録とSTREAMの連携は[device-connection.tsのconnectWifi()](../../diagram/ts/ble-wifi/device-connection.ts)を参照する。旧IMU version=1・旧Balance version=2は受信しない。
 
 2026-11-01の今回の変更では型・公開ビルド・成果物の静的確認が成功した。テストはユーザー指定により作成・実行していない。ブラウザー・実BLE／Wi-Fi・実距離測定は未確認。ESP32のビルド結果は別リポジトリーの[検証記録](../../../esp32/docs/build-and-test.md)を参照し、今回のブラウザー変更の検証結果とは区別する。
 
@@ -77,7 +77,7 @@ pio run --project-dir app/diagram-control -e supermini_esp32s3
 
 ## 送受信のタイミング
 
-以下は現行の`control-connection.ts`・`ble.ts`とdiagram-controlの`main.cpp`・`config.h`に基づく。周期は設定・実装上の値であり、実機で測った通信遅延や描画周期ではない。
+以下は現行の`control-connection.ts`・`device-connection.ts`とdiagram-controlの`main.cpp`・`config.h`に基づく。周期は設定・実装上の値であり、実機で測った通信遅延や描画周期ではない。
 
 | 処理 | タイミングと責任 |
 |---|---|

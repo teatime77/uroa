@@ -55,7 +55,7 @@ flowchart LR
 | `esp32-ble-lab/firmware/include/config.h` | ピン、角度範囲、パルス幅、BLE UUID、タイムアウト |
 | `esp32-ble-lab/firmware/platformio.ini` | `esp32dev`／`xiao_esp32s3`、Arduino、依存ライブラリー、BLE接続数の設定 |
 | `esp32-ble-lab/docs/protocol.md` | BLEパケットの仕様 |
-| [diagram/ts/ble-wifi/ble.ts](../../diagram/ts/ble-wifi/ble.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
+| [diagram/ts/ble-wifi/device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts) | uroa側の指令生成・IMU解析・単位変換、BLE接続、ACK待ち、定期PING |
 | [web/src/protocol.ts](../../../robot/esp32-ble-lab/web/src/protocol.ts)、[web/src/ble.ts](../../../robot/esp32-ble-lab/web/src/ble.ts) | 取り込み元の専用Web画面。解説作成時の照合先。今回の移行対象外 |
 | `Arduino.h` | `setup()`、`loop()`、`millis()`、シリアル出力など |
 | `Wire.h` | I²C通信。PCA9685とIMUが同じバスを使う |
@@ -306,7 +306,7 @@ current = start + (target - start) × elapsed / duration
 
 接続中に`now - lastCommand > 5000`となり、いずれかのCHが有効またはIMU通知中なら、全CHとIMUを停止してNOT_ARMED・指令番号0のStatusを出す。
 
-専用Web画面の`ble.ts`は1.5秒周期でPINGを送る。PING以外の形式・opcode検査を通った通常指令も時刻を更新し、優先STOPも処理時に更新する。タイムアウト後にPINGを受けてもサーボやIMUは自動復帰せず、ARMやSTREAMを改めて送る必要がある。
+専用Web画面の`device-connection.ts`は1.5秒周期でPINGを送る。PING以外の形式・opcode検査を通った通常指令も時刻を更新し、優先STOPも処理時に更新する。タイムアウト後にPINGを受けてもサーボやIMUは自動復帰せず、ARMやSTREAMを改めて送る必要がある。
 
 このタイムアウトは`loop()`の条件分岐として実装されている。CPU停止時にも動作する独立したハードウェア監視機構ではない。
 

@@ -1,6 +1,20 @@
 # ビルドと回帰テスト
 
-更新日: 2026-11-05。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-11-06。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## 共通接続APIの名称整理（2026-11-06）
+
+共通窓口は[device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts)のDeviceConnection／DeviceConnectionState／DeviceConnectionPhase、共有インスタンスはdiagramDevice、ブロックはDeviceConnectionBlockへ改名した。保存型の互換と機能別の責任は同ソースの仕様コメントを参照する。参照元・表示・サンプル・アイコン・ESP32の参照文書を更新し、作業中のデバッガ変更は保持した。
+
+ユーザー指定に従い、ビルドはESP32のesp32devだけで成功した。結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記載する。uroaはTypeScript Compiler APIのnoEmitでdiagramの46ソースを静的確認し、型診断0件。公開ビルド・npmのverify・テストは実行していない。ブラウザー表示、旧図の読込み・新規保存、実BLE／Wi-Fi、Uploadは未確認。
+
+## Pythonブレークポイントとデバッグ表示（2026-11-06）
+
+同一コンパイルのバイナリとデバッグ情報は[bytecode.ts](../diagram/ts/python/bytecode.ts)、行指定の検証は[debug-info.ts](../diagram/ts/python/debug-info.ts)、停止時の最大化・購読・失効は[PythonBlock](../diagram/ts/python/python-block.ts)、大域・局所・構造体・Call Stack・全スロットの表示は[debugger-view.ts](../diagram/ts/python/debugger-view.ts)、通信形式は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)を正本とする。
+
+ユーザー指定に従い、ビルドはESP32のesp32devだけで成功した。コマンドと使用量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)を参照する。uroaはTypeScript Compiler APIの`noEmit`で変更した7ソースの静的な型診断0件を確認した。公開ビルド・`npm.cmd run verify`は実行せず、テストも作成・実行していない。両リポジトリーの差分・空白・更新リンクも静的確認した。
+
+ブラウザーのF9・自動最大化・Call Stack選択、実BLE／Wi-Fi、構造体・動的文字列・再帰の実機表示、切断・取消・通信期限・最大Snapshotの通信時間と動的RAM、Uploadは未確認。
 
 ## プログラム・VM・デバッグ通信のBLE／Wi-Fi共通化（2026-11-05）
 
@@ -10,7 +24,7 @@
 
 ## 機器一覧のWi-Fi対応（2026-11-05）
 
-機器一覧の形式は[device-telemetry.ts](../diagram/ts/ble-wifi/device-telemetry.ts)、共通の配送・完了範囲は[control-connection.tsのsendDeviceInfo()](../diagram/ts/ble-wifi/control-connection.ts)、Wi-Fi接続時の登録は[ble.ts](../diagram/ts/ble-wifi/ble.ts)、HTTP／WebSocketの送信は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。
+機器一覧の形式は[device-telemetry.ts](../diagram/ts/ble-wifi/device-telemetry.ts)、共通の配送・完了範囲は[control-connection.tsのsendDeviceInfo()](../diagram/ts/ble-wifi/control-connection.ts)、Wi-Fi接続時の登録は[device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts)、HTTP／WebSocketの送信は[robot-wifi.ts](../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。
 
 uroaルートの`npm.cmd run verify`は成功し、TypeScript・公開ビルド・配信成果物の静的確認を完了した。既存gameの動的／静的import併用警告2件は継続。ESP32はユーザー指定によりesp32devだけをビルドし、結果は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記載する。テストは作成・実行していない。ブラウザー操作、実BLE／Wi-Fi、空一覧・上限・認証エラー・切断時の実動作、STREAM再開、Uploadは未確認。
 
@@ -22,7 +36,7 @@ uroaルートの`npm.cmd run verify`は成功し、TypeScript・公開ビルド�
 
 ## PythonデバッガのBLE通信（2026-11-05）
 
-通信・停止値の共通仕様は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)、送信API・購読例は[ble.tsのsendBreakpoints()](../diagram/ts/ble-wifi/ble.ts)を参照する。F9の行番号から命令PCへの変換、変数・Call Stackの画面表示、再開・ステップ操作は後続実装。現段階の通信APIには命令PCを渡す。
+通信・停止値の共通仕様は[debug-protocol.ts](../diagram/ts/ble-wifi/debug-protocol.ts)、送信API・購読例は[device-connection.tsのsendBreakpoints()](../diagram/ts/ble-wifi/device-connection.ts)を参照する。F9の行番号から命令PCへの変換、変数・Call Stackの画面表示、再開・ステップ操作は後続実装。現段階の通信APIには命令PCを渡す。
 
 uroaルートで`npm.cmd run verify`を実行し、型・公開ビルド・配信成果物を静的確認する。ESP32は[同リポジトリーの記録](../../esp32/docs/build-and-test.md)に従ってesp32devだけをビルドする。ユーザー指定によりテストは作成・実行しない。実BLE、旧ファームウェア接続、タイムアウト・切断・世代変更、最大件数／Snapshotの通信時間・空きRAM、VM停止・機器出力の実機動作、Uploadは未確認。
 
@@ -142,7 +156,7 @@ python diagram/python/generate-device-api.py
 
 ## バイトコードのBLE送受信（2026-11-03）
 
-`diagramBLE.sendBytecode()`とBLE接続ブロックの「a.pyを送信」を追加した。専用のWrite／Read窓口で分割転送し、フレームごとの受付とCRC32を照合する。ESP32のBytecodeReceiverは接続世代・順序・CRC・バイナリの構造を検証し、正常なCOMMITだけをRAMへ確定する。VM・Flash保存は実装していない。操作・データ形式・取消は[転送仕様](../diagram/ts/ble-wifi/bytecode-transfer.ts)を参照する。
+`diagramDevice.sendBytecode()`と機器接続ブロックの「a.pyを送信」を追加した。専用のWrite／Read窓口で分割転送し、フレームごとの受付とCRC32を照合する。ESP32のBytecodeReceiverは接続世代・順序・CRC・バイナリの構造を検証し、正常なCOMMITだけをRAMへ確定する。VM・Flash保存は実装していない。操作・データ形式・取消は[転送仕様](../diagram/ts/ble-wifi/bytecode-transfer.ts)を参照する。
 
 作業途中のTypeScript参照ビルドと、SuperMini／DevKit向けのPlatformIOビルドは成功した。その後のSTOP優先・確定直前の接続世代再照合を含む最終変更のビルド、公開ビルド全体、XIAO向けの完了結果、実BLE・実機動作は未確認。ユーザーから処理時間の短縮とテスト不要の指定があり、追加ビルド・検証を停止した。模擬・単体・ブラウザーテストとUploadは行っていない。
 
@@ -405,7 +419,7 @@ pio run --project-dir esp32-ble-lab/firmware -e esp32dev
 
 WindowsのPlatformIO IDE付属CLIで上記ビルドが成功し、`firmware/.pio/build/esp32dev/firmware.bin`を生成した（83.47秒）。Espressif32 6.10.0、Arduino ESP32 2.0.17、NimBLE-Arduino 2.3.6、Adafruit PWM Servo Driver Library 3.0.2、Adafruit BusIO 1.17.4を使用。RAMは36,108／327,680 bytes（11.0%）、Flashは621,425／1,310,720 bytes（47.4%）。初回は隔離環境でPlatformIO共通キャッシュの`platforms.lock`への書き込みが拒否されたため、ビルドを隔離環境外で実行した。生成物・依存は`.pio/`内に置かれ、Gitの追跡対象外である。
 
-diagram/ts/ble-wifi/ble.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の `esp32-ble-lab/docs/validation.md` は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
+diagram/ts/ble-wifi/device-connection.tsとの4つのUUID、Command 10／Status 12／Telemetry 20バイトの形式、opcode、角度範囲、単位換算をソースで照合した。更新した文書のローカルリンクも確認した。ブラウザーのソース・npm設定・起動終了処理は変更していないため、今回npmのビルド・ブラウザーテストは再実行していない。実機への書き込み・BLE通信・サーボ・IMU・Androidは今回再確認していない。過去の `esp32-ble-lab/docs/validation.md` は2026-10-05の取り込み元の結果であり、今回の結果とは区別する。
 
 ### XIAO ESP32S3 Sense対応時の記録（2026-10-14、Wi-Fi機能追加前）
 
@@ -545,7 +559,7 @@ Plotの追加確認は、Portの有効型・両端への配線通知、測定前
 
 サーボを実機で確認するときの操作例は次のとおり。
 
-1. BLEConnectionBlock、InputNumberBlock、ServoMotorBlockを配置し、数値出力をサーボの入力ポートへ配線する。
+1. DeviceConnectionBlock、InputNumberBlock、ServoMotorBlockを配置し、数値出力をサーボの入力ポートへ配線する。
 2. BLE接続ボタンでESP32へ接続し、ServoMotorBlockでCH（例: 0）と時間（例: 1000ms）を指定する。
 3. 「90°で有効化」を押す。この操作で90°のPWM指令が出る。
 4. 数値入力へ105を入れる、または入力済みなら「入力角度へ移動」を押す。60～120°の範囲で値の変更に追従する。

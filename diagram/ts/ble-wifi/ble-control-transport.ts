@@ -13,7 +13,7 @@ export interface ControlCharacteristic extends EventTarget {
 
 /**
  * Commandをresponse付きで書き、Status/Telemetryを実際のCharacteristicで区別して渡す。
- * 接続・通知開始・初期Read・切断はble.tsが担当する。ここではパケットを解釈しない。
+ * 接続・通知開始・初期Read・切断はdevice-connection.tsが担当する。ここではパケットを解釈しない。
  */
 export class BLEControlTransport implements ControlTransport {
     readonly kind = "ble";

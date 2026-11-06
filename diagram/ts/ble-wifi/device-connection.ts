@@ -13,7 +13,7 @@ import { checkBytecodeTransfer, type BytecodeReceipt } from "./bytecode-transfer
 import { parsePython } from "../python/parser.js";
 import { analyzePython } from "../python/semantic.js";
 import { generateBytecode } from "../python/bytecode.js";
-import { PythonDebugTransport, type DebugSnapshot } from "./debug-protocol";
+import { PythonDebugTransport, type DebugSnapshot, type DebugEvent } from "./debug-protocol";
 
 // GATT service shared with esp32/app/diagram-control.
 /**
@@ -60,18 +60,22 @@ interface BLEDevice extends EventTarget { name?: string; gatt?: BLEServer; }
 interface BLEAdapter {
     requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<BLEDevice>;
 }
-export type BLEPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
-export interface BLEConnectionState { phase: BLEPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; transport?: "ble" | "wifi"; }
+export type DeviceConnectionPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
+export interface DeviceConnectionState { phase: DeviceConnectionPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; transport?: "ble" | "wifi"; }
 export type ServoMode = "angle" | "speed";
 
 /**
  * 図の接続UI・機器登録・機器状態・プログラム通信の窓口。GATT参照は保存しない。
+ * 共通APIはDeviceConnection、DeviceConnectionState、diagramDevice、DeviceConnectionBlockと呼ぶ。
+ * BLEControlTransport・BLEのGATT型・UUID・BLEWifiSetupは実際にBLE固有の処理なので区別する。
+ * index.tsの型番号0とアイコンはDeviceConnectionBlock。旧保存型名BLEConnectionBlockは
+ * 読込み用の別名だけを登録し、Block.makeObj()による新規保存・コピーは新しい型名を使う。
  * 通常指令・ACK・通知検証・PING・共通待ち列はcontrol-connection.tsへ委譲する。
  * BLE/Wi-Fiの切替・プログラム・デバッグ窓口とブロックへの反映を担当する。
  */
-export class BLEConnection {
-    state: BLEConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
-    private listeners = new Set<(state: BLEConnectionState) => void>();
+export class DeviceConnection {
+    state: DeviceConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
+    private listeners = new Set<(state: DeviceConnectionState) => void>();
     private sensorStreamUsers = new Set<FunctionBlock>();
     private requestedRate = 0;
     private device?: BLEDevice;
@@ -96,10 +100,11 @@ export class BLEConnection {
     private debugger?: PythonDebugTransport;
     private debuggerSending = false;
     private debugRequestId = 0;
-    private debugListeners = new Set<(snapshot?: DebugSnapshot, error?: Error) => void>();
+    private debugListeners = new Set<(snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void>();
     /** 最新の検証済み停止値。更新はデバッグ受信とStart/Stop/切断だけが行い、呼出元は参照する。 */
     debugSnapshot?: DebugSnapshot;
     debugError?: Error;
+    debugEvent?: DebugEvent;
     private sensors   : FunctionBlock[] = [];
     private actuators : FunctionBlock[] = [];
 
@@ -119,7 +124,7 @@ export class BLEConnection {
     }
 
     private checkServoConnection(): void {
-        if (this.state.phase !== "connected") throw new Error("BLE接続ブロックでESP32へ接続してください。");
+        if (this.state.phase !== "connected") throw new Error("機器接続ブロックでESP32へ接続してください。");
         if (!this.state.pcaAvailable) throw new Error("PCA9685が見つかりません。");
     }
 
@@ -201,7 +206,7 @@ export class BLEConnection {
         return "";
     }
 
-    subscribe(listener: (state: BLEConnectionState) => void): () => void {
+    subscribe(listener: (state: DeviceConnectionState) => void): () => void {
         this.listeners.add(listener);
         listener(this.state);
         return () => {
@@ -244,7 +249,7 @@ export class BLEConnection {
         });
     }
 
-    private publish(phase: BLEPhase, deviceName = "", message = ""): void {
+    private publish(phase: DeviceConnectionPhase, deviceName = "", message = ""): void {
         const active = phase === "connected" || phase === "connecting";
         this.state = { phase, deviceName, message, pcaAvailable: active && this.state.pcaAvailable, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming,
             transport: this.wifi?.connected ? "wifi" : "ble" };
@@ -295,7 +300,7 @@ export class BLEConnection {
         if (this.wifi?.connected) return;
         this.close("idle", "BLE接続が切れました。");
     };
-    private close(phase: BLEPhase, message = ""): void {
+    private close(phase: DeviceConnectionPhase, message = ""): void {
         this.closing = true;
         this.resetDebugger();
         this.debugRequestId = 0;
@@ -542,7 +547,7 @@ export class BLEConnection {
      *
      * @remarks
      * ```typescript
-     * import { diagramBLE } from "./ble-wifi/ble.js";
+     * import { diagramDevice } from "./ble-wifi/device-connection.js";
      * import { parsePython } from "./python/parser.js";
      * import { analyzePython } from "./python/semantic.js";
      * import { generateBytecode } from "./python/bytecode.js";
@@ -550,7 +555,7 @@ export class BLEConnection {
      * const module = parsePython(source);
      * const analysis = await analyzePython(module, signal);
      * const bytes = generateBytecode(module, analysis);
-     * const receipt = await diagramBLE.sendBytecode(bytes, signal);
+     * const receipt = await diagramDevice.sendBytecode(bytes, signal);
      * // receipt.byteLengthとreceipt.crc32はESP32が保持完了を返した内容。
      * ```
      *
@@ -598,17 +603,18 @@ export class BLEConnection {
     }
 
     /** 停止値の購読。未取得・失効ではundefined、取得失敗ではerrorを渡す。図の保存には含めない。 */
-    subscribeDebugSnapshots(listener: (snapshot?: DebugSnapshot, error?: Error) => void): () => void {
+    subscribeDebugSnapshots(listener: (snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void): () => void {
         this.debugListeners.add(listener);
-        listener(this.debugSnapshot, this.debugError);
+        listener(this.debugSnapshot, this.debugError, this.debugEvent);
         return () => this.debugListeners.delete(listener);
     }
 
-    private publishDebug(snapshot?: DebugSnapshot, error?: Error): void {
+    private publishDebug(snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent): void {
         this.debugSnapshot = snapshot;
         this.debugError = error;
+        this.debugEvent = event;
         for (const listener of this.debugListeners) {
-            listener(snapshot, error);
+            listener(snapshot, error, event);
         }
     }
 
@@ -619,16 +625,16 @@ export class BLEConnection {
     }
 
     /**
-     * 最後に保持したコードへ命令PCの一覧を送る。行番号からPCへの変換とF9からの呼出しは後続実装。
+     * 最後に保持したコードへ命令PCの一覧を送る。PythonBlockは同一ビルドのDebugInfoからF9の行を変換する。
      * 完了後、同じ接続・同じ保持コードのPaused通知から停止値を自動取得し、購読者へ公開する。
      * 通信・フラグ・停止値の共通仕様はdebug-protocol.ts。旧ファームウェアの通常接続には影響しない。
      * ```typescript
-     * const receipt = await diagramBLE.sendBytecode(bytes, signal);
-     * const release = diagramBLE.subscribeDebugSnapshots((snapshot, error) => {
+     * const receipt = await diagramDevice.sendBytecode(bytes, signal);
+     * const release = diagramDevice.subscribeDebugSnapshots((snapshot, error) => {
      *     // snapshot?.globals / stack / pc / bp / spを後続の変数表示で使う。
      * });
-     * await diagramBLE.sendBreakpoints(receipt, instructionPcs, signal);
-     * await diagramBLE.startBytecode(receipt);
+     * await diagramDevice.sendBreakpoints(receipt, instructionPcs, signal);
+     * await diagramDevice.startBytecode(receipt);
      * // 利用終了時はrelease()で購読を解除する。
      * ```
      */
@@ -665,9 +671,9 @@ export class BLEConnection {
                     }
                     return ++this.debugRequestId;
                 };
-                const client = new PythonDebugTransport(channel, run, check, nextRequestId, (snapshot, error) => {
+                const client = new PythonDebugTransport(channel, run, check, nextRequestId, (snapshot, error, event) => {
                     if (this.debugger === client && generation === this.generation) {
-                        this.publishDebug(snapshot, error);
+                        this.publishDebug(snapshot, error, event);
                     }
                 });
                 this.debugger = client;
@@ -739,16 +745,16 @@ export class BLEConnection {
     }
 }
 
-export const diagramBLE = new BLEConnection();
+export const diagramDevice = new DeviceConnection();
 
-export function initBLE(signal: AbortSignal): void {
+export function initDeviceConnection(signal: AbortSignal): void {
     document.addEventListener("visibilitychange", () => {
-        if (document.hidden) diagramBLE.disconnect();
+        if (document.hidden) diagramDevice.disconnect();
     }, { signal });
-    window.addEventListener("pagehide", () => diagramBLE.disconnect(), { signal });
+    window.addEventListener("pagehide", () => diagramDevice.disconnect(), { signal });
 }
 
-export class BLEConnectionBlock extends FunctionBlock {
+export class DeviceConnectionBlock extends FunctionBlock {
     readonly button: Button;
     readonly wifiButton: Button;
     readonly bytecodeButton: Button;
@@ -760,15 +766,15 @@ export class BLEConnectionBlock extends FunctionBlock {
         super(data);
         this.button = new Button({ text: "接続", click: () => {
             if (this.removed || this.inToolbox) return;
-            if (diagramBLE.state.phase === "connected") diagramBLE.disconnect();
-            else return diagramBLE.connect();
+            if (diagramDevice.state.phase === "connected") diagramDevice.disconnect();
+            else return diagramDevice.connect();
         } });
         this.wifiButton = new Button({ text: "Wi-Fi設定／接続", click: () => {
-            if (!this.removed && !this.inToolbox) return diagramBLE.openWifi();
+            if (!this.removed && !this.inToolbox) return diagramDevice.openWifi();
         } });
         this.bytecodeButton = new Button({ text: "a.pyを送信", click: () => this.sendPythonFile() });
-        if (!this.inToolbox) this.unsubscribe = diagramBLE.subscribe(() => {
-            if (diagramBLE.state.phase !== "connected") {
+        if (!this.inToolbox) this.unsubscribe = diagramDevice.subscribe(() => {
+            if (diagramDevice.state.phase !== "connected") {
                 this.bytecodeAbort?.abort();
             }
             this.updateButton();
@@ -786,12 +792,12 @@ export class BLEConnectionBlock extends FunctionBlock {
      * @remarks
      * ## 操作とAPI
      *
-     * ESP32へ対応ファームウェアを書き込み、diagramのBLE接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析、semantic.tsによるdevice-api.jsonの読込み・名前解決・型推論、その結果を使うversion=3のバイナリ生成、BLE転送を行う。意味解析の仕様はsemantic.ts先頭を参照する。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。a.pyは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
+     * ESP32へ対応ファームウェアを書き込み、diagramの機器接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析、semantic.tsによるdevice-api.jsonの読込み・名前解決・型推論、その結果を使うversion=3のバイナリ生成、BLE転送を行う。意味解析の仕様はsemantic.ts先頭を参照する。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。a.pyは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
      *
      * version=3をESP32へ転送して保持完了を待ち、VM_STARTを明示的に送る。受信の共通仕様とVM・ABI照合の境界はbytecode-transfer.ts先頭を参照する。PythonBlockとの開始・停止の契約はpython/python-block.tsを参照する。
      */
     private async sendPythonFile(): Promise<void> {
-        if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending) {
+        if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramDevice.bytecodeSending) {
             return;
         }
         const controller = new AbortController();
@@ -807,12 +813,12 @@ export class BLEConnectionBlock extends FunctionBlock {
             controller.signal.throwIfAborted();
             const module = parsePython(source);
             const analysis = await analyzePython(module, controller.signal);
-            const receipt = await diagramBLE.sendBytecode(generateBytecode(module, analysis), controller.signal);
-            await diagramBLE.startBytecode(receipt, () => !controller.signal.aborted && !this.removed);
+            const receipt = await diagramDevice.sendBytecode(generateBytecode(module, analysis), controller.signal);
+            await diagramDevice.startBytecode(receipt, () => !controller.signal.aborted && !this.removed);
         }
         catch (error) {
             if (!controller.signal.aborted && !this.removed) {
-                diagramBLE.state = { ...diagramBLE.state,
+                diagramDevice.state = { ...diagramDevice.state,
                     message: error instanceof Error ? error.message : "Pythonを送信できませんでした。" };
             }
         }
@@ -823,8 +829,8 @@ export class BLEConnectionBlock extends FunctionBlock {
         }
     }
 
-    copy(): BLEConnectionBlock {
-        const block = new BLEConnectionBlock({});
+    copy(): DeviceConnectionBlock {
+        const block = new DeviceConnectionBlock({});
         this.copyUI(block);
         block.setBoxSize();
         block.setPosition(this.position.copy());
@@ -851,14 +857,14 @@ export class BLEConnectionBlock extends FunctionBlock {
     }
 
     private updateButton(): void {
-        const phase = diagramBLE.state.phase;
+        const phase = diagramDevice.state.phase;
         this.button.text = phase === "connected" ? "切断" : phase === "error" ? "再接続" : "接続";
-        this.button.disabled = this.removed || this.inToolbox || (diagramBLE.state.transport !== "wifi" && !!diagramBLE.availabilityMessage()) || phase === "selecting" || phase === "connecting";
-        this.wifiButton.disabled = this.removed || this.inToolbox || !window.isSecureContext || phase === "selecting" || phase === "connecting" || diagramBLE.state.transport === "wifi";
-        this.wifiButton.disabled ||= diagramBLE.bytecodeSending || this.bytecodeAbort !== undefined;
-        this.bytecodeButton.text = this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending ? "送信中…" : "a.pyを送信";
+        this.button.disabled = this.removed || this.inToolbox || (diagramDevice.state.transport !== "wifi" && !!diagramDevice.availabilityMessage()) || phase === "selecting" || phase === "connecting";
+        this.wifiButton.disabled = this.removed || this.inToolbox || !window.isSecureContext || phase === "selecting" || phase === "connecting" || diagramDevice.state.transport === "wifi";
+        this.wifiButton.disabled ||= diagramDevice.bytecodeSending || this.bytecodeAbort !== undefined;
+        this.bytecodeButton.text = this.bytecodeAbort !== undefined || diagramDevice.bytecodeSending ? "送信中…" : "a.pyを送信";
         this.bytecodeButton.disabled = this.removed || this.inToolbox || phase !== "connected"
-            || this.bytecodeAbort !== undefined || diagramBLE.bytecodeSending;
+            || this.bytecodeAbort !== undefined || diagramDevice.bytecodeSending;
     }
 
     draw(): void {
@@ -868,12 +874,14 @@ export class BLEConnectionBlock extends FunctionBlock {
         ctx.font = "18px sans-serif";
         ctx.textBaseline = "top";
         ctx.fillStyle = "#17384f";
-        ctx.fillText(diagramBLE.state.transport === "wifi" ? "Wi-Fi接続" : "BLE接続", this.position.x + 16, this.position.y + 16);
+        const title = this.inToolbox || diagramDevice.state.phase !== "connected" ? "機器接続"
+            : diagramDevice.state.transport === "wifi" ? "機器接続（Wi-Fi）" : "機器接続（BLE）";
+        ctx.fillText(title, this.position.x + 16, this.position.y + 16);
         if (!this.inToolbox) {
-            const state = diagramBLE.state;
-            const unavailable = state.transport === "wifi" ? "" : diagramBLE.availabilityMessage();
+            const state = diagramDevice.state;
+            const unavailable = state.transport === "wifi" ? "" : diagramDevice.availabilityMessage();
             const phase = unavailable ? "unavailable" : state.phase;
-            const labels: Record<BLEPhase, string> = {
+            const labels: Record<DeviceConnectionPhase, string> = {
                 idle: "未接続", selecting: "機器を選択してください", connecting: "接続中", connected: "接続済み", error: "接続失敗", unavailable: "利用不可",
             };
             ctx.fillStyle = phase === "connected" ? "#176b3a" : phase === "error" || phase === "unavailable" ? "#a32121" : "#555555";
@@ -906,7 +914,7 @@ export class BLEConnectionBlock extends FunctionBlock {
     clearBlock(): void {
         this.removed = true;
         this.bytecodeAbort?.abort();
-        diagramBLE.cancelWifiSetup();
+        diagramDevice.cancelWifiSetup();
         this.button.disabled = true;
         this.button.pressed = false;
         this.wifiButton.disabled = true; this.wifiButton.pressed = false;
@@ -918,4 +926,6 @@ export class BLEConnectionBlock extends FunctionBlock {
     }
 }
 
-registerFunctionBlock(BLEConnectionBlock.name, () => new BLEConnectionBlock({}));
+registerFunctionBlock(DeviceConnectionBlock.name, () => new DeviceConnectionBlock({}));
+// 既存の保存図の読込みだけに使う旧型名。通信経路と無関係な公開クラス名には再利用しない。
+registerFunctionBlock("BLEConnectionBlock", () => new DeviceConnectionBlock({}));

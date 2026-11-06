@@ -1,6 +1,6 @@
 import { assert, Vec2, Vec3 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
-import { diagramBLE, type BLEConnectionState } from "../ble-wifi/ble";
+import { diagramDevice, type DeviceConnectionState } from "../ble-wifi/device-connection";
 import { imuStruct, type IMUValue, Vec3Value } from "../data_type";
 import { PortType, theCanvas } from "../diagram_util";
 import { StructPort } from "../port";
@@ -19,8 +19,8 @@ export class IMUBlock extends FunctionBlock {
         this.ports = [this.outputPort];
         this.setBoxSize();
         if (!this.inToolbox) {
-            this.releaseState = diagramBLE.subscribe(state => this.connectionChanged(state));
-            this.releaseStream = diagramBLE.retainSensorStream(this);
+            this.releaseState = diagramDevice.subscribe(state => this.connectionChanged(state));
+            this.releaseStream = diagramDevice.retainSensorStream(this);
         }
     }
 
@@ -65,7 +65,7 @@ export class IMUBlock extends FunctionBlock {
         return offset + 13;
     }
 
-    private connectionChanged(state: BLEConnectionState): void {
+    private connectionChanged(state: DeviceConnectionState): void {
         if (state.phase !== "connected" || !state.imuAvailable || !state.streaming) {
             this.outputPort.setPortValue(undefined);
         }
@@ -97,12 +97,12 @@ export class IMUBlock extends FunctionBlock {
         ctx.fillStyle = "#17384f";
         ctx.fillText("IMU", this.position.x + 16, this.position.y + 14);
         if (!this.inToolbox) {
-            const state = diagramBLE.state;
+            const state = diagramDevice.state;
             let label: string;
             if (state.phase !== "connected") {
                 label = "機器未接続";
             }
-            else if (!diagramBLE.isSensorRegistered(this)) {
+            else if (!diagramDevice.isSensorRegistered(this)) {
                 label = "再接続して機器を登録";
             }
             else if (!state.imuAvailable) {

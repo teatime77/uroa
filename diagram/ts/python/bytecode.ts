@@ -139,7 +139,7 @@
  *
  * ble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppはversion=1・2・3の
  * BLE転送・検証・RAM保持、bytecode_vm.cppは各版の実行に対応する。
- * 受信完了のACKはVMの開始・正常終了を表さない。PythonBlockとBLE接続ブロックは
+ * 受信完了のACKはVMの開始・正常終了を表さない。PythonBlockと機器接続ブロックは
  * 保持完了後にVM_STARTを送る。開始・停止の共通契約はpython-block.tsを参照する。
  * f文字列（関数名f"）・@formatは意味解析指定時にversion=3で生成する。
  * 実BLE・実機の実行確認はビルドと区別する。
@@ -156,6 +156,7 @@ import {
 import { valueSlotTypes } from "./semantic.js";
 import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 import { collectScopeGlobals } from "./global-scope";
+import type { PythonDebugBuild, PythonDebugInfo } from "./debug-info";
 
 /**
  * version=1は0x18まで、version=2は0x19まで、version=3は0x1Dまでの命令を使う。
@@ -316,6 +317,7 @@ class BytecodeGenerator {
     private readonly stringIds = new Map<string, number>();
     private readonly allocations = new Map<Scope, SlotAllocation>();
     private readonly nativeIds = new Set<number>();
+    private readonly statementStarts: { index: number; charPos: number; owner?: string }[] = [];
     private labelCount = 0;
     private readonly globalScope: Scope;
     private readonly sourceLines: string[];
@@ -1016,6 +1018,12 @@ class BytecodeGenerator {
         if (statement instanceof GlobalStatement) {
             return;
         }
+        // 文全体の評価前だけを停止点にする。whileの先頭ラベルと同じPCなので次周も停止する。
+        // 構造体の複数STOREやCALLからの継続へ行ブレークポイントを作らない。
+        if (statement instanceof CallStatement || statement instanceof IfStatement || statement instanceof WhileStatement
+            || statement instanceof ReturnStatement || statement.keyword === "break" || statement.keyword === "continue") {
+            this.statementStarts.push({ index: this.entries.length, ...this.location(statement) });
+        }
         if (this.analysis !== undefined) {
             const allocation = this.allocations.get(this.scope)!;
             allocation.cursor = allocation.variablesEnd;
@@ -1562,6 +1570,48 @@ class BytecodeGenerator {
         this.compileProgram();
         return this.encodeBinary();
     }
+
+    /** 同じ1回のコンパイルからバイナリと最終PC・変数配置を返す。名前・型はdiagramだけに保持する。 */
+    generateDebugBytecode(): PythonDebugBuild {
+        if (this.analysis === undefined || this.module.source === undefined) {
+            throw new Error("デバッグ情報には元ソースと意味解析結果が必要です。");
+        }
+        this.compileProgram();
+        const bytes = this.encodeBinary();
+        const positions: number[] = [];
+        const instructions: PythonDebugInfo["instructions"] = new Map();
+        const labels = new Map<string, number>();
+        let pc = 0;
+        for (const entry of this.entries) {
+            positions.push(pc);
+            if (entry.kind === "instruction") {
+                instructions.set(pc, { charPos: entry.charPos, owner: entry.owner,
+                    opcode: entry.opcode, operand: entry.operand });
+                pc += this.instructionLength(entry);
+            }
+            else if (entry.kind === "label") {
+                labels.set(entry.name, pc);
+            }
+        }
+        const functions = [...this.functions.values()].map(scope => {
+            const name = scope.fn!.name;
+            const record = this.entries.find((entry): entry is FunctionEntry => entry.kind === "function" && entry.name === name)!;
+            return { name, entryPc: labels.get(name)!, endPc: pc, slots: 2 + record.args + record.locals,
+                variables: [...this.analysis!.functions.get(name)!.variables.values()] };
+        });
+        for (let index = 0; index + 1 < functions.length; index++) {
+            functions[index].endPc = functions[index + 1].entryPc;
+        }
+        const info: PythonDebugInfo = {
+            source: this.module.source, api: this.analysis.api, instructions,
+            globals: [...this.analysis.globals.values()],
+            functions: [{ name: "<module>", entryPc: 0, endPc: functions[0]?.entryPc ?? pc,
+                slots: 0, variables: [] }, ...functions],
+            stops: this.statementStarts.map(point => ({ pc: positions[point.index],
+                line: this.sourceLine(point.charPos) + 1, charPos: point.charPos, owner: point.owner }))
+        };
+        return { bytes, info };
+    }
 }
 
 /**
@@ -1588,4 +1638,9 @@ export function generateAssembly(module: Module, analysis?: PythonAnalysis): str
  */
 export function generateBytecode(module: Module, analysis?: PythonAnalysis): Uint8Array {
     return new BytecodeGenerator(module, analysis).generateBytecode();
+}
+
+/** version=3のバイナリと同一生成のデバッグ情報を返す。既存generateBytecode()の形式は変えない。 */
+export function generateDebugBytecode(analysis: PythonAnalysis): PythonDebugBuild {
+    return new BytecodeGenerator(analysis.module, analysis).generateDebugBytecode();
 }

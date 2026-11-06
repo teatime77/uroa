@@ -1,7 +1,7 @@
 /**
  * 通常指令・ACK・センサー通知の通信経路に依存しない共通層。
  * ble-control-transport.tsはGATT、robot-wifi.tsは認証済みHTTP/WebSocketを担当する。
- * ble.tsは接続UI・機器登録・ブロックへの状態反映を担当し、本層へ通信経路を渡す。
+ * device-connection.tsは接続UI・機器登録・ブロックへの状態反映を担当し、本層へ通信経路を渡す。
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
@@ -24,7 +24,7 @@ export interface ControlTransport {
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void;
 }
 
-/** diagram-controlのProtocol::Opと共有する番号。VM操作の利用条件はble.tsが検査する。 */
+/** diagram-controlのProtocol::Opと共有する番号。VM操作の利用条件はdevice-connection.tsが検査する。 */
 export enum ControlOpcode {
     ARM = 1,
     MOVE = 2,
@@ -206,7 +206,7 @@ export class ControlConnection {
 
     /**
      * 機器一覧を現在の通信経路へ送り、書込みを最大2.5秒待つ。
-     * ble.tsがセンサー→アクチュエータの順で作った0〜20バイトをコピーする。
+     * device-connection.tsがセンサー→アクチュエータの順で作った0〜20バイトをコピーする。
      * レコード形式はdevice-telemetry.ts、ESP32の内容検証はmain.cppのhandleDeviceInfo()を参照する。
      * BLEは既存DeviceInfo Characteristicへresponse付きWriteを行う。
      * Wi-Fiはrobot-wifi.tsの認証済み/device-info（HTTP）またはdevice-info（WebSocket）へ送る。

@@ -1,6 +1,6 @@
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
-import { diagramBLE, type BLEConnectionState } from "../ble-wifi/ble";
+import { diagramDevice, type DeviceConnectionState } from "../ble-wifi/device-connection";
 import { InvalidDistanceMm, MaxDistanceMm, MinDistanceMm, UltrasonicRecordLength } from "../ble-wifi/device-telemetry";
 import { PortType, theCanvas } from "../diagram_util";
 import { NumberPort } from "../port";
@@ -20,8 +20,8 @@ export class UltrasonicDistanceSensorBlock extends FunctionBlock {
         this.ports = [this.outputPort];
         this.setBoxSize();
         if (!this.inToolbox) {
-            this.releaseState = diagramBLE.subscribe(state => this.connectionChanged(state));
-            this.releaseStream = diagramBLE.retainSensorStream(this);
+            this.releaseState = diagramDevice.subscribe(state => this.connectionChanged(state));
+            this.releaseStream = diagramDevice.retainSensorStream(this);
         }
     }
 
@@ -55,7 +55,7 @@ export class UltrasonicDistanceSensorBlock extends FunctionBlock {
     }
 
     /** 切断・計測停止では古い距離を出力先にも残さない。 */
-    private connectionChanged(state: BLEConnectionState): void {
+    private connectionChanged(state: DeviceConnectionState): void {
         if (state.phase !== "connected" || !state.streaming) {
             this.setDistance(undefined);
         }
@@ -99,12 +99,12 @@ export class UltrasonicDistanceSensorBlock extends FunctionBlock {
         ctx.fillStyle = "#17384f";
         ctx.fillText("超音波距離（mm）", this.position.x + 16, this.position.y + 14);
         if (!this.inToolbox) {
-            const state = diagramBLE.state;
+            const state = diagramDevice.state;
             let label: string;
             if (state.phase !== "connected") {
                 label = "機器未接続";
             }
-            else if (!diagramBLE.isSensorRegistered(this)) {
+            else if (!diagramDevice.isSensorRegistered(this)) {
                 label = "再接続して機器を登録";
             }
             else if (!state.streaming) {

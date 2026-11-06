@@ -27,7 +27,7 @@ Gemini APIキーはAIChatBlockの別の設定。上の3項目には入力せず�
 
 ## 1. キャンバス上の接続ブロック
 
-左のBluetoothアイコン（`BLEConnectionBlock`）をキャンバスへドラッグする。ブロックを置いただけでは接続しない。接続操作にStartボタンは不要。
+左のBluetoothアイコン（`DeviceConnectionBlock`）をキャンバスへドラッグする。ブロックを置いただけでは接続しない。接続操作にStartボタンは不要。
 
 | 表示・ボタン | 意味 |
 |---|---|
@@ -143,6 +143,6 @@ PCだけ接続できない場合はdiagramを再読み込みし、F12で開発�
 
 ## 参照先と確認範囲
 
-画面の項目・処理は [ble.ts](../../diagram/ts/ble-wifi/ble.ts)、[robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts)、[robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts) の現行ソースに基づく。通信・保存・認証の詳しい実装は[ESP32のWi-Fi設定・制御・カメラ](esp32-ble-lab-wifi.md)、配線・書き込みは[現行diagram-controlのREADME](../../../esp32/app/diagram-control/README.md)を参照する。
+画面の項目・処理は [device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts)、[robot-wifi-dialog.ts](../../diagram/ts/ble-wifi/robot-wifi-dialog.ts)、[robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts) の現行ソースに基づく。通信・保存・認証の詳しい実装は[ESP32のWi-Fi設定・制御・カメラ](esp32-ble-lab-wifi.md)、配線・書き込みは[現行diagram-controlのREADME](../../../esp32/app/diagram-control/README.md)を参照する。
 
 以前の会話ではユーザーからWindowsのChromeでのWi-Fi接続・カメラ画像表示と、追加待ち0msで滑らかになったとの報告を受けている。エージェントによる実機テストや、Chrome保存・次回接続・Androidを含む全手順の動作確認とは区別する。2026-10-17の固定キー化はソースと文書を変更し、動作テストはユーザーが行う。
