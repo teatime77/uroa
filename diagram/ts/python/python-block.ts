@@ -2,6 +2,8 @@
  * Python編集・実行用ActionBlock。parser.ts、semantic.ts、bytecode.tsでビルドし、
  * ble-wifi/device-connection.tsが転送・VM指令を担当する。index.tsがツール、procedure.tsが復元を登録する。
  * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
+ * 最大化中は横並びのworkspaceに左エディタと右デバッグ欄を配置する。右欄の縦配置・スクロール・
+ * 操作アイコン・浮動小数点表示はdebugger-view.tsが担当し、停止値がなくても欄を表示する。
  * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
  * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
@@ -49,6 +51,7 @@ export class PythonBlock extends ActionBlock {
     readonly sourceEditor: HTMLTextAreaElement;
     private readonly highlightEditor: PythonHighlightEditor;
     private readonly panel = document.createElement("div");
+    private readonly workspace = document.createElement("div");
     private readonly maximizeButton = document.createElement("button");
     private readonly minimizeButton = document.createElement("button");
     private readonly openButton = document.createElement("button");
@@ -158,7 +161,12 @@ export class PythonBlock extends ActionBlock {
         }, { signal: this.events.signal });
         this.statusView.setAttribute("role", "status");
         Object.assign(this.statusView.style, { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minHeight: "18px" });
-        panel.append(heading, controls, this.highlightEditor.element, this.debuggerView.element, this.statusView);
+        Object.assign(this.workspace.style, { display: "none", flex: "1", minHeight: "0", minWidth: "0", gap: "8px",
+            overflow: "hidden", alignItems: "stretch" });
+        this.highlightEditor.element.style.flex = "1 1 0";
+        this.highlightEditor.element.style.minWidth = "0";
+        this.workspace.append(this.highlightEditor.element, this.debuggerView.element);
+        panel.append(heading, controls, this.workspace, this.statusView);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
         this.releaseConnection = diagramDevice.subscribe(state => {
             if (state.phase !== "connected") {
@@ -197,7 +205,6 @@ export class PythonBlock extends ActionBlock {
             if (snapshot && this.debugInfo) {
                 try {
                     this.debuggerView.show(this.debugInfo, snapshot);
-                    this.highlightEditor.element.style.flex = "1 1 55%";
                     this.highlightEditor.setExecutionLine(debugLine(this.debugInfo, snapshot.pc));
                     this.showStatus("ブレークポイントで停止しました。関数名を選ぶと局所変数を表示します。再開・ステップは未実装です。");
                 }
@@ -339,8 +346,8 @@ export class PythonBlock extends ActionBlock {
             return;
         }
         this.expanded = expanded;
+        this.workspace.style.display = expanded ? "flex" : "none";
         this.highlightEditor.element.style.display = expanded ? "flex" : "none";
-        this.debuggerView.element.style.display = expanded && this.debuggerView.element.childElementCount !== 0 ? "block" : "none";
         this.highlightEditor.refresh();
         this.positionPanel();
         this.updateControls();
@@ -405,7 +412,6 @@ export class PythonBlock extends ActionBlock {
     private clearDebugView(): void {
         this.debuggerView.clear();
         this.highlightEditor.setExecutionLine();
-        this.highlightEditor.element.style.flex = "1";
     }
 
     private showStatus(message: string): void {

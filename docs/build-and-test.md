@@ -2,6 +2,12 @@
 
 更新日: 2026-11-06。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## Pythonデバッグ情報の右側パネル（2026-11-06）
+
+エディタと右側パネルの配置・最大化は[python-block.ts](../diagram/ts/python/python-block.ts)、操作アイコン・各情報欄・スクロール・数値表記は[debugger-view.ts](../diagram/ts/python/debugger-view.ts)の仕様コメントを参照する。
+
+変更した2ソースをTypeScript Compiler APIの`noEmit`で静的確認し、型診断は0件。差分・空白・追加リンクも確認した。テストは作成・実行していない。公開ビルド・ESP32ビルド・ブラウザーでの配置やスクロールの確認は実行していない。
+
 ## PythonBlockのOpen・Download（2026-11-06）
 
 読込・ファイル名・ダウンロードの契約は[python-block.tsのopenSource()・downloadSource()](../diagram/ts/python/python-block.ts)、選択画面と取得の取消は[source-dialog.ts](../diagram/ts/python/source-dialog.ts)、一覧の開発時配信・ビルド時出力は[vite.config.tsのdiagramFileListPlugin()](../vite.config.ts)を参照する。
