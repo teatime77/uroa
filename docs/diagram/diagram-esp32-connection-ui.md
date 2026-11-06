@@ -20,7 +20,7 @@ Gemini APIキーはAIChatBlockの別の設定。上の3項目には入力せず�
 
 ## 接続前の準備
 
-- 別リポジトリーのdiagram-controlをESP32へ書き込んでおく。PlatformIO環境はXIAOが`xiao_esp32s3`、DevKitが`esp32dev`、SuperMiniが`supermini_esp32s3`。COMポートは実際の接続先を指定する。書き込み時にはSerial Monitorを閉じる。[現行ファームウェアの操作手順](../../../esp32/app/diagram-control/README.md)を参照する。BLE機器選択では通常`ESP32-Diagram-Control`を選ぶ。
+- 別リポジトリーのdiagram-controlをESP32へ書き込んでおく。PlatformIO環境はXIAOが`xiao_esp32s3`、DevKitが`esp32dev`、SuperMiniが`supermini_esp32s3`。COMポートは実際の接続先を指定する。書き込み時にはSerial Monitorを閉じる。[現行ファームウェアの操作手順](../../../esp32/app/diagram-control/README.md)を参照する。BLE機器選択では、起動ログ`Device name:`に表示された機種名と固有番号付きの名前を選ぶ。生成形式は[device_name.cpp](../../../esp32/app/diagram-control/src/device_name.cpp)を参照する。
 - diagramをChromeで開く。PCのローカル開発では、uroaルートで`npm.cmd run dev`を実行し、`http://localhost:5173/diagram/index.html`を開く。Androidなどから使う場合はHTTPSとブラウザーの対応が必要。
 - XIAOが接続するWi-Fiは2.4GHzを使う。PCが同じルーターの5GHzへ接続していても、同じLAN内で端末同士が通信できれば利用できる。ゲストネットワークや端末分離の設定では通信できない場合がある。[XIAOのWi-Fi仕様](https://wiki.seeedstudio.com/xiao_esp32s3_wifi_usage/)を参照する。
 - 初回のBLEペアリングには固定コード`123456`を使う。診断でログが必要な場合はSerial Monitorを115200bpsで開く。XIAOの付属アンテナも接続しておく。

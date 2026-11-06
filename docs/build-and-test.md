@@ -2,6 +2,12 @@
 
 更新日: 2026-11-06。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## PythonBlockのOpen・Download（2026-11-06）
+
+読込・ファイル名・ダウンロードの契約は[python-block.tsのopenSource()・downloadSource()](../diagram/ts/python/python-block.ts)、選択画面と取得の取消は[source-dialog.ts](../diagram/ts/python/source-dialog.ts)、一覧の開発時配信・ビルド時出力は[vite.config.tsのdiagramFileListPlugin()](../vite.config.ts)を参照する。
+
+uroaルートの`npm.cmd run verify`が成功し、TypeScript・公開ビルド・配信成果物を静的確認した。`dist/diagram/python-list.json`は`a.py`・`b.py`を含み、配信された両ファイルの内容も生成元と一致した。既存gameのimport併用警告2件は継続。テストは作成・実行していない。ブラウザーでの選択・取消・ファイル名表示・prompt・ダウンロード・保存復元は未確認。
+
 ## 共通接続APIの名称整理（2026-11-06）
 
 共通窓口は[device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts)のDeviceConnection／DeviceConnectionState／DeviceConnectionPhase、共有インスタンスはdiagramDevice、ブロックはDeviceConnectionBlockへ改名した。保存型の互換と機能別の責任は同ソースの仕様コメントを参照する。参照元・表示・サンプル・アイコン・ESP32の参照文書を更新し、作業中のデバッガ変更は保持した。

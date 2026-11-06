@@ -50,27 +50,34 @@ function buildAppPagesPlugin(): Plugin {
     };
 }
 
-function diagramDataListPlugin(): Plugin {
-    const listPath = '/diagram/data-list.json';
+/**
+ * public/diagram直下の指定フォルダーから、直下の通常ファイル名をソートしたJSON配列を作る。
+ * 開発時はGET/HEADで最新の一覧、公開ビルド時は同じURLの静的JSONを出力する。
+ * PythonBlockの読込みとの契約はdiagram/ts/python/python-block.tsのopenSource()を参照する。
+ */
+function diagramFileListPlugin(directory: string, extension: string): Plugin {
+    const listPath = `/diagram/${directory}-list.json`;
     const listFiles = async () => {
-        const entries = await readdir(resolve(__dirname, 'public/diagram/data'), { withFileTypes: true });
-        return JSON.stringify(entries.filter(entry => entry.isFile() && /\.json$/i.test(entry.name))
+        const entries = await readdir(resolve(__dirname, 'public/diagram', directory), { withFileTypes: true });
+        return JSON.stringify(entries.filter(entry => entry.isFile() && entry.name.toLowerCase().endsWith(extension))
             .map(entry => entry.name).sort());
     };
 
     return {
-        name: 'diagram-data-list',
+        name: `diagram-${directory}-list`,
         configureServer(server) {
             server.middlewares.use(async (req, res, next) => {
                 if ((req.method !== 'GET' && req.method !== 'HEAD') || req.url?.split('?')[0] !== listPath) {
-                    next(); return;
+                    next();
+                    return;
                 }
                 try {
                     const body = await listFiles();
                     res.setHeader('Content-Type', 'application/json; charset=utf-8');
                     res.setHeader('Cache-Control', 'no-store');
                     res.end(req.method === 'HEAD' ? undefined : body);
-                } catch {
+                }
+                catch {
                     res.statusCode = 500;
                     res.end('Unable to list diagram files.');
                 }
@@ -200,7 +207,8 @@ export default defineConfig(({ command }) => ({
         })
         ,
         saveDataPlugin(),
-        diagramDataListPlugin(),
+        diagramFileListPlugin('data', '.json'),
+        diagramFileListPlugin('python', '.py'),
         buildAppPagesPlugin()
     ]
 }));

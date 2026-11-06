@@ -34,6 +34,7 @@ import { parsePython } from "./parser";
 import { analyzePython, type PythonAnalysis } from "./semantic";
 import { PythonHighlightEditor } from "./highlight-editor";
 import { semanticEditorDiagnostic, syntaxEditorDiagnostic } from "./editor-diagnostics";
+import { openPythonSource } from "./source-dialog";
 
 /**
  * Startでビルド・転送・VM_START、StopでVM_STOPを行う。Actionチェーンのrun()も同じ開始処理を待つ。
@@ -50,6 +51,9 @@ export class PythonBlock extends ActionBlock {
     private readonly panel = document.createElement("div");
     private readonly maximizeButton = document.createElement("button");
     private readonly minimizeButton = document.createElement("button");
+    private readonly openButton = document.createElement("button");
+    private readonly downloadButton = document.createElement("button");
+    private readonly filenameView = document.createElement("span");
     private readonly checkButton = document.createElement("button");
     private readonly startButton = document.createElement("button");
     private readonly stopButton = document.createElement("button");
@@ -61,6 +65,8 @@ export class PythonBlock extends ActionBlock {
     private readonly releaseDebug: () => void;
     private request?: AbortController;
     private checkRequest?: AbortController;
+    private openRequest?: AbortController;
+    private sourceFilename = "";
     private stopping?: Promise<void>;
     private receipt?: BytecodeReceipt;
     private uploadedSource?: string;
@@ -92,11 +98,19 @@ export class PythonBlock extends ActionBlock {
         icon.width = 30;
         icon.height = 30;
         heading.append(icon, "Python");
+        Object.assign(this.filenameView.style, {
+            font: "14px sans-serif", minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+        });
+        heading.appendChild(this.filenameView);
         const controls = document.createElement("div");
         Object.assign(controls.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
         const buttons: [HTMLButtonElement, string, () => void][] = [
             [this.maximizeButton, "最大化", () => this.setExpanded(true)],
             [this.minimizeButton, "最小化", () => this.setExpanded(false)],
+            [this.openButton, "Open", () => {
+                void this.openSource();
+            }],
+            [this.downloadButton, "Download", () => this.downloadSource()],
             [this.checkButton, "チェック", () => {
                 void this.check();
             }],
@@ -124,6 +138,7 @@ export class PythonBlock extends ActionBlock {
         // 1回でも編集したら、元の文字列へ戻した場合も再ビルド・再送する。
         editor.addEventListener("input", () => {
             this.editRevision++;
+            this.openRequest?.abort();
             this.checkRequest?.abort();
             this.request?.abort();
             this.receipt = undefined;
@@ -205,19 +220,26 @@ export class PythonBlock extends ActionBlock {
     }
 
     setBoxSize(): void {
-        // 追加したチェックを含む5個のボタンを通常表示でも1行に収める。
-        this.boxSize = new Vec2(440, 185);
+        // 通常表示では7個のボタンを2行に折り返して収める。
+        this.boxSize = new Vec2(440, 220);
     }
 
-    /** 最大化状態は保存せず、ソースだけを通常のActionBlock情報に追加する。 */
+    /** 最大化状態は保存せず、ソースとファイル名を通常のActionBlock情報に追加する。旧データは無名で復元する。 */
     makeObj(): any {
-        return { ...super.makeObj(), source: this.sourceEditor.value };
+        return { ...super.makeObj(), source: this.sourceEditor.value, sourceFilename: this.sourceFilename };
     }
 
     loadObj(obj: any): void {
         void this.stop().catch(() => undefined);
         super.loadObj(obj);
-        this.sourceEditor.value = typeof obj.source === "string" ? obj.source : "";
+        this.replaceSource(typeof obj.source === "string" ? obj.source : "",
+            typeof obj.sourceFilename === "string" ? obj.sourceFilename : "");
+    }
+
+    /** ファイル読込・図の復元では旧コードの診断・ブレークポイント・転送と停止情報を失効させる。 */
+    private replaceSource(source: string, filename: string): void {
+        this.sourceEditor.value = source;
+        this.setSourceFilename(filename);
         this.editRevision++;
         this.checkRequest?.abort();
         this.request?.abort();
@@ -235,10 +257,80 @@ export class PythonBlock extends ActionBlock {
         const block = new PythonBlock({});
         this.copyUI(block);
         block.sourceEditor.value = this.sourceEditor.value;
+        block.setSourceFilename(this.sourceFilename);
         block.highlightEditor.refresh();
         block.setContext2D(this.ctx);
         block.setBlockPortPosition(block.position);
         return block;
+    }
+
+    private setSourceFilename(filename: string): void {
+        this.sourceFilename = filename;
+        this.filenameView.textContent = filename;
+        this.filenameView.title = filename;
+    }
+
+    /**
+     * Openはsource-dialog.tsのモーダルから公開済み.pyを選び、成功時だけ名前とコードを置き換えて最大化する。
+     * vite.config.tsはpublic/diagram/python直下の.py名配列を開発時に/diagram/python-list.jsonで返し、
+     * ビルド時はdist/diagram/python-list.jsonを出力する。本文は/diagram/python/<URL符号化した名前>から読む。
+     * 実行・開始・停止処理中は開かない。Stop・復元・削除・入力変更で取消し、遅れた取得結果を反映しない。
+     * ファイル名は編集後も保持し、図の保存・復元・コピーにも含める。サーバーのファイルへは書き戻さない。
+     */
+    private async openSource(): Promise<void> {
+        if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished
+            || this.request || this.checkRequest || this.stopping || this.openRequest) {
+            return;
+        }
+        const controller = new AbortController();
+        const revision = this.editRevision;
+        this.openRequest = controller;
+        this.updateControls();
+        try {
+            const file = await openPythonSource(controller.signal);
+            if (file && !controller.signal.aborted && !this.removed && this.editRevision === revision) {
+                this.replaceSource(file.source, file.filename);
+                this.setExpanded(true);
+                this.showStatus(`${file.filename} を読み込みました。`);
+            }
+        }
+        catch (error) {
+            if (!controller.signal.aborted && !this.removed) {
+                this.showStatus(error instanceof Error ? error.message : "Pythonファイルを開けませんでした。");
+            }
+        }
+        finally {
+            this.openRequest = undefined;
+            this.updateControls();
+        }
+    }
+
+    /**
+     * promptの既定名は直近のOpen／Download名（無名はpython.py）。取消・空名では何もしない。
+     * 入力名を保持・表示し、現在のtextarea全体をUTF-8のBlobとして指定名でダウンロードする。
+     */
+    private downloadSource(): void {
+        if (this.removed || this.inToolbox) {
+            return;
+        }
+        const filename = window.prompt("ファイル名を入力してください。", this.sourceFilename || "python.py")?.trim();
+        if (!filename) {
+            return;
+        }
+        const url = URL.createObjectURL(new Blob([this.sourceEditor.value], { type: "text/x-python;charset=utf-8" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        try {
+            link.click();
+            this.setSourceFilename(filename);
+        }
+        finally {
+            link.remove();
+            // ブラウザーのダウンロード処理がURLを参照してから解放する。
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
     }
 
     /** diagramのDOM親を覆って編集する。通常のCanvas配置は変えず、縮小時にそのまま戻す。 */
@@ -297,13 +389,16 @@ export class PythonBlock extends ActionBlock {
         const disabled = this.removed || this.inToolbox;
         this.maximizeButton.disabled = disabled || this.expanded;
         this.minimizeButton.disabled = disabled || !this.expanded;
+        this.openButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined
+            || this.checkRequest !== undefined || this.stopping !== undefined || this.openRequest !== undefined;
+        this.downloadButton.disabled = disabled || this.openRequest !== undefined;
         this.checkButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined
-            || this.checkRequest !== undefined || this.stopping !== undefined;
+            || this.checkRequest !== undefined || this.stopping !== undefined || this.openRequest !== undefined;
         this.startButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined || this.stopping !== undefined
-            || this.checkRequest !== undefined
+            || this.checkRequest !== undefined || this.openRequest !== undefined
             || diagramDevice.bytecodeSending || diagramDevice.state.phase !== "connected";
         this.stopButton.disabled = disabled || this.stopping !== undefined || (!this.request && !this.ownsVM);
-        this.sourceEditor.readOnly = this.request !== undefined || this.ownsVM && !this.vmFinished;
+        this.sourceEditor.readOnly = this.request !== undefined || this.openRequest !== undefined || this.ownsVM && !this.vmFinished;
     }
 
     /** 部分受信・失効時には古い値を残さない。最大化状態は維持する。 */
@@ -322,7 +417,7 @@ export class PythonBlock extends ActionBlock {
 
     /** チェックは手動操作時だけ実行する。入力変更で取消し、古い結果やエラーを表示し直さない。 */
     private async check(): Promise<void> {
-        if (this.removed || this.inToolbox || this.request || this.checkRequest || this.stopping) {
+        if (this.removed || this.inToolbox || this.request || this.checkRequest || this.stopping || this.openRequest) {
             return;
         }
         const controller = new AbortController();
@@ -386,7 +481,7 @@ export class PythonBlock extends ActionBlock {
 
     /** チェックは毎回行い、未編集・同じAPI・現接続・最後の転送の場合だけ生成と転送を省略する。 */
     private async start(signal?: AbortSignal): Promise<void> {
-        if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest || this.stopping) {
+        if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest || this.stopping || this.openRequest) {
             return;
         }
         const controller = new AbortController();
@@ -469,6 +564,7 @@ export class PythonBlock extends ActionBlock {
 
     /** 開始待機を無効化してから停止指令を送る。転送の取消で切断した場合は機器側の切断停止を使う。 */
     private stop(): Promise<void> {
+        this.openRequest?.abort();
         this.checkRequest?.abort();
         if (this.stopping) {
             return this.stopping;
