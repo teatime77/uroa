@@ -487,7 +487,55 @@
             "returnType": {
                 "kind": "float"
             }
+        },
+        {
+            "id": 4,
+            "nativeId": 22,
+            "name": "sin",
+            "parameters": [
+                {
+                    "name": "angle",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 5,
+            "nativeId": 23,
+            "name": "cos",
+            "parameters": [
+                {
+                    "name": "angle",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 6,
+            "nativeId": 24,
+            "name": "tan",
+            "parameters": [
+                {
+                    "name": "angle",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
         }
     ],
-    "abiHash": "10ce8a166f34a6ba8cb1c2e717245a4aadc2d890b5c77e2fe4af7fe6cb0c88f1"
+    "abiHash": "9f0440fbc4040fc629c60414776ddca136f38461552469c9485e5777ef966dc9"
 }

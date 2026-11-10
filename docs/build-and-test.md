@@ -2,6 +2,12 @@
 
 更新日: 2026-11-10。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## Pythonのsin・cos・tan（2026-11-10）
+
+API宣言は[device.pyi](../diagram/python/device.pyi)、単位・精度・不正値と生成APIの分担は[DeviceNative::function_sin](../../esp32/app/diagram-control/src/device_native.cpp)を参照する。
+
+uroaルートで`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`を実行し、JSONとC++の3成果物を再生成した。`--check`による一致確認と`npm.cmd run verify`は成功し、配信されたdevice-api.jsonのSHA-256は生成元と一致した。既存gameのimport併用警告2件は継続。ESP32は`default_envs`だけでビルドし、結果は[同リポジトリーの検証記録](../../esp32/docs/build-and-test.md)に置く。テスト・Upload・ブラウザー操作・実BLE／Wi-Fi・VMからの三角関数実行と実機の戻り値確認は行っていない。
+
 ## Pythonのtime（2026-11-10）
 
 API宣言は[device.pyi](../diagram/python/device.pyi)、起点・精度・VMとの分担は[DeviceNative::function_time](../../esp32/app/diagram-control/src/device_native.cpp)を参照する。ユーザー指定により既存のfloat32を維持した。
