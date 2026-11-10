@@ -1,6 +1,14 @@
 # ビルドと回帰テスト
 
-更新日: 2026-11-06。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+更新日: 2026-11-10。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
+
+## Pythonのtime（2026-11-10）
+
+API宣言は[device.pyi](../diagram/python/device.pyi)、起点・精度・VMとの分担は[DeviceNative::function_time](../../esp32/app/diagram-control/src/device_native.cpp)を参照する。ユーザー指定により既存のfloat32を維持した。
+
+初回実装ではuroaルートで`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`を実行し、JSONとC++の3成果物を再生成した。`--check`による一致確認と`npm.cmd run verify`は成功した。既存gameのimport併用警告2件は継続。ESP32ビルドの結果は[同リポジトリーの検証記録](../../esp32/docs/build-and-test.md)に置く。テスト・ブラウザー操作・実BLE／Wi-Fi・実機の戻り値確認・Uploadは行っていない。
+
+同日、ユーザー指定で経過時間へ変更した。宣言のコメントを更新し、シグネチャを維持した3成果物の`--check`は成功した。ESP32は`default_envs`だけでビルドし、結果は上記の検証記録に追記した。今回のWeb公開ビルド・テスト・実機確認は行っていない。
 
 ## BLE接続後のWi-Fi設定認証（2026-11-06）
 

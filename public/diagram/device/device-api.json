@@ -478,7 +478,16 @@
             "returnType": {
                 "kind": "none"
             }
+        },
+        {
+            "id": 3,
+            "nativeId": 21,
+            "name": "time",
+            "parameters": [],
+            "returnType": {
+                "kind": "float"
+            }
         }
     ],
-    "abiHash": "1c685b6e136be403723b0fa63770d708981da876889f9915b2328604e1f3dd67"
+    "abiHash": "10ce8a166f34a6ba8cb1c2e717245a4aadc2d890b5c77e2fe4af7fe6cb0c88f1"
 }
