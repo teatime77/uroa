@@ -2,6 +2,12 @@
 
 更新日: 2026-11-10。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
+## サーボ角度範囲の拡張（2026-11-10）
+
+Webの入力検査は[DeviceConnection::moveAngle()](../diagram/ts/ble-wifi/device-connection.ts)、表示は[ServoMotorBlock](../diagram/ts/hardware/servo.ts)、受付範囲とパルス換算の正本は[ESP32のconfig.h](../../esp32/app/diagram-control/include/config.h)の仕様コメントを参照する。ローカルのsin波Pythonサンプルは位相と間隔を維持して振幅を更新した。同サンプルの保存先は既存のGit除外対象。
+
+`npm.cmd run verify`でTypeScript・公開ビルド・成果物の静的確認が成功した。既存gameのimport併用警告2件は継続。ESP32は`default_envs`のみでビルドし、結果は[同リポジトリーの検証記録](../../esp32/docs/build-and-test.md)に置く。テスト・Upload・ブラウザー操作・実BLE／Wi-Fi・実機の回転角と端点確認は行っていない。
+
 ## Pythonのsin・cos・tan（2026-11-10）
 
 API宣言は[device.pyi](../diagram/python/device.pyi)、単位・精度・不正値と生成APIの分担は[DeviceNative::function_sin](../../esp32/app/diagram-control/src/device_native.cpp)を参照する。

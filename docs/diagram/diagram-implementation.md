@@ -98,7 +98,7 @@ FunctionBlockは通常のデータブロックで、手続き用のtop/bottomポ
 | InputRangeBlock | range、最小・最大の入力欄、出力 | 現在の出力は型未指定Port。DOMの所有・解除を確認する |
 | CalcBlock／CompareBlock | 数値入力、数値の式評価。比較結果は0/1 | calcは明示的な呼出し。構造体の式評価・一般的な自動計算スケジューラーは未実装 |
 | DeviceConnectionBlock | 機器選択・接続・切断ボタン。共有接続状態の表示 | 接続だけではサーボを有効化しない |
-| ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度60～120°、速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
+| ServoMotorBlock | 角度／速度のNumberPort入力。ARM、MOVE、ARM_SPEED、SET_SPEED、DISABLE、STOP | 90°／速度0%で明示ARM。角度範囲は[moveAngle()の仕様コメント](../../diagram/ts/ble-wifi/device-connection.ts)を参照。速度−100～100%、CH0～15。時間は角度のみ。値は実測ではない。modeを保存し、旧JSONは角度。モード変更で無効化し、selectも破棄する |
 | IMUBlock | imuはtime（ミリ秒）・gyro・accのvec3を持つ1個のStructPort | 距離ブロックと10Hz STREAMを共有。version=3をreadStatus(time, data, offset)で読み、切断・計測停止で出力を消去。旧balance受信・第2出力は削除済みで、そのポートを含む保存JSONは非対応。現行console.logはコメントアウト |
 | PIDBlock | IMUValue入力、2個の速度NumberPort出力。Start後の最初のacc Yの角度を垂直とするP制御 | Kpのみ計算。Ki・Kdは設定・保存のみ。各モータの停止範囲を補正し−100～100%に制限。入力消失・接続変更・Stop等で停止し再開はStart。通信遅延補償・個別反転なし。[PIDガイド](diagram-pid.md) |
 | PlotBlock | 型未指定入力からnumber・Structの数値Fieldをグラフ化 | 最上位のnumber型time（ミリ秒）を横軸に使い、縦軸系列から除く。timeがなければ受信時刻。最初のサンプルを0秒とし、時刻の巻き戻りで履歴を消去。直近30秒、最大6000サンプル、1秒ごとの統計とμ±3σ。2Dのみ。Fieldの単位情報は未実装 |

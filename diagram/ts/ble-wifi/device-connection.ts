@@ -137,10 +137,17 @@ export class DeviceConnection {
             () => { this.armedChannels.set(channel, mode); this.notify(); });
     }
 
+    /**
+     * 度単位の角度指令を送る。受付範囲は0〜180度（両端を含む）。
+     * diagram-control/include/config.hのMIN_ANGLE/MAX_ANGLEと合わせる。
+     * hardware/servo.tsは同じ範囲を表示し、ファームウェアの共有サーボドライバーでも検査する。
+     */
     async moveAngle(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
-        if (!Number.isFinite(angle) || angle < 60 || angle > 120) throw new Error("角度は60～120°で指定してください。");
+        if (!Number.isFinite(angle) || angle < 0 || angle > 180) {
+            throw new Error("角度は0～180°で指定してください。");
+        }
         if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
         if (!this.isServoArmed(channel, "angle")) throw new Error("先に角度モードで90°の有効化を行ってください。");
         const version = this.servoVersions[channel];

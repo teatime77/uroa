@@ -5,7 +5,10 @@ import { PortType, theCanvas } from "../diagram_util";
 import { NumberPort } from "../port";
 import { Button, type Attr, type UI } from "../ui";
 
-/** 角度（度）と連続回転速度（%）を選択する。PWMの有効化は明示操作で行う。 */
+/**
+ * 角度（度）と連続回転速度（%）を選択する。PWMの有効化は明示操作で行う。
+ * 角度の表示範囲はdevice-connection.tsのmoveAngle()と合わせ、入力検査・送信を同APIへ委譲する。
+ */
 export class ServoMotorBlock extends FunctionBlock {
     readonly inputPort = new NumberPort(this, PortType.inputPort);
     readonly input: HTMLInputElement;
@@ -231,7 +234,7 @@ export class ServoMotorBlock extends FunctionBlock {
         const current = () => !this.removed && version === this.moveVersion && channel === this.input.valueAsNumber;
         try {
             if (typeof angle !== "number") {
-                throw new Error(mode === "speed" ? "入力ポートへ速度（−100～100%）を接続してください。" : "入力ポートへ角度（60～120°）を接続してください。");
+                throw new Error(mode === "speed" ? "入力ポートへ速度（−100～100%）を接続してください。" : "入力ポートへ角度（0～180°）を接続してください。");
             }
             if (mode === "speed") {
                 await diagramDevice.setSpeed(channel, angle, current);
@@ -305,7 +308,7 @@ export class ServoMotorBlock extends FunctionBlock {
             }
             const angle = this.inputPort.value;
             const unit = this.mode === "speed" ? "%" : "°";
-            const range = this.mode === "speed" ? "−100～100%" : "60～120°";
+            const range = this.mode === "speed" ? "−100～100%" : "0～180°";
             ctx.fillText(`入力${this.mode === "speed" ? "速度" : "角度"}：${typeof angle === "number" ? angle + unit : "未入力"}（${range}）`, x + 16, y + 92, 292);
             this.positionControls();
             this.children().forEach(button => button.draw());
