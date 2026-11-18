@@ -10,9 +10,6 @@ import { DeviceInfoMaxLength, type DeviceTelemetry } from "./device-telemetry";
 import { ControlConnection, ControlOpcode, ControlCommand } from "./control-connection";
 import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
 import { checkBytecodeTransfer, type BytecodeReceipt } from "./bytecode-transfer";
-import { parsePython } from "../python/parser.js";
-import { analyzePython } from "../python/semantic.js";
-import { generateBytecode } from "../python/bytecode.js";
 import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
 
 // GATT service shared with esp32/app/diagram-control.
@@ -778,11 +775,10 @@ export function initDeviceConnection(signal: AbortSignal): void {
     window.addEventListener("pagehide", () => diagramDevice.disconnect(), { signal });
 }
 
+/** 接続・切断とWi-Fi設定／接続を操作し、機器の接続状態を表示する。 */
 export class DeviceConnectionBlock extends FunctionBlock {
     readonly button: Button;
     readonly wifiButton: Button;
-    readonly bytecodeButton: Button;
-    private bytecodeAbort?: AbortController;
     private unsubscribe?: () => void;
     private removed = false;
 
@@ -796,11 +792,7 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.wifiButton = new Button({ text: "Wi-Fi設定／接続", click: () => {
             if (!this.removed && !this.inToolbox) return diagramDevice.openWifi();
         } });
-        this.bytecodeButton = new Button({ text: "a.pyを送信", click: () => this.sendPythonFile() });
         if (!this.inToolbox) this.unsubscribe = diagramDevice.subscribe(() => {
-            if (diagramDevice.state.phase !== "connected") {
-                this.bytecodeAbort?.abort();
-            }
             this.updateButton();
             theCanvas?.requestUpdateCanvas();
         });
@@ -808,49 +800,12 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.updateButton();
     }
 
-    children(): UI[] { return [this.button, this.wifiButton, this.bytecodeButton]; }
-    setBoxSize(): void { this.boxSize = new Vec2(280, this.inToolbox ? 60 : 302); }
+    children(): UI[] {
+        return [this.button, this.wifiButton];
+    }
 
-    /** 開発用Pythonファイルを生成器へ渡し、現在のBLE／Wi-Fi接続へ手動送信する。
-     *
-     * @remarks
-     * ## 操作とAPI
-     *
-     * ESP32へ対応ファームウェアを書き込み、diagramの機器接続ブロックから接続する。「a.pyを送信」を押すと`/diagram/python/a.py`を読み、構文解析、semantic.tsによるdevice-api.jsonの読込み・名前解決・型推論、その結果を使うversion=3のバイナリ生成、BLE転送を行う。意味解析の仕様はsemantic.ts先頭を参照する。既存の接続ブロックにはボタン1個分の高さを追加した。送信時にファイルを読み直し、再接続で自動送信しない。a.pyは現在Git管理外の開発用素材で、配信先にも別途配置する必要がある。
-     *
-     * version=3をESP32へ転送して保持完了を待ち、VM_STARTを明示的に送る。受信の共通仕様とVM・ABI照合の境界はbytecode-transfer.ts先頭を参照する。PythonBlockとの開始・停止の契約はpython/python-block.tsを参照する。
-     */
-    private async sendPythonFile(): Promise<void> {
-        if (this.removed || this.inToolbox || this.bytecodeAbort !== undefined || diagramDevice.bytecodeSending) {
-            return;
-        }
-        const controller = new AbortController();
-        this.bytecodeAbort = controller;
-        this.updateButton();
-        theCanvas?.requestUpdateCanvas();
-        try {
-            const response = await fetch("/diagram/python/a.py", { signal: controller.signal, cache: "no-store" });
-            if (!response.ok) {
-                throw new Error(`a.pyを読み込めません: HTTP ${response.status}`);
-            }
-            const source = await response.text();
-            controller.signal.throwIfAborted();
-            const module = parsePython(source);
-            const analysis = await analyzePython(module, controller.signal);
-            const receipt = await diagramDevice.sendBytecode(generateBytecode(module, analysis), controller.signal);
-            await diagramDevice.startBytecode(receipt, () => !controller.signal.aborted && !this.removed);
-        }
-        catch (error) {
-            if (!controller.signal.aborted && !this.removed) {
-                diagramDevice.state = { ...diagramDevice.state,
-                    message: error instanceof Error ? error.message : "Pythonを送信できませんでした。" };
-            }
-        }
-        finally {
-            this.bytecodeAbort = undefined;
-            this.updateButton();
-            theCanvas?.requestUpdateCanvas();
-        }
+    setBoxSize(): void {
+        this.boxSize = new Vec2(280, this.inToolbox ? 60 : 246);
     }
 
     copy(): DeviceConnectionBlock {
@@ -876,8 +831,6 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.button.boxSize = new Vec2(248, 48);
         this.wifiButton.setPosition(this.position.add(new Vec2(16, 182)));
         this.wifiButton.boxSize = new Vec2(248, 48);
-        this.bytecodeButton.setPosition(this.position.add(new Vec2(16, 238)));
-        this.bytecodeButton.boxSize = new Vec2(248, 48);
     }
 
     private updateButton(): void {
@@ -885,10 +838,7 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.button.text = phase === "connected" ? "切断" : phase === "error" ? "再接続" : "接続";
         this.button.disabled = this.removed || this.inToolbox || (diagramDevice.state.transport !== "wifi" && !!diagramDevice.availabilityMessage()) || phase === "selecting" || phase === "connecting";
         this.wifiButton.disabled = this.removed || this.inToolbox || !window.isSecureContext || phase === "selecting" || phase === "connecting" || diagramDevice.state.transport === "wifi";
-        this.wifiButton.disabled ||= diagramDevice.bytecodeSending || this.bytecodeAbort !== undefined;
-        this.bytecodeButton.text = this.bytecodeAbort !== undefined || diagramDevice.bytecodeSending ? "送信中…" : "a.pyを送信";
-        this.bytecodeButton.disabled = this.removed || this.inToolbox || phase !== "connected"
-            || this.bytecodeAbort !== undefined || diagramDevice.bytecodeSending;
+        this.wifiButton.disabled ||= diagramDevice.bytecodeSending;
     }
 
     draw(): void {
@@ -930,20 +880,16 @@ export class DeviceConnectionBlock extends FunctionBlock {
             this.updateButton();
             this.button.draw();
             this.wifiButton.draw();
-            this.bytecodeButton.draw();
         }
         ctx.restore();
     }
 
     clearBlock(): void {
         this.removed = true;
-        this.bytecodeAbort?.abort();
         diagramDevice.cancelWifiSetup();
         this.button.disabled = true;
         this.button.pressed = false;
         this.wifiButton.disabled = true; this.wifiButton.pressed = false;
-        this.bytecodeButton.disabled = true;
-        this.bytecodeButton.pressed = false;
         this.unsubscribe?.();
         this.unsubscribe = undefined;
         super.clearBlock();
