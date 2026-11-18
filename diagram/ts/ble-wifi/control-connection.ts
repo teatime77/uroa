@@ -5,6 +5,7 @@
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
+ * バイトコード転送の通信・キュー時間の計測とコンソール出力はsendBytecode()が担当する。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress } from "./bytecode-transfer";
@@ -178,7 +179,22 @@ export class ControlConnection {
         });
     }
 
-    /** RAM保持までを待ち、進捗を呼出元へ中継する。転送・計測の契約はbytecode-transfer.tsを参照。 */
+    /**
+     * RAM保持までを待ち、進捗を呼出元へ中継する。転送・進捗の契約はbytecode-transfer.tsを参照。
+     *
+     * performance.now()でこの呼出しだけの書込み・Result読出し・キュー待ち・窓口取得を集計する。
+     * 書込みと読出しはBytecodeChannelの各Promiseを待つ時間で、BEGIN・DATA・COMMITを含む。
+     * Wi-Fiでは署名・HTTP/WS・JSON処理も含み、電波上の送受信時間やESP32だけの処理時間ではない。
+     * Result読出し回数は古い結果・失敗した読出しも数える。キュー待ちはrunOperation()の呼出しから
+     * 操作開始までとし、窓口取得の待ちも含む。開始前の接続・取消検査で拒否された場合は拒否までを計る。
+     * 窓口取得はopenBytecode()のPromiseだけを計り、そのキュー待ちとは重複させない。
+     * 完了・失敗時に経路・転送ID・本体サイズ・総所要時間とconsole.tableの集計を1回出力する。
+     * 総所要時間は窓口取得を含むため、BEGIN直前から計る画面の平均速度とは計測開始点が異なる。
+     * 表の合計は出力時に未完了の操作の経過時間も含み、平均・最大は完了した操作だけを対象とする。
+     * 未完了時間は別列にも表示する。タイムアウト後のネイティブ操作の完了で出力済みの値を更新しない。
+     * 総所要時間との差には再読出し前の待機・照合・進捗通知等が含まれる。毎フレームのログは出さず、
+     * キー・パケット本体・Resultの内容は出力しない。計測のために転送順序・待機・期限を変更しない。
+     */
     async sendBytecode(input: Uint8Array, signal?: AbortSignal,
         onProgress?: (progress: BytecodeProgress) => void): Promise<BytecodeReceipt> {
         checkBytecodeTransfer(input);
@@ -191,12 +207,92 @@ export class ControlConnection {
                 throw new Error("プログラム転送中に接続が変わりました。");
             }
         };
-        const run = <T>(operation: () => Promise<T>) => this.runOperation(operation, check, signal);
-        const channel = await run(() => transport!.openBytecode());
         this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
-        const receipt = await uploadBytecode(bytes, this.bytecodeTransferId, channel, run, check, onProgress);
-        check();
-        return receipt;
+        const transferId = this.bytecodeTransferId;
+        const createTiming = () => ({
+            count: 0,
+            completed: 0,
+            totalMs: 0,
+            maxMs: 0,
+            pendingAt: undefined as number | undefined,
+        });
+        const timings = {
+            write: createTiming(),
+            read: createTiming(),
+            queue: createTiming(),
+            open: createTiming(),
+        };
+        const finishTiming = (timing: ReturnType<typeof createTiming>): void => {
+            const now = performance.now();
+            const elapsedMs = now - (timing.pendingAt ?? now);
+            timing.completed++;
+            timing.totalMs += elapsedMs;
+            timing.maxMs = Math.max(timing.maxMs, elapsedMs);
+            timing.pendingAt = undefined;
+        };
+        const measure = async <T>(timing: ReturnType<typeof createTiming>, operation: () => Promise<T>): Promise<T> => {
+            timing.count++;
+            timing.pendingAt = performance.now();
+            try {
+                return await operation();
+            }
+            finally {
+                finishTiming(timing);
+            }
+        };
+        const run = <T>(operation: () => Promise<T>): Promise<T> => {
+            timings.queue.count++;
+            timings.queue.pendingAt = performance.now();
+            let started = false;
+            return this.runOperation(() => {
+                started = true;
+                finishTiming(timings.queue);
+                return operation();
+            }, check, signal).finally(() => {
+                if (!started) {
+                    finishTiming(timings.queue);
+                }
+            });
+        };
+        const startedAt = performance.now();
+        let completed = false;
+        try {
+            const channel = await run(() => measure(timings.open, () => transport!.openBytecode()));
+            const measuredChannel: BytecodeChannel = {
+                write: packet => measure(timings.write, () => channel.write(packet)),
+                readResult: () => measure(timings.read, () => channel.readResult()),
+            };
+            const receipt = await uploadBytecode(bytes, transferId, measuredChannel, run, check, onProgress);
+            check();
+            completed = true;
+            return receipt;
+        }
+        finally {
+            const finishedAt = performance.now();
+            const round = (value: number): number => Math.round(value * 100) / 100;
+            const row = (timing: ReturnType<typeof createTiming>) => {
+                const pendingMs = timing.pendingAt === undefined ? 0 : finishedAt - timing.pendingAt;
+                return {
+                    "回数": timing.count,
+                    "完了回数": timing.completed,
+                    "合計ms": round(timing.totalMs + pendingMs),
+                    "完了平均ms": round(timing.completed > 0 ? timing.totalMs / timing.completed : 0),
+                    "完了最大ms": round(timing.maxMs),
+                    "未完了ms": round(pendingMs),
+                };
+            };
+            console.info(`[Bytecode transfer] ${transport?.kind ?? "unknown"} id=${transferId} ${completed ? "完了" : "失敗"}`, {
+                totalBytes: bytes.byteLength,
+                elapsedMs: round(finishedAt - startedAt),
+                resultReadsPerWrite: round(timings.write.count > 0 ? timings.read.count / timings.write.count : 0),
+            });
+            console.table({
+                "書込み": row(timings.write),
+                "Result読出し": row(timings.read),
+                "キュー待ち（窓口取得を含む）": row(timings.queue),
+                "窓口取得": row(timings.open),
+            });
+        }
     }
 
     /** デバッグ窓口を現経路から取得する。接続とReceiptの照合は呼出元のcheckが担当する。 */
