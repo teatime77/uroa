@@ -7,7 +7,7 @@
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
-import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt } from "./bytecode-transfer";
+import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
@@ -178,8 +178,9 @@ export class ControlConnection {
         });
     }
 
-    /** 同一のフレーム・CRC・Result照合でRAM保持までを待つ。完全な契約はbytecode-transfer.tsを参照。 */
-    async sendBytecode(input: Uint8Array, signal?: AbortSignal): Promise<BytecodeReceipt> {
+    /** RAM保持までを待ち、進捗を呼出元へ中継する。転送・計測の契約はbytecode-transfer.tsを参照。 */
+    async sendBytecode(input: Uint8Array, signal?: AbortSignal,
+        onProgress?: (progress: BytecodeProgress) => void): Promise<BytecodeReceipt> {
         checkBytecodeTransfer(input);
         const bytes = input.slice();
         const generation = this.generation;
@@ -193,7 +194,7 @@ export class ControlConnection {
         const run = <T>(operation: () => Promise<T>) => this.runOperation(operation, check, signal);
         const channel = await run(() => transport!.openBytecode());
         this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
-        const receipt = await uploadBytecode(bytes, this.bytecodeTransferId, channel, run, check);
+        const receipt = await uploadBytecode(bytes, this.bytecodeTransferId, channel, run, check, onProgress);
         check();
         return receipt;
     }

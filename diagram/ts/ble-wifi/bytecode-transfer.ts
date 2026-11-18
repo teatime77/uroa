@@ -23,6 +23,8 @@
  *
  * ## 通信経路の分担
  * control-connection.tsが接続世代・共通待ち列・パケット単位の2.5秒期限・取消を担当する。
+ * 本層の転送進捗をcontrol-connection.tsが中継し、device-connection.tsが保持・通知して
+ * DeviceConnectionBlockに表示する。計測・通知の契約はuploadBytecode()を参照する。
  * ble-control-transport.tsは既存Bytecode/Result Characteristicを遅延取得する。
  * robot-wifi.tsは同じ10〜20バイトのフレームをHTTP POST /bytecodeまたはWebSocket op=bytecodeで送る。
  * Wi-FiのResultはWebSocket利用時もHTTP GET /bytecode-resultで読み、Telemetryへ混在させない。
@@ -89,6 +91,14 @@ export interface BytecodeChannel {
 export interface BytecodeReceipt {
     byteLength: number;
     crc32: number;
+}
+
+/** バイトコード本体の受信確認済み進捗。速度はB/s、completeは検証・RAM保持の完了。 */
+export interface BytecodeProgress {
+    readonly totalBytes: number;
+    readonly sentBytes: number;
+    readonly bytesPerSecond: number;
+    readonly phase: "sending" | "validating" | "complete";
 }
 
 /** CRC-32/ISO-HDLC。初期値と最終XORは0xFFFFFFFF。
@@ -171,13 +181,23 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
  *
  * @remarks
  * WebはBEGIN→DATA列→COMMITの順で1フレームずつ結果を待つ。パケット単位で共通の待ち列へ入り、間にPING・STOP等を処理できるようにする。1操作の上限は2.5秒。古い結果は転送ID・sequence・操作の一致で除外し、成功時には状態・受信済み長・全体長・CRCも照合する。Readの結果がまだ更新されていなければ10ms待って再読出しする。自動再送・転送の途中再開は行わない。Webの取消は接続を閉じて行い、ABORTは将来の明示取消にも使える受信操作として実装する。
+ *
+ * onProgressは全体長・受信確認済み長・平均速度を同期通知する。performance.now()でBEGIN直前から
+ * 計測し、バイトコード本体の受信確認済み長を経過秒で割る。フレーム・HTTP等の付加バイトは数えず、
+ * 経過時間にはBEGIN・DATA・COMMITの通信、Result読出し、共通キューの待機を含む。
+ * DATAの受付結果を照合できた後だけ送信済み量を増やし、通知は250ms以上の間隔で行う。
+ * 開始・全DATA受信後のvalidating・COMMIT成功後のcompleteは即時通知し、完了時の平均速度を確定する。
+ * device-connection.tsは開始前の窓口取得中も0バイトを表示し、次の転送で初期化する。
+ * 切断・失敗・経路切替では進捗を消去し、接続世代の異なる通知は適用しない。
+ * 進捗は図の保存・コピーへ含めず、実行・デバッグだけの操作や転送省略時には更新しない。
  */
 export async function uploadBytecode(
     input: Uint8Array,
     transferId: number,
     channel: BytecodeChannel,
     run: <T>(operation: () => Promise<T>) => Promise<T>,
-    check: () => void
+    check: () => void,
+    onProgress?: (progress: BytecodeProgress) => void
 ): Promise<BytecodeReceipt> {
     checkBytecodeTransfer(input);
     const bytes = input.slice();
@@ -240,12 +260,38 @@ export async function uploadBytecode(
     };
     const crc = new Uint8Array(4);
     new DataView(crc.buffer).setUint32(0, crc32, true);
+    const startedAt = performance.now();
+    let lastReportedAt = startedAt;
+    const report = (sentBytes: number, phase: BytecodeProgress["phase"], force = false): void => {
+        check();
+        const now = performance.now();
+        if (!force && now - lastReportedAt < 250) {
+            return;
+        }
+        lastReportedAt = now;
+        const elapsedMs = now - startedAt;
+        onProgress?.({
+            totalBytes: bytes.byteLength,
+            sentBytes,
+            bytesPerSecond: elapsedMs > 0 ? sentBytes * 1000 / elapsedMs : 0,
+            phase,
+        });
+    };
+    report(0, "sending", true);
     await exchange(bytecodeTransfer.begin, bytes.length, crc, 0, bytecodeTransfer.receiving);
     const chunkLength = bytecodeTransfer.packetLength - bytecodeTransfer.headerLength;
     for (let offset = 0; offset < bytes.length; offset += chunkLength) {
         const chunk = bytes.subarray(offset, offset + chunkLength);
         await exchange(bytecodeTransfer.data, offset, chunk, offset + chunk.length, bytecodeTransfer.receiving);
+        const sentBytes = offset + chunk.length;
+        if (sentBytes === bytes.byteLength) {
+            report(sentBytes, "validating", true);
+        }
+        else {
+            report(sentBytes, "sending");
+        }
     }
     await exchange(bytecodeTransfer.commit, bytes.length, new Uint8Array(), bytes.length, bytecodeTransfer.ready);
+    report(bytes.byteLength, "complete", true);
     return { byteLength: bytes.length, crc32 };
 }

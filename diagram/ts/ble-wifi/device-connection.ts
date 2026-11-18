@@ -9,7 +9,7 @@ import { theEditor } from "../json-util";
 import { DeviceInfoMaxLength, type DeviceTelemetry } from "./device-telemetry";
 import { ControlConnection, ControlOpcode, ControlCommand } from "./control-connection";
 import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
-import { checkBytecodeTransfer, type BytecodeReceipt } from "./bytecode-transfer";
+import { checkBytecodeTransfer, type BytecodeReceipt, type BytecodeProgress } from "./bytecode-transfer";
 import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
 
 // GATT service shared with esp32/app/diagram-control.
@@ -94,6 +94,8 @@ export class DeviceConnection {
     bytecodeSending = false;
     /** 現接続で最後に保持完了した転送。同一オブジェクトの間だけ再送を省略できる。切替で失効する。 */
     bytecodeReceipt?: BytecodeReceipt;
+    /** 現接続の転送進捗。計測・表示の共通契約はbytecode-transfer.tsのuploadBytecode()を参照する。 */
+    bytecodeProgress?: BytecodeProgress;
     private debugger?: PythonDebugTransport;
     private debuggerSending = false;
     private debugRequestId = 0;
@@ -309,6 +311,7 @@ export class DeviceConnection {
         this.resetDebugger();
         this.debugRequestId = 0;
         this.bytecodeReceipt = undefined;
+        this.bytecodeProgress = undefined;
         this.generation++;
         this.control.close();
         this.wifiDialog?.close(); this.wifiDialog = undefined;
@@ -514,6 +517,7 @@ export class DeviceConnection {
             this.wifi = wifi;
             const generation = ++this.generation;
             this.bytecodeReceipt = undefined;
+            this.bytecodeProgress = undefined;
             this.debugRequestId = 0;
             this.requestedRate = 0;
             this.control.bind(wifi);
@@ -585,10 +589,15 @@ export class DeviceConnection {
         this.resetDebugger();
         this.bytecodeReceipt = undefined;
         this.bytecodeSending = true;
+        this.bytecodeProgress = { totalBytes: payload.byteLength, sentBytes: 0, bytesPerSecond: 0, phase: "sending" };
         this.state = { ...this.state, message: "バイトコードを送信しています…" };
         this.notify();
         try {
-            const receipt = await this.control.sendBytecode(payload, signal);
+            const receipt = await this.control.sendBytecode(payload, signal, progress => {
+                check();
+                this.bytecodeProgress = progress;
+                this.notify();
+            });
             check();
             this.bytecodeReceipt = receipt;
             this.state = { ...this.state, message: `${receipt.byteLength}バイトをESP32で受信しました。` };
@@ -775,7 +784,12 @@ export function initDeviceConnection(signal: AbortSignal): void {
     window.addEventListener("pagehide", () => diagramDevice.disconnect(), { signal });
 }
 
-/** 接続・切断とWi-Fi設定／接続を操作し、機器の接続状態を表示する。 */
+/**
+ * 接続・切断とWi-Fi設定／接続を操作し、機器の接続状態を表示する。
+ * Wi-Fiボタンの下に全体・送信済みバイト数・平均速度を3行で表示し、未転送時は「—」とする。
+ * 全DATA受信後は「検証中」、COMMIT成功後は「完了」を併記する。ツールボックスには表示しない。
+ * 計測・通知・消去の共通契約はbytecode-transfer.tsのuploadBytecode()を参照する。
+ */
 export class DeviceConnectionBlock extends FunctionBlock {
     readonly button: Button;
     readonly wifiButton: Button;
@@ -805,7 +819,7 @@ export class DeviceConnectionBlock extends FunctionBlock {
     }
 
     setBoxSize(): void {
-        this.boxSize = new Vec2(280, this.inToolbox ? 60 : 246);
+        this.boxSize = new Vec2(280, this.inToolbox ? 60 : 318);
     }
 
     copy(): DeviceConnectionBlock {
@@ -880,6 +894,17 @@ export class DeviceConnectionBlock extends FunctionBlock {
             this.updateButton();
             this.button.draw();
             this.wifiButton.draw();
+            const progress = diagramDevice.bytecodeProgress;
+            const progressState = progress?.phase === "validating" ? "（検証中）"
+                : progress?.phase === "complete" ? "（完了）" : "";
+            const totalBytes = progress ? `${progress.totalBytes.toLocaleString("ja-JP")} B` : "—";
+            const sentBytes = progress ? `${progress.sentBytes.toLocaleString("ja-JP")} B${progressState}` : "—";
+            const speed = progress ? `${progress.bytesPerSecond.toLocaleString("ja-JP", { maximumFractionDigits: 0 })} B/s` : "—";
+            ctx.font = "14px sans-serif";
+            ctx.fillStyle = "#17384f";
+            ctx.fillText(`全体：${totalBytes}`, this.position.x + 16, this.position.y + 246, 248);
+            ctx.fillText(`送信済み：${sentBytes}`, this.position.x + 16, this.position.y + 266, 248);
+            ctx.fillText(`平均速度：${speed}`, this.position.x + 16, this.position.y + 286, 248);
         }
         ctx.restore();
     }
