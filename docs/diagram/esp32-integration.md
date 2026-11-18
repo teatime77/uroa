@@ -4,9 +4,9 @@
 
 ## Pythonプログラム・VM・デバッグのBLE／Wi-Fi通信
 
-PythonBlockは現在の通信経路を利用する。フレーム・Result照合・認証・取消・保持と実行の境界は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、開始・停止との連携は[python-block.ts](../../diagram/ts/python/python-block.ts)と[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を正本とする。
+PythonBlockのStartは現在の通信経路で一括転送し、ESP32の検証後開始と状態確認を行う。フレーム・Result照合・認証・取消・保持と実行の境界は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、開始・停止との連携は[python-block.ts](../../diagram/ts/python/python-block.ts)と[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を正本とする。
 
-ブレークポイント一覧・停止Event・Snapshot取得の両経路の通信APIは[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、呼出し例は[device-connection.tsのsendBreakpoints()](../../diagram/ts/ble-wifi/device-connection.ts)、受信元の識別・配送は[ControlTransport](../../../esp32/app/diagram-control/include/control_transport.h)を参照する。実機での送受信はビルドとは別に確認する。
+ブレークポイント一覧・実行進捗／停止Event・Snapshot取得の両経路の通信APIは[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、呼出し例は[device-connection.tsのsendBreakpoints()](../../diagram/ts/ble-wifi/device-connection.ts)、受信元の識別・配送は[ControlTransport](../../../esp32/app/diagram-control/include/control_transport.h)を参照する。実機での送受信はビルドとは別に確認する。
 
 ## 現行の参照先
 

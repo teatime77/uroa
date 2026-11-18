@@ -1,7 +1,7 @@
 /**
- * Python BLE／Wi-Fiデバッグ通信version=1の中心契約。
+ * Python BLE／Wi-Fiデバッグ通信の中心契約。Control/Resultはversion=1、Eventはversion=2。
  * device-connection.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
- * 本ファイルが一覧転送と停止値の復号を行う。
+ * 本ファイルが一覧転送と停止値の復号を行う。PythonのStart時の一覧はbytecode-transfer.tsの一括転送に含める。
  * ESP32のbytecode_debugger.cppがloop()で要求を処理し、bytecode_vm.cppが停止値を作る。
  *
  * 同じServiceのUUID末尾は既存と共通で、先頭はControl=f3641409(Write with response)、
@@ -35,12 +35,18 @@
  * ACK確認後にDataをReadする。論理要求は直列化し、別チャンク選択を途中へ挟まない。
  * code: 0成功、1形式、2順序、3範囲、4メモリ、5CRC、6不正PC等、7実行中／混雑、8世代／停止失効、9期限。
  *
- * Eventは20バイト: version:u8@0=1、state:u8@1、code:u8@2、予約:u8@3=0、stopId:u32@4、
+ * Eventは20バイト: version:u8@0=2、state:u8@1、code:u8@2、VM error:u8@3、stopId/errorPc:u32@4、
  * revision:u32@8、Snapshot長:u32@12、Snapshot CRC32:u32@16。stateは既存0〜4、Paused=5。
  * Paused到達時に自動取得する。Notify欠落は1秒ごとのEvent Readで回復する。
  * 購読には停止値の全受信前にPausedのEventを渡し、PythonBlockが最大化と取得中の表示を行う。
  * Halted/Stopped/ErrorもEventとして渡す。Start/Stop時は前回のEvent比較をリセットする。
- * stopIdはデバイス稼働中に再利用しない。非PausedではstopId/長さ/CRCは0。
+ * Pausedでは@3=0、@4=stopId、@12=Snapshot長、@16=Snapshot CRC32として扱う。
+ * 非Pausedでは@12=実行命令数（native再試行を含む）、@16=現在PC。Errorだけ@3=VMエラー番号、@4=失敗PC。
+ * 非Error・非Pausedの@3/@4は0。SnapshotのcodeとVMエラー番号は別の名前空間。
+ * RunningのPC・命令数は最大1秒に1回、状態・世代変更は即時公開する。実行中のSnapshot取得は行わない。
+ * PythonBlockが実行状態とPC・命令数を表示し、DeviceConnectionが[Python VM]へ同じ情報を出力する。
+ * 旧Event version=1の読出しも維持する。旧版の非PausedではstopId/長さ/CRCは0で、進捗は取得不可。
+ * stopIdはデバイス稼働中に再利用しない。開始成功Resultを実行状態・進捗として扱わない。
  * CRCは既存bytecode-transfer.tsのCRC-32/ISO-HDLCと同一。Snapshot上限は256KiB。
  *
  * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
@@ -107,6 +113,10 @@ export interface DebugEvent {
     revision: number;
     byteLength: number;
     crc32: number;
+    instructions?: number;
+    pc?: number;
+    vmError?: number;
+    errorPc?: number;
 }
 
 /** 数値は復号済み、文字列はID、Objectは不透明ハンドル。管理値も通常の変数表示とは区別する。 */
@@ -130,17 +140,33 @@ export interface DebugSnapshot {
 
 type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
 
-/** パケットの共通版・長さ・予約領域を先に検査する。 */
+/** Event v1/v2の長さ・状態別フィールドを検証し、非Pausedの進捗をSnapshotと区別する。 */
 function parseEvent(view: DataView): DebugEvent {
-    if (view.byteLength !== 20 || view.getUint8(0) !== 1 || view.getUint8(1) > 5 || view.getUint8(2) > 9
-        || view.getUint8(3) !== 0) {
+    if (view.byteLength !== 20 || ![1, 2].includes(view.getUint8(0)) || view.getUint8(1) > 5 || view.getUint8(2) > 9) {
         throw new Error("デバッグ停止通知の形式が不正です。");
     }
-    const event = { state: view.getUint8(1), code: view.getUint8(2), stopId: view.getUint32(4, true),
-        revision: view.getUint32(8, true), byteLength: view.getUint32(12, true), crc32: view.getUint32(16, true) };
-    if (event.state === 5 && event.code === 0 && (event.stopId === 0 || event.revision === 0
+    const version = view.getUint8(0);
+    const state = view.getUint8(1);
+    const paused = state === 5;
+    const progress = version === 2 && !paused;
+    const vmError = view.getUint8(3);
+    if ((!progress && vmError !== 0) || (progress && (vmError > 19 || state !== 4 && vmError !== 0))
+        || (progress && state !== 4 && view.getUint32(4, true) !== 0)) {
+        throw new Error("デバッグ通知のVMエラー情報が不正です。");
+    }
+    const event: DebugEvent = {
+        state, code: view.getUint8(2), revision: view.getUint32(8, true),
+        stopId: progress ? 0 : view.getUint32(4, true),
+        byteLength: progress ? 0 : view.getUint32(12, true),
+        crc32: progress ? 0 : view.getUint32(16, true),
+        instructions: progress ? view.getUint32(12, true) : undefined,
+        pc: progress ? view.getUint32(16, true) : undefined,
+        vmError: progress ? vmError : undefined,
+        errorPc: progress && state === 4 ? view.getUint32(4, true) : undefined,
+    };
+    if (paused && event.code === 0 && (event.stopId === 0 || event.revision === 0
         || event.byteLength < 24 || event.byteLength > debugProtocol.maxSnapshotLength)
-        || event.state !== 5 && (event.stopId !== 0 || event.byteLength !== 0 || event.crc32 !== 0)) {
+        || !paused && (event.stopId !== 0 || event.byteLength !== 0 || event.crc32 !== 0)) {
         throw new Error("デバッグ停止通知の範囲が不正です。");
     }
     return event;
@@ -353,6 +379,21 @@ export class PythonDebugTransport {
         if (stepPcs !== undefined) {
             await this.sendPcList(receipt, stepPcs, true, signal);
         }
+        await this.monitor(signal);
+    }
+
+    /** 一括転送Resultの世代を採用し、PC一覧を再送せず終了・停止・実行時エラーを監視する。 */
+    async observeDeployment(receipt: BytecodeReceipt, signal?: AbortSignal): Promise<void> {
+        this.check(signal);
+        if (!receipt.revision) {
+            throw new Error("一括転送のプログラム世代がありません。");
+        }
+        this.revision = receipt.revision;
+        await this.monitor(signal);
+    }
+
+    /** 接続後の状態Read/Notifyを開始する。開始直後に終了・Pausedとなった場合も最新状態を読む。 */
+    private async monitor(signal?: AbortSignal): Promise<void> {
         if (this.timer === undefined) {
             this.releaseEvents = this.channel.subscribeEvents?.(this.changed);
             if (this.channel.startEvents) {
@@ -432,7 +473,9 @@ export class PythonDebugTransport {
     private accept(event: DebugEvent): void {
         if (event.revision !== this.revision || event.state !== debugProtocol.paused) {
             const changed = this.event?.state !== event.state || this.event?.revision !== event.revision
-                || this.event?.code !== event.code;
+                || this.event?.code !== event.code || this.event?.pc !== event.pc
+                || this.event?.instructions !== event.instructions || this.event?.vmError !== event.vmError
+                || this.event?.errorPc !== event.errorPc;
             if (this.event?.state === debugProtocol.paused) {
                 this.invalidateSnapshot();
             }

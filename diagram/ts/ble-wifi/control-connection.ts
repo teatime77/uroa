@@ -8,7 +8,7 @@
  * バイトコード転送の通信・キュー時間の計測とコンソール出力はsendBytecode()が担当する。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
-import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress } from "./bytecode-transfer";
+import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
@@ -103,6 +103,7 @@ export class ControlConnection {
     /** 旧経路を解除してACKを失効させ、新しい経路の通知を購読する。機器操作は行わない。 */
     bind(transport: ControlTransport): void {
         this.close("通信経路を切り替えました。");
+        this.bytecodeTransferId = 0;
         this.transport = transport;
         const generation = this.generation;
         this.unsubscribe = transport.subscribePackets((data, kind) => {
@@ -188,17 +189,20 @@ export class ControlConnection {
      * Result読出し回数は古い結果・失敗した読出しも数える。キュー待ちはrunOperation()の呼出しから
      * 操作開始までとし、窓口取得の待ちも含む。開始前の接続・取消検査で拒否された場合は拒否までを計る。
      * 窓口取得はopenBytecode()のPromiseだけを計り、そのキュー待ちとは重複させない。
+     * BLEの転送サイズ取得用Readは窓口取得へ含め、Result読出しの行はCOMMIT後の確認だけを数える。
      * 完了・失敗時に経路・転送ID・本体サイズ・総所要時間とconsole.tableの集計を1回出力する。
      * 総所要時間は窓口取得を含むため、BEGIN直前から計る画面の平均速度とは計測開始点が異なる。
      * 表の合計は出力時に未完了の操作の経過時間も含み、平均・最大は完了した操作だけを対象とする。
      * 未完了時間は別列にも表示する。タイムアウト後のネイティブ操作の完了で出力済みの値を更新しない。
      * 総所要時間との差には再読出し前の待機・照合・進捗通知等が含まれる。毎フレームのログは出さず、
      * キー・パケット本体・Resultの内容は出力しない。計測のために転送順序・待機・期限を変更しない。
+     * 切断の診断用に転送段階・最後の送信op/sequence・サイズ・例外メッセージも出力する。
      */
     async sendBytecode(input: Uint8Array, signal?: AbortSignal,
-        onProgress?: (progress: BytecodeProgress) => void): Promise<BytecodeReceipt> {
+        onProgress?: (progress: BytecodeProgress) => void, deployment?: BytecodeDeployment): Promise<BytecodeReceipt> {
         checkBytecodeTransfer(input);
         const bytes = input.slice();
+        const staged = deployment ? { ...deployment, breakpoints: [...deployment.breakpoints], stepPcs: [...deployment.stepPcs] } : undefined;
         const generation = this.generation;
         const transport = this.transport;
         const check = () => {
@@ -207,7 +211,10 @@ export class ControlConnection {
                 throw new Error("プログラム転送中に接続が変わりました。");
             }
         };
-        this.bytecodeTransferId = this.bytecodeTransferId % 65535 + 1;
+        if (this.bytecodeTransferId === 65535) {
+            throw new Error("転送IDの上限です。再接続してください。");
+        }
+        this.bytecodeTransferId++;
         const transferId = this.bytecodeTransferId;
         const createTiming = () => ({
             count: 0,
@@ -256,16 +263,37 @@ export class ControlConnection {
         };
         const startedAt = performance.now();
         let completed = false;
+        let stage = "転送窓口取得";
+        let packetLength = 0;
+        let lastOperation = 0;
+        let lastSequence = 0;
+        let lastWriteBytes = 0;
+        let failure: string | undefined;
         try {
             const channel = await run(() => measure(timings.open, () => transport!.openBytecode()));
+            packetLength = channel.packetLength;
             const measuredChannel: BytecodeChannel = {
-                write: packet => measure(timings.write, () => channel.write(packet)),
-                readResult: () => measure(timings.read, () => channel.readResult()),
+                packetLength: channel.packetLength,
+                write: packet => {
+                    lastOperation = packet[1];
+                    lastSequence = new DataView(packet.buffer, packet.byteOffset, packet.byteLength).getUint16(4, true);
+                    lastWriteBytes = packet.byteLength;
+                    stage = "書込み";
+                    return measure(timings.write, () => channel.write(packet));
+                },
+                readResult: () => {
+                    stage = "最終Result読出し";
+                    return measure(timings.read, () => channel.readResult());
+                },
             };
-            const receipt = await uploadBytecode(bytes, transferId, measuredChannel, run, check, onProgress);
+            const receipt = await uploadBytecode(bytes, transferId, measuredChannel, run, check, onProgress, staged);
             check();
             completed = true;
             return receipt;
+        }
+        catch (error) {
+            failure = error instanceof Error ? error.message : String(error);
+            throw error;
         }
         finally {
             const finishedAt = performance.now();
@@ -283,6 +311,7 @@ export class ControlConnection {
             };
             console.info(`[Bytecode transfer] ${transport?.kind ?? "unknown"} id=${transferId} ${completed ? "完了" : "失敗"}`, {
                 totalBytes: bytes.byteLength,
+                packetLength, stage, lastOperation, lastSequence, lastWriteBytes, failure,
                 elapsedMs: round(finishedAt - startedAt),
                 resultReadsPerWrite: round(timings.write.count > 0 ? timings.read.count / timings.write.count : 0),
             });

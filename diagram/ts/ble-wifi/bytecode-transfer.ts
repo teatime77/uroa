@@ -1,46 +1,37 @@
 /**
- * @remarks
- * # PythonバイトコードのBLE／Wi-Fi共通転送
- *
- * バイナリversion=1・2・3をdiagramから現行ESP32のdiagram-controlへ送り、検証後にRAMへ保持する。
- * バイナリ形式の仕様はpython/bytecode.ts先頭、受信側の検証はESP32のbytecode_receiver.cppを参照。
- * 転送version=1とバイナリversionは区別し、専用UUID・20バイトパケット・受付結果は維持する。
- * version=1は16バイトヘッダー、version=2は24バイトヘッダーと文字列表・UTF-8データを持つ。
- * version=3は56バイトヘッダーと12バイト関数表を使い、呼出し規約・API形式の版はともに2。
- * 戻り値スロット数・関数予約領域も検査する。32バイトのABI指紋はCRC対象に含めて送る。
- * 送信前にヘッダー・全体長・文字列表の連続性と範囲・UTF-8を検証し、命令検証は受信側で行う。
- * CRCは文字列表・UTF-8データも含む全体で計算し、DATAは文字・レコードの途中で分割してよい。
- * 空文字列・埋め込みNULを許可し、文字列は明示的なバイト長で扱う。
- * readyは検証とRAM保持の完了だけを表す。main.cppは別途VM_STARTで開始する。
- * デバッグ用bit7は受信検証後の命令先頭にだけ設定し、保持結果のCRCは設定前のイメージを識別する。
- * 一覧・停止値は別窓口のdebug-protocol.tsを参照し、この転送へフラグ付き命令を入力しない。
- * 開始・停止とPythonBlockの共通仕様はpython/python-block.tsを参照する。
- * VMはversion=1・2・3の値と呼出しを実行する。機器スタブの接続はdevice_api.generated.cppが担当する。
- * ABI指紋のファームウェアとの一致、nativeIdのスタブ表内の存在・引数型は、この転送層では
- * 照合しない。登録表との照合はVM、引数型・ハンドルの検査は各スタブが担当する。
- * readyはAPIの互換性の保証を含まない。
- * Flash保存は実装しない。
- *
- * ## 通信経路の分担
- * control-connection.tsが接続世代・共通待ち列・パケット単位の2.5秒期限・取消を担当する。
- * 本層の転送進捗をcontrol-connection.tsが中継し、device-connection.tsが保持・通知して
- * DeviceConnectionBlockに表示する。計測・通知の契約はuploadBytecode()を参照する。
- * ble-control-transport.tsは既存Bytecode/Result Characteristicを遅延取得する。
- * robot-wifi.tsは同じ10〜20バイトのフレームをHTTP POST /bytecodeまたはWebSocket op=bytecodeで送る。
- * Wi-FiのResultはWebSocket利用時もHTTP GET /bytecode-resultで読み、Telemetryへ混在させない。
- * 各要求のHMACはsession|counter|path|payload。読出し要求のpayloadは空文字列。
- * Result応答はsession/counter/data(20バイトの16進文字列)/proofを返す。
- * proofはsession|bytecode-result|counter|dataのHMAC。セッション・要求番号・署名を検証してから復号する。
- * HTTPのaccepted:true、WebSocket送信、GATT Writeはフレームの検証完了を意味しない。
- * loop()で更新したResultのID・sequence・op・状態・長さ・CRCが一致したときだけ次へ進む。
- * ESP32のbytecode_receiver.cppは両経路を同じ受信器で処理する。受信元と接続世代を組で照合し、
- * 切替・切断では未完了転送を破棄する。保持済みコードは残すが、自動実行・自動再開はしない。
- * VM_START/VM_STOPは両経路の通常指令を使う。開始ACKはVM初期化までで、実行終了を保証しない。
- * デバッガの通信も両経路に対応し、別窓口のdebug-protocol.tsを参照する。
- *
- * ## 確認範囲
- *
- * 模擬・単体・ブラウザーテストはユーザーの従来の指定により作成・実行しない。型ビルド・公開ビルド、PlatformIOの各ボードのビルド結果は[検証記録](../../../docs/build-and-test.md)を参照する。実BLE転送、タイムアウト・切断時の実動作、空きRAM、Uploadと実機での保持はビルドとは別の確認とする。
+ * Python一括転送version=2の中心契約。バイナリ版1/2/3はpython/bytecode.tsを参照する。
+ * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
+ * python-block.tsが同一生成のコードとPC一覧、ESP32のbytecode_receiver.cppが検証、main.cppが開始を担当する。
+ * 全整数little endian。専用Bytecode/Result UUIDは維持し、旧転送version=1は非対応。
+ * 共通10バイト: version:u8@0=2、op:u8@1（1 BEGIN/2 DATA/3 COMMIT/4 ABORT）、
+ * transferId:u16@2（接続内非0・再利用禁止）、sequence:u16@4（BEGIN=1、以後+1）、position:u32@6。
+ * BEGIN14バイト: position=本体長、@10=本体CRC32。DATAはposition=連続offset、@10以降=本体。
+ * COMMIT10バイト: position=本体長。ABORT10バイト: position=0。
+ * 本体=24バイトヘッダー+コード+偶数長にする0パディング+行PC:u16列+ステップPC:u16列。
+ * ヘッダー: magic:u32@0=0x32525055、版:u16@4=1、flags:u16@6（bit0=検証後開始）、
+ * byteLength:u32@8、行PC数:u32@12（最大4096）、ステップPC数:u32@16（最大65536）、コードCRC:u32@20。
+ * コード最大128KiB。両PC列は重複のない昇順・同一生成の命令先頭。0個も明示する。
+ * 本体上限24+128KiB+4096*2+65536*2。CRC-32/ISO-HDLC。
+ * BLEは開始前のResult Readで得たmin(合意MTU-3,244)を使い、Write with responseを直列に待つ。
+ * Wi-Fiは最大1024バイトを署名付きPOST /bytecodeまたはWS op=bytecodeで送る。
+ * 16進化・HMACはrobot-wifi.ts/lib/wifiを参照。カメラは別経路。
+ * 要求HMACはsession|counter|path|payload（Readのpayloadは空文字列）。Resultは署名付きHTTP GET
+ * /bytecode-resultで読み、session/counter/data（20バイトの16進列）/proofを受け取る。
+ * proofはsession|bytecode-result|counter|dataのHMAC。セッション・要求番号・署名を照合して復号する。
+ * DATAごとのReadは行わずESP32のmutex付き受信領域へ蓄積し、COMMIT後にloop()が検証する。
+ * 各API期限2.5秒、最終Read期限10秒、受信無進捗期限15秒。接続・取消を各操作の前後で検査する。
+ * Result20バイト: version:u8@0=2、code:u8@1、transferId:u16@2、maxFrame:u16@4、op:u8@6、
+ * state:u8@7（0 idle/1 受信・検証中/2 保持完了/3 error/4 開始成功）、受信長:u32@8、
+ * programRevision:u32@12、コードCRC:u32@16。BLEのmaxFrameはRead時に合意MTUから設定する。
+ * BLEのResultはloop()が専用コピーへ保持し、onReadだけがGATT値へ設定する。応答コピーとの同時更新を避ける。
+ * code=0成功/1形式/2順序/3範囲/4メモリ/5CRC/6コード・PC不正/7期限/8混雑/9開始・取消。
+ * 同一転送のエラーを保持し、COMMITの重複で二重開始しない。開始成功も次の転送まで保持する。
+ * VMの終了・実行時エラー・Pausedはdebug-protocol.tsのEventで読む。保持はAPI互換性を保証しない。
+ * 転送ではABI指紋とnativeId・引数型は照合しない。VM・登録スタブが検査する。Flash保存は行わない。
+ * 切断・切替・Stop・取消で未完了転送と開始待ちを破棄し、再接続で自動開始しない。
+ * 進捗sentBytesは書込みAPI完了済みコード量（ESP32確認量ではない）。BEGIN直前から計測しコード量/秒をB/sで表示する。
+ * PC・ヘッダーの量を除き時間には全送信・最終Read・キュー待ちを含む。250ms間隔、開始・検証待ち・完了は即時通知。
+ * 完了速度は固定。切断・失敗・次回転送・切替で初期化し、保存・コピーしない。模擬テストは従来の指定で実行しない。
  */
 import {
     bytecodeApiFunctionRecordLength, bytecodeApiHeaderLength, bytecodeApiVersion,
@@ -48,52 +39,35 @@ import {
     bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion
 } from "../python/bytecode.js";
 
-/** 既定ATT MTU=23の20バイト書き込みで使う転送形式。
- *
- * @remarks
- * ## 転送パケット（version=1）
- *
- * 全てlittle endian。共通ヘッダーは10バイト。
- *
- * | バイト位置 | 型 | 内容 |
- * |---|---|---|
- * | 0 | uint8 | 転送version=1 |
- * | 1 | uint8 | 操作（1=BEGIN、2=DATA、3=COMMIT、4=ABORT） |
- * | 2 | uint16 | 転送ID。0を使わず、Web側は転送ごとに更新する |
- * | 4 | uint16 | フレームsequence。BEGINは1、以後1ずつ増加する |
- * | 6 | uint32 | BEGINでは全体長、DATAでは書込位置、COMMITでは全体長、ABORTでは0 |
- * | 10以降 | バイト列 | BEGINは全体CRC32の4バイト、DATAは本体1〜10バイト、COMMIT／ABORTはなし |
- *
- * BEGINは14バイト、DATAは11〜20バイト、COMMIT／ABORTは10バイト。
- */
+/** 一括転送の上限。BLEの実サイズはResultから決定する。 */
 export const bytecodeTransfer = {
-    version: 1,
-    maxLength: bytecodeMaxLength,
-    packetLength: 20,
-    headerLength: 10,
-    resultLength: 20,
-    timeoutMs: 2500,
-    begin: 1,
-    data: 2,
-    commit: 3,
-    abort: 4,
-    receiving: 1,
-    ready: 2
+    version: 2, maxLength: bytecodeMaxLength, packetLength: 1024, headerLength: 10,
+    resultLength: 20, timeoutMs: 2500, begin: 1, data: 2, commit: 3, abort: 4,
+    receiving: 1, ready: 2, started: 4,
 } as const;
 
-/** 同じ転送形式を配送する経路。write完了とloop()による受付結果は別に照合する。 */
+/** 配送経路。packetLengthは現在の接続で利用できる上限。 */
 export interface BytecodeChannel {
+    readonly packetLength: number;
     write(value: Uint8Array): Promise<void>;
     readResult(): Promise<DataView>;
 }
 
-/** 受信完了はRAMへの保持を表し、VMでの実行やFlash保存を意味しない。 */
+/** コードの保持結果。revisionはデバッグ監視の対象世代。 */
 export interface BytecodeReceipt {
     byteLength: number;
     crc32: number;
+    revision?: number;
 }
 
-/** バイトコード本体の受信確認済み進捗。速度はB/s、completeは検証・RAM保持の完了。 */
+/** 同一生成のPC一覧と検証後の開始要求。省略時は保持だけを行う。 */
+export interface BytecodeDeployment {
+    breakpoints: readonly number[];
+    stepPcs: readonly number[];
+    start: boolean;
+}
+
+/** 書込みAPI完了量。completeは最終結果確認済み、速度はB/s。 */
 export interface BytecodeProgress {
     readonly totalBytes: number;
     readonly sentBytes: number;
@@ -175,91 +149,56 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     }
 }
 
-/**
- * 現接続の共通キューで各パケットを書き、loop()が返す専用の受付結果を待つ。
- * runはパケット単位で直列化・タイムアウトを行い、PING等が間に入れるようにする。
- *
- * @remarks
- * WebはBEGIN→DATA列→COMMITの順で1フレームずつ結果を待つ。パケット単位で共通の待ち列へ入り、間にPING・STOP等を処理できるようにする。1操作の上限は2.5秒。古い結果は転送ID・sequence・操作の一致で除外し、成功時には状態・受信済み長・全体長・CRCも照合する。Readの結果がまだ更新されていなければ10ms待って再読出しする。自動再送・転送の途中再開は行わない。Webの取消は接続を閉じて行い、ABORTは将来の明示取消にも使える受信操作として実装する。
- *
- * onProgressは全体長・受信確認済み長・平均速度を同期通知する。performance.now()でBEGIN直前から
- * 計測し、バイトコード本体の受信確認済み長を経過秒で割る。フレーム・HTTP等の付加バイトは数えず、
- * 経過時間にはBEGIN・DATA・COMMITの通信、Result読出し、共通キューの待機を含む。
- * DATAの受付結果を照合できた後だけ送信済み量を増やし、通知は250ms以上の間隔で行う。
- * 開始・全DATA受信後のvalidating・COMMIT成功後のcompleteは即時通知し、完了時の平均速度を確定する。
- * device-connection.tsは開始前の窓口取得中も0バイトを表示し、次の転送で初期化する。
- * 切断・失敗・経路切替では進捗を消去し、接続世代の異なる通知は適用しない。
- * 進捗は図の保存・コピーへ含めず、実行・デバッグだけの操作や転送省略時には更新しない。
- */
+/** 先頭の契約に従いコード→PC一覧を連続送信し、COMMIT後だけResultを読む。 */
 export async function uploadBytecode(
-    input: Uint8Array,
-    transferId: number,
-    channel: BytecodeChannel,
-    run: <T>(operation: () => Promise<T>) => Promise<T>,
-    check: () => void,
-    onProgress?: (progress: BytecodeProgress) => void
+    input: Uint8Array, transferId: number, channel: BytecodeChannel,
+    run: <T>(operation: () => Promise<T>) => Promise<T>, check: () => void,
+    onProgress?: (progress: BytecodeProgress) => void, deployment?: BytecodeDeployment
 ): Promise<BytecodeReceipt> {
     checkBytecodeTransfer(input);
     const bytes = input.slice();
     const crc32 = bytecodeCrc32(bytes);
+    const list = (pcs: readonly number[], max: number): number[] => {
+        const sorted = [...new Set(pcs)].sort((a, b) => a - b);
+        if (sorted.length > max || sorted.some(pc => !Number.isInteger(pc) || pc < 0 || pc > 65535)) {
+            throw new RangeError("デバッグ用PC一覧が範囲外です。");
+        }
+        return sorted;
+    };
+    const breakpoints = list(deployment?.breakpoints ?? [], 4096);
+    const stepPcs = list(deployment?.stepPcs ?? [], 65536);
+    const pcOffset = 24 + bytes.byteLength + bytes.byteLength % 2;
+    const bundle = new Uint8Array(pcOffset + (breakpoints.length + stepPcs.length) * 2);
+    const header = new DataView(bundle.buffer);
+    header.setUint32(0, 0x32525055, true);
+    header.setUint16(4, 1, true);
+    header.setUint16(6, deployment?.start ? 1 : 0, true);
+    header.setUint32(8, bytes.byteLength, true);
+    header.setUint32(12, breakpoints.length, true);
+    header.setUint32(16, stepPcs.length, true);
+    header.setUint32(20, crc32, true);
+    bundle.set(bytes, 24);
+    [...breakpoints, ...stepPcs].forEach((pc, index) => header.setUint16(pcOffset + index * 2, pc, true));
+    const frameLength = channel.packetLength;
+    if (!Number.isInteger(frameLength) || frameLength < 20 || frameLength > bytecodeTransfer.packetLength) {
+        throw new Error("転送サイズが不正です。ファームウェアを更新して再接続してください。");
+    }
     let sequence = 0;
-    const exchange = async (operation: number, position: number, payload: Uint8Array,
-        received: number, state: number): Promise<void> => {
-        const packet = new Uint8Array(bytecodeTransfer.headerLength + payload.length);
+    const send = async (operation: number, position: number, payload = new Uint8Array()): Promise<void> => {
+        const packet = new Uint8Array(10 + payload.length);
         const view = new DataView(packet.buffer);
-        const request = ++sequence;
-        packet[0] = bytecodeTransfer.version;
+        packet[0] = 2;
         packet[1] = operation;
         view.setUint16(2, transferId, true);
-        view.setUint16(4, request, true);
+        view.setUint16(4, ++sequence, true);
         view.setUint32(6, position, true);
-        packet.set(payload, bytecodeTransfer.headerLength);
+        packet.set(payload, 10);
         await run(async () => {
             check();
             await channel.write(packet);
-            while (true) {
-                check();
-                /**
-                 * @remarks
-                 * ## 受付結果（20バイト）
-                 *
-                 * | バイト位置 | 型 | 内容 |
-                 * |---|---|---|
-                 * | 0 | uint8 | 転送version=1 |
-                 * | 1 | uint8 | 結果コード |
-                 * | 2 | uint16 | 対象の転送ID |
-                 * | 4 | uint16 | 対象フレームのsequence |
-                 * | 6 | uint8 | 対象操作 |
-                 * | 7 | uint8 | 状態（0=idle、1=receiving、2=ready、3=error） |
-                 * | 8 | uint32 | 連続して受信できたバイト数 |
-                 * | 12 | uint32 | BEGINで指定した全体長 |
-                 * | 16 | uint32 | BEGINで指定した全体CRC32。COMMIT成功時は実際のCRCと一致する |
-                 */
-                const reply = await channel.readResult();
-                check();
-                if (reply.byteLength !== bytecodeTransfer.resultLength || reply.getUint8(0) !== bytecodeTransfer.version) {
-                    throw new Error("バイトコード受付結果の形式が不正です。");
-                }
-                if (reply.getUint16(2, true) === transferId && reply.getUint16(4, true) === request
-                    && reply.getUint8(6) === operation) {
-                    const code = reply.getUint8(1);
-                    if (code !== 0) {
-                        const errors = ["成功", "形式不正", "順序・位置不正", "長さの上限超過", "メモリ不足",
-                            "CRC不一致", "バイトコード不正", "受信期限切れ", "受信キューの混雑"];
-                        throw new Error(`ESP32がバイトコードを拒否しました: ${errors[code] ?? `code=${code}`}`);
-                    }
-                    if (reply.getUint8(7) !== state || reply.getUint32(8, true) !== received
-                        || reply.getUint32(12, true) !== bytes.length || reply.getUint32(16, true) !== crc32) {
-                        throw new Error("ESP32のバイトコード受信位置・サイズ・CRCが一致しません。");
-                    }
-                    return;
-                }
-                await new Promise<void>(resolve => setTimeout(resolve, 10));
-            }
+            check();
         });
     };
-    const crc = new Uint8Array(4);
-    new DataView(crc.buffer).setUint32(0, crc32, true);
     const startedAt = performance.now();
     let lastReportedAt = startedAt;
     const report = (sentBytes: number, phase: BytecodeProgress["phase"], force = false): void => {
@@ -270,28 +209,47 @@ export async function uploadBytecode(
         }
         lastReportedAt = now;
         const elapsedMs = now - startedAt;
-        onProgress?.({
-            totalBytes: bytes.byteLength,
-            sentBytes,
-            bytesPerSecond: elapsedMs > 0 ? sentBytes * 1000 / elapsedMs : 0,
-            phase,
-        });
+        onProgress?.({ totalBytes: bytes.byteLength, sentBytes,
+            bytesPerSecond: elapsedMs > 0 ? sentBytes * 1000 / elapsedMs : 0, phase });
     };
     report(0, "sending", true);
-    await exchange(bytecodeTransfer.begin, bytes.length, crc, 0, bytecodeTransfer.receiving);
-    const chunkLength = bytecodeTransfer.packetLength - bytecodeTransfer.headerLength;
-    for (let offset = 0; offset < bytes.length; offset += chunkLength) {
-        const chunk = bytes.subarray(offset, offset + chunkLength);
-        await exchange(bytecodeTransfer.data, offset, chunk, offset + chunk.length, bytecodeTransfer.receiving);
-        const sentBytes = offset + chunk.length;
-        if (sentBytes === bytes.byteLength) {
-            report(sentBytes, "validating", true);
-        }
-        else {
-            report(sentBytes, "sending");
-        }
+    const crc = new Uint8Array(4);
+    new DataView(crc.buffer).setUint32(0, bytecodeCrc32(bundle), true);
+    await send(bytecodeTransfer.begin, bundle.length, crc);
+    const chunkLength = frameLength - 10;
+    for (let offset = 0; offset < bundle.length; offset += chunkLength) {
+        const chunk = bundle.subarray(offset, offset + chunkLength);
+        await send(bytecodeTransfer.data, offset, chunk);
+        report(Math.max(0, Math.min(bytes.byteLength, offset + chunk.length - 24)), "sending");
     }
-    await exchange(bytecodeTransfer.commit, bytes.length, new Uint8Array(), bytes.length, bytecodeTransfer.ready);
-    report(bytes.byteLength, "complete", true);
-    return { byteLength: bytes.length, crc32 };
+    report(bytes.byteLength, "validating", true);
+    await send(bytecodeTransfer.commit, bundle.length);
+    const deadline = performance.now() + 10000;
+    while (performance.now() < deadline) {
+        check();
+        const reply = await run(() => channel.readResult());
+        check();
+        if (reply.byteLength !== 20 || reply.getUint8(0) !== 2) {
+            throw new Error("一括転送Resultが不正です。ファームウェアを更新してください。");
+        }
+        if (reply.getUint16(2, true) === transferId) {
+            const code = reply.getUint8(1);
+            if (code !== 0) {
+                const errors = ["成功", "形式不正", "順序・位置不正", "範囲外", "メモリ不足", "CRC不一致",
+                    "コード・PC不正", "受信期限切れ", "混雑", "開始失敗・取消"];
+                throw new Error(`ESP32のPython転送: ${errors[code] ?? `code=${code}`}`);
+            }
+            const expected = deployment?.start ? bytecodeTransfer.started : bytecodeTransfer.ready;
+            if (reply.getUint8(7) === expected && reply.getUint8(6) === bytecodeTransfer.commit) {
+                if (reply.getUint32(8, true) !== bundle.length || reply.getUint32(12, true) === 0
+                    || reply.getUint32(16, true) !== crc32) {
+                    throw new Error("ESP32のPython保持結果が一致しません。");
+                }
+                report(bytes.byteLength, "complete", true);
+                return { byteLength: bytes.byteLength, crc32, revision: reply.getUint32(12, true) };
+            }
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, 20));
+    }
+    throw new Error("ESP32のPython検証・開始結果がタイムアウトしました。");
 }

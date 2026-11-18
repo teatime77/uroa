@@ -9,15 +9,17 @@
  * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
  * チェックと表示の契約：チェックボタンは機器未接続でも字句・構文・意味解析だけを行い、
  * バイトコード生成・転送・VM操作を行わない。入力時の解析・自動チェックは行わない。
- * Startは送信済みコードを再利用する場合も必ずチェックし、問題があればVMを開始しない。
+ * Startは毎回チェックし、問題があれば転送・VM開始を行わない。
  * editor-diagnostics.tsが診断をUTF-16範囲へ変換し、highlight-editor.tsが赤い波線、
  * マウス位置のtooltipと、文字カーソル位置の編集領域下部の説明を表示する。
  * 構文エラーは最初の1件、意味エラーは診断一覧を表示する。API・通信失敗に仮の波線は付けない。
  * 入力・読込で古い診断を消し、解析中の入力変更・取消・削除後に遅れて届く結果は破棄する。
  * Startで得た解析結果はそのまま生成に使い、同じStart内で解析を繰り返さない。
- * Startは同一生成のDebugInfoとReceiptを保持し、行ブレークポイントを文開始PCへ変換して確定後にVMを開始する。
+ * Startは同一生成のDebugInfo・コード・両PC一覧を送り、ESP32の検証・開始後にReceiptを保持する。
  * 停止通知で自動最大化し、取得完了した同一停止の大域・局所・Call Stack・PC/SP/BPと全スロットを表示する。
  * 構造体とフレーム選択はdebugger-view.ts、ワイヤー仕様はble-wifi/debug-protocol.tsを参照する。
+ * 実行状態の表示はEventを正本とし、Start完了時に取得済み状態を「開始受付」で上書きしない。
+ * Event v2のRunningではPC・命令数、ErrorではVMエラー番号・失敗PCを表示する。
  * 実行中・一時停止中は編集とブレークポイント変更を禁止する。再開・3種のステップは全停止データ取得後に許す。
  * 操作時は旧停止値を破棄し、新しい停止・終了まで操作ボタンを無効化する。Stop・削除・切断では送信待ちも取り消す。
  * ブレークポイントがある実行は手動Startに限定し、Actionチェーンからは開始前に拒否する。
@@ -41,13 +43,10 @@ import { semanticEditorDiagnostic, syntaxEditorDiagnostic } from "./editor-diagn
 import { openPythonSource } from "./source-dialog";
 
 /**
- * Startでビルド・転送・VM_START、StopでVM_STOPを行う。Actionチェーンのrun()も同じ開始処理を待つ。
- * VMはESP32で独立して進むため、run()はVM初期化ACKまでを待ち、プログラム終了までは待たない。
- * Command v1（10バイト）にVM_START=10、VM_STOP=11を追加。CH=255、value=duration=0。
- * ESP32/lib/protocolが形式を検査し、app/diagram-control/src/main.cppのloop()が実行する。
- * COMMITは保持だけを行い、VM_STARTで保持中のコードを先頭から実行する。VM_STOPは所有機器も解放する。
- * 開始ACKは初期化の成功であり、実行終了・実行時エラーの通知は含まない。
- * 転送とVM指令は現在のBLE／Wi-Fiを使う。切断・切替では転送済みReceiptを失効させ、再送・明示開始を要求する。
+ * Startはチェック後にコード・行PC・ステップPCを一括送信し、ESP32が検証後に開始する。
+ * 完全な転送・開始契約はble-wifi/bytecode-transfer.tsを参照。旧コードの再送省略は行わない。
+ * run()は開始結果までを待ち、実行終了までは待たない。StopはVM_STOPで開始待ちも取り消す。
+ * 開始成功と正常終了は別とし、observeDeployment()が短い実行の終了・エラー・Pausedも取得する。
  */
 export class PythonBlock extends ActionBlock {
     readonly sourceEditor: HTMLTextAreaElement;
@@ -77,9 +76,6 @@ export class PythonBlock extends ActionBlock {
     private debugValuesReady = false;
     private sourceFilename = "";
     private stopping?: Promise<void>;
-    private receipt?: BytecodeReceipt;
-    private uploadedSource?: string;
-    private uploadedAbiHash?: string;
     private expanded = false;
     private removed = false;
     private ownsVM = false;
@@ -150,9 +146,6 @@ export class PythonBlock extends ActionBlock {
             this.openRequest?.abort();
             this.checkRequest?.abort();
             this.request?.abort();
-            this.receipt = undefined;
-            this.uploadedSource = undefined;
-            this.uploadedAbiHash = undefined;
             this.debugInfo = undefined;
             this.clearDebugView();
             this.showStatus("ソースを変更しました。次のStartでビルド・送信します。");
@@ -176,7 +169,6 @@ export class PythonBlock extends ActionBlock {
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
         this.releaseConnection = diagramDevice.subscribe(state => {
             if (state.phase !== "connected") {
-                this.receipt = undefined;
                 this.ownsVM = false;
                 this.request?.abort();
                 this.debugRequest?.abort();
@@ -225,13 +217,15 @@ export class PythonBlock extends ActionBlock {
                 this.showStatus("VMが一時停止しました。デバッグ情報を取得しています…");
             }
             else if (event?.state === 1) {
-                this.showStatus("VMを実行しています。次の停止・終了を待っています…");
+                this.showStatus(event.pc === undefined ? "VMを実行しています。進捗情報は未対応です。"
+                    : `VM実行中：PC=${event.pc}、命令数=${event.instructions}`);
             }
             else if (event && (event.state === 2 || event.state === 3 || event.state === 4)) {
                 // HALTでも機器出力は保持されるため、Stopの所有権は残して編集と新規Startだけを許す。
                 this.vmFinished = true;
                 this.showStatus(event.state === 2 ? "VMの実行が終了しました。" : event.state === 4
-                    ? "VMで実行時エラーが発生しました。ESP32のシリアルで詳細を確認してください。" : "VMを停止しました。");
+                    ? `VM実行エラー：番号=${event.vmError ?? "取得不可"}、PC=${event.errorPc ?? "取得不可"}` : "VMを停止しました。");
+                this.updateControls();
             }
         });
         this.showStatus("最大化してPythonコードを編集してください。");
@@ -265,9 +259,6 @@ export class PythonBlock extends ActionBlock {
         this.highlightEditor.clearBreakpoints();
         this.highlightEditor.clearDiagnostics();
         this.highlightEditor.refresh();
-        this.receipt = undefined;
-        this.uploadedSource = undefined;
-        this.uploadedAbiHash = undefined;
         this.debugInfo = undefined;
         this.clearDebugView();
     }
@@ -500,7 +491,7 @@ export class PythonBlock extends ActionBlock {
         }
     }
 
-    /** チェックは毎回行い、未編集・同じAPI・現接続・最後の転送の場合だけ生成と転送を省略する。 */
+    /** 毎回チェック・同一生成のコード/両PC一覧の一括転送を行い、ESP32の開始結果後に状態監視する。 */
     private async start(signal?: AbortSignal): Promise<void> {
         if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest
             || this.stopping || this.openRequest || this.debugRequest) {
@@ -513,9 +504,7 @@ export class PythonBlock extends ActionBlock {
             controller.abort();
         }
         this.request = controller;
-        const source = this.sourceEditor.value;
         const editRevision = this.editRevision;
-        const current = () => !this.removed && !controller.signal.aborted;
         this.updateControls();
         try {
             controller.signal.throwIfAborted();
@@ -527,37 +516,22 @@ export class PythonBlock extends ActionBlock {
             if (diagramDevice.state.phase !== "connected") {
                 throw new Error("機器接続ブロックでESP32へ接続してください。");
             }
-            let receipt = this.receipt;
-            if (!receipt || !this.debugInfo || this.uploadedSource !== source || this.uploadedAbiHash !== analysis.api.abiHash
-                || diagramDevice.bytecodeReceipt !== receipt) {
-                this.showStatus("Pythonをビルドしています…");
-                const build = generateDebugBytecode(analysis);
-                // 不可行はプログラムの置換より先に説明する。
-                resolveBreakpoints(build.info, this.highlightEditor.getBreakpointLines());
-                this.showStatus("バイトコードを送信しています…");
-                receipt = await diagramDevice.sendBytecode(build.bytes, controller.signal);
-                controller.signal.throwIfAborted();
-                if (this.sourceEditor.value === source && this.editRevision === editRevision) {
-                    this.receipt = receipt;
-                    this.uploadedSource = source;
-                    this.uploadedAbiHash = analysis.api.abiHash;
-                    this.debugInfo = build.info;
-                }
-            }
-            this.showStatus("ブレークポイントを送信しています…");
-            await diagramDevice.sendBreakpoints(receipt,
-                resolveBreakpoints(this.debugInfo!, this.highlightEditor.getBreakpointLines()), controller.signal, this.debugInfo!.stepPcs);
+            this.showStatus("Pythonをビルドしています…");
+            const build = generateDebugBytecode(analysis);
+            const breakpoints = resolveBreakpoints(build.info, this.highlightEditor.getBreakpointLines());
+            this.debugInfo = build.info;
+            this.showStatus("コードとデバッグ用PCを送信しています…");
+            const receipt = await diagramDevice.sendBytecode(build.bytes, controller.signal,
+                { breakpoints, stepPcs: build.info.stepPcs, start: true });
             controller.signal.throwIfAborted();
-            this.showStatus("VMを開始しています…");
-            // 書込み直後から所有扱いにし、ACK待機中のStopでもVM_STOPを必ず送る。
             this.ownsVM = true;
             this.vmFinished = false;
             this.vmReceipt = receipt;
-            await diagramDevice.startBytecode(receipt, current);
+            await diagramDevice.observeDeployment(receipt, controller.signal);
             controller.signal.throwIfAborted();
-            // 短いプログラムは開始ACKより前に停止通知が届くことがある。
-            if (!diagramDevice.debugEvent || diagramDevice.debugEvent.state === 1) {
-                this.showStatus("VM開始を受け付けました。ブレークポイントに到達するとデバッグ情報を表示します。");
+            // すでに取得したRunning/Paused/終了/エラーの表示を開始受付で上書きしない。
+            if (!diagramDevice.debugEvent) {
+                this.showStatus("VM開始は成功しました。実行状態を確認しています…");
             }
         }
         catch (error) {

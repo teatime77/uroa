@@ -325,7 +325,7 @@ export class RobotWifi implements ControlTransport {
     }
 
     /**
-     * 既存20バイト転送を認証済みWi-Fiへ接続する。HTTP/WSの送信完了だけでは次へ進まない。
+     * 最大1024バイトの一括転送を認証済みWi-Fiへ接続する。最終Resultだけを別Readで確認する。
      * Resultはセンサー通知から独立した署名付きHTTP Readを使う。共通契約はbytecode-transfer.ts。
      */
     async openBytecode(): Promise<BytecodeChannel> {
@@ -334,6 +334,7 @@ export class RobotWifi implements ControlTransport {
         }
         const session = this.session;
         return {
+            packetLength: bytecodeTransfer.packetLength,
             write: async bytes => {
                 if (!this.connected || session !== this.session || bytes.length < bytecodeTransfer.headerLength ||
                     bytes.length > bytecodeTransfer.packetLength) {

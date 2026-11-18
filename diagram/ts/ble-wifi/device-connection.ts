@@ -9,7 +9,7 @@ import { theEditor } from "../json-util";
 import { DeviceInfoMaxLength, type DeviceTelemetry } from "./device-telemetry";
 import { ControlConnection, ControlOpcode, ControlCommand } from "./control-connection";
 import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
-import { checkBytecodeTransfer, type BytecodeReceipt, type BytecodeProgress } from "./bytecode-transfer";
+import { checkBytecodeTransfer, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
 
 // GATT service shared with esp32/app/diagram-control.
@@ -21,11 +21,11 @@ import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAc
  *
  * | Characteristic | UUID先頭 | Properties | サイズ |
  * |---|---|---|---|
- * | Bytecode | f3641407 | Write with response | 10〜20 bytes |
+ * | Bytecode | f3641407 | Write with response | 10〜244 bytes（合意MTU以下） |
  * | Bytecode Result | f3641408 | Read | 20 bytes |
  * | Debug Control / Result / Event / Data | f3641409 / 140a / 140b / 140c | Write / Read / Read+Notify / Read | 最大20 bytes |
  *
- * Command・Status・Telemetry・DeviceInfoとは別の窓口。既定ATT MTU=23で扱える20バイト以内とし、Writeは必ずresponse付きにする。ただしGATTの受付だけではプログラムの受信完了とせず、各Writeの後に専用ResultをReadして、ESP32のloop()による受付結果を確認する。
+ * Command・Status・Telemetry・DeviceInfoとは別の窓口。Writeは合意ATT MTU-3以下・最大244バイトで必ずresponse付きにする。GATTの受付だけではプログラムの受信完了とせず、一括転送のCOMMIT後に専用ResultをReadして、ESP32のloop()による検証・必要な開始の結果を確認する。
  * デバッグ通信の完全な形式・停止値・一覧確定の仕様はdebug-protocol.tsを参照する。
  */
 export const BLE_UUID = {
@@ -307,6 +307,12 @@ export class DeviceConnection {
         this.close("idle", "BLE接続が切れました。");
     };
     private close(phase: DeviceConnectionPhase, message = ""): void {
+        if (this.state.phase !== "idle" || this.device || this.wifi) {
+            console.info("[Device connection] close", {
+                transport: this.state.transport ?? "ble", phase: this.state.phase,
+                reason: message || "接続終了", bytecodeSending: this.bytecodeSending,
+            });
+        }
         this.closing = true;
         this.resetDebugger();
         this.debugRequestId = 0;
@@ -333,7 +339,10 @@ export class DeviceConnection {
         this.closing = false;
     }
 
-    disconnect(): void { this.close("idle"); }
+    /** 明示切断と画面のライフサイクルによる切断の理由を表示・コンソールへ残す。 */
+    disconnect(reason = "切断要求"): void {
+        this.close("idle", reason);
+    }
     cancelWifiSetup(): void { this.wifiDialog?.close(); }
 
     async connect(): Promise<void> {
@@ -396,7 +405,17 @@ export class DeviceConnection {
                     check();
                     const result = await service.getCharacteristic(BLE_UUID.bytecodeResult);
                     check();
+                    const capability = await result.readValue();
+                    check();
+                    if (capability.byteLength !== 20 || capability.getUint8(0) !== 2) {
+                        throw new Error("一括転送対応のファームウェアへ更新してください。");
+                    }
+                    const packetLength = capability.getUint16(4, true);
+                    if (packetLength < 20 || packetLength > 244) {
+                        throw new Error(`ESP32のBLE転送サイズが不正です: ${packetLength}バイト。`);
+                    }
                     return {
+                        packetLength,
                         write: bytes => write.writeValueWithResponse(bytes),
                         readResult: () => result.readValue(),
                     };
@@ -570,9 +589,10 @@ export class DeviceConnection {
      * 接続済みでWi-Fi設定・切替中でない場合に利用できる。送信元はコピーし、同時に複数の転送は行わない。
      * 切断・ページ離脱・非表示・ブロック削除・APIのAbortSignalで取り消す。期限超過・取消・送受信エラーでは接続を閉じる。
      *
+     * deployment指定時はPC一覧も送り、ESP32の検証・開始結果を待つ。通信契約はbytecode-transfer.ts先頭。
      * BLEの専用Characteristicは送信時に取得する。両経路の形式・Result照合・制約はbytecode-transfer.tsを参照する。
      */
-    async sendBytecode(bytes: Uint8Array, signal?: AbortSignal): Promise<BytecodeReceipt> {
+    async sendBytecode(bytes: Uint8Array, signal?: AbortSignal, deployment?: BytecodeDeployment): Promise<BytecodeReceipt> {
         if (this.bytecodeSending || this.debuggerSending) {
             throw new Error("バイトコードまたはブレークポイントを送信中です。");
         }
@@ -597,7 +617,7 @@ export class DeviceConnection {
                 check();
                 this.bytecodeProgress = progress;
                 this.notify();
-            });
+            }, deployment);
             check();
             this.bytecodeReceipt = receipt;
             this.state = { ...this.state, message: `${receipt.byteLength}バイトをESP32で受信しました。` };
@@ -626,6 +646,14 @@ export class DeviceConnection {
         this.debugSnapshot = snapshot;
         this.debugError = error;
         this.debugEvent = event;
+        if (event) {
+            const states = ["idle", "running", "halted", "stopped", "error", "paused"];
+            console.info("[Python VM]", {
+                revision: event.revision, state: states[event.state], pc: event.pc,
+                instructions: event.instructions, vmError: event.vmError, errorPc: event.errorPc,
+                snapshotCode: event.code, stopId: event.stopId,
+            });
+        }
         for (const listener of this.debugListeners) {
             listener(snapshot, error, event);
         }
@@ -638,7 +666,8 @@ export class DeviceConnection {
     }
 
     /**
-     * 最後に保持したコードへ命令PCの一覧を送る。PythonBlockは同一ビルドのDebugInfoからF9の行を変換する。
+     * 最後に保持したコードへ命令PCの一覧を送る。PythonBlockのStartは同じ一覧を一括転送に含める。
+     * monitorOnlyでは一覧を送らず、一括転送Resultのrevisionで状態監視だけを開始する。
      * stepPcs指定時は同じ生成のステップ用停止点も確定する。未対応ファームウェアでは開始前にエラーとする。
      * 完了後、同じ接続・同じ保持コードのPaused通知から停止値を自動取得し、購読者へ公開する。
      * 通信・フラグ・停止値の共通仕様はdebug-protocol.ts。旧ファームウェアの通常接続には影響しない。
@@ -653,7 +682,7 @@ export class DeviceConnection {
      * ```
      */
     async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal,
-        stepPcs?: readonly number[]): Promise<void> {
+        stepPcs?: readonly number[], monitorOnly = false): Promise<void> {
         if (this.bytecodeSending || this.debuggerSending) {
             throw new Error("バイトコードまたはブレークポイントを送信中です。");
         }
@@ -693,11 +722,21 @@ export class DeviceConnection {
                 });
                 this.debugger = client;
             }
-            await this.debugger.sendBreakpoints(receipt, list, signal, stepPcs);
+            if (monitorOnly) {
+                await this.debugger.observeDeployment(receipt, signal);
+            }
+            else {
+                await this.debugger.sendBreakpoints(receipt, list, signal, stepPcs);
+            }
         }
         finally {
             this.debuggerSending = false;
         }
+    }
+
+    /** 一括転送で設定済みのPCを再送せず、現在の保持世代のVM状態を監視する。 */
+    async observeDeployment(receipt: BytecodeReceipt, signal?: AbortSignal): Promise<void> {
+        await this.sendBreakpoints(receipt, [], signal, undefined, true);
     }
 
     /** 現接続・所有Receipt・全受信した最新Snapshotを照合し、停止ID付きの再開／ステップを送る。Stopは常に優先できる。 */
@@ -777,17 +816,20 @@ export class DeviceConnection {
 
 export const diagramDevice = new DeviceConnection();
 
+/** 非表示・ページ離脱では従来どおり切断し、原因を機器接続ブロックとコンソールへ示す。 */
 export function initDeviceConnection(signal: AbortSignal): void {
     document.addEventListener("visibilitychange", () => {
-        if (document.hidden) diagramDevice.disconnect();
+        if (document.hidden) {
+            diagramDevice.disconnect("画面が非表示になったため切断しました。");
+        }
     }, { signal });
-    window.addEventListener("pagehide", () => diagramDevice.disconnect(), { signal });
+    window.addEventListener("pagehide", () => diagramDevice.disconnect("ページを離れたため切断しました。"), { signal });
 }
 
 /**
  * 接続・切断とWi-Fi設定／接続を操作し、機器の接続状態を表示する。
  * Wi-Fiボタンの下に全体・送信済みバイト数・平均速度を3行で表示し、未転送時は「—」とする。
- * 全DATA受信後は「検証中」、COMMIT成功後は「完了」を併記する。ツールボックスには表示しない。
+ * 全データの書込みAPI完了後は「検証中」、最終Result成功後は「完了」を併記する。ツールボックスには表示しない。
  * 計測・通知・消去の共通契約はbytecode-transfer.tsのuploadBytecode()を参照する。
  */
 export class DeviceConnectionBlock extends FunctionBlock {

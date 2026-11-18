@@ -1,5 +1,26 @@
 # ビルドと回帰テスト
 
+## VM開始表示と実行進捗（2026-11-18）
+
+PythonBlockのStart完了時に取得済みの実行状態を開始受付で上書きする処理を修正した。状態表示は[python-block.ts](../diagram/ts/python/python-block.ts)、Event v2のPC・命令数・VMエラーの通信仕様は[debug-protocol.ts先頭](../diagram/ts/ble-wifi/debug-protocol.ts)、ブラウザーの[Python VM]ログは[device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts)を参照する。
+
+ユーザー指定のESP32 default_envs（supermini_esp32s3）だけでビルド成功。コマンドとメモリー量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)へ記載した。両リポジトリーの差分チェックは成功。Webビルド・他ボード・模擬/単体/ブラウザーテスト・Upload・実機確認は未実施で、モーターが動かない実機の原因は未確定。
+
+
+## BLE送信時の切断診断（2026-11-18）
+
+切断理由・画面非表示時の切断表示は[device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts)、転送段階・最終op/sequence・送信サイズ・例外のログは[control-connection.tsのsendBytecode()](../diagram/ts/ble-wifi/control-connection.ts)を参照する。既存の非表示時切断とタイムアウト方針は維持した。
+
+ESP32のResult同時更新を修正し、default_envsのsupermini_esp32s3だけでビルド成功。コマンドとメモリー量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)を参照する。両リポジトリーの差分チェックは成功。Webビルド・他ボード・模擬テスト・Upload・実BLEでの安定性は未確認で、ユーザー報告の切断原因の確定結果ではない。
+
+
+## Python一括転送と最終状態確認（2026-11-18）
+
+送信・受信・開始の共通仕様は[bytecode-transfer.ts先頭](../diagram/ts/ble-wifi/bytecode-transfer.ts)、PythonBlockの開始と状態監視は[python-block.ts](../diagram/ts/python/python-block.ts)を参照する。
+
+ユーザー指定に従いビルドはESP32の`default_envs = supermini_esp32s3`だけを実行し、成功した。コマンドとメモリー量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)に記載する。両リポジトリーの差分チェックは成功。Webの型・公開ビルド、他ボード、模擬・単体・ブラウザーテスト、Upload、実BLE/Wi-Fi・速度・停止/切断時の実動作は未確認。
+
+
 更新日: 2026-11-10。公開用ビルドはuroaルートのTypeScript・Viteビルドに統一する。既存の5アプリ回帰テストは `tests/test.py` に置く。
 
 ## サーボ角度範囲の拡張（2026-11-10）
