@@ -2,14 +2,26 @@
 
 generate-device-api.pyから呼び出す。採番・ABI指紋は同じ解析結果を使い、
 機器操作はESP32のDeviceNative、スタックの所有権はBytecodeVMに任せる。
+生成スタブはinvoke_<関数名>、メソッドはinvoke_<クラス名>_<メソッド名>、
+コンストラクターはinvoke_<クラス名>_constructとし、数値IDとABI指紋は変更しない。
+FLOAT_UNARY_FUNCTIONSに明示したモジュール関数は標準C++関数へ直接接続し、
+同じfloat -> floatの型検査・結果格納をinvokeFloatUnaryで共通化する。
+それらのBackend宣言は生成せず、device_native.h/.cppにも実装を置かない。
+未登録の関数・機器メソッドは従来のBackendを使う。数値の有限性はVMの
+callNative()/validValue()が引数・結果とも検査する。三角関数の仕様本文は
+生成するinvokeFloatUnaryのコメントに置き、device.pyiから参照する。
 """
 
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
 
+# 標準関数への接続先は型だけでは判定しない。追加時はfloat -> floatの宣言を必須とする。
+FLOAT_UNARY_FUNCTIONS = {"sin": "std::sin", "cos": "std::cos", "tan": "std::tan"}
+
+
 class CppGenerator:
-    """値スロットを型付きC++引数へ変換し、バックエンドの結果をスロットへ戻す。"""
+    """値スロットを型付きC++引数へ変換し、呼出し結果をスロットへ戻す。"""
 
     def __init__(self, interface: Dict[str, Any]) -> None:
         self.interface = interface
@@ -30,6 +42,9 @@ class CppGenerator:
         names = [self.method_name(*entry) for entry in self.calls]
         if len(set(names)) != len(names):
             raise ValueError("C++バックエンドのメソッド名が重複しています")
+        stubs = [self.stub_name(*entry) for entry in self.calls]
+        if len(set(stubs)) != len(stubs):
+            raise ValueError("C++スタブ名が重複しています")
 
     def record(self, item: Dict[str, Any]) -> None:
         """入れ子recordの宣言順依存を解決する。空・循環recordは生成前に拒否する。"""
@@ -77,6 +92,56 @@ class CppGenerator:
         """バックエンドのシンボルは採番に依存させず、API名から作る。"""
         return (owner["name"] + "_" if owner else "function_") + ("construct" if constructor else function["name"])
 
+    def stub_name(self, owner: Optional[Dict[str, Any]], function: Dict[str, Any], constructor: bool) -> str:
+        """スタブ名はAPI名から作る。機器の同名メソッドはクラス名で区別する。"""
+        return "invoke_" + (owner["name"] + "_" if owner else "") + ("construct" if constructor else function["name"])
+
+    def direct_function(self, owner: Optional[Dict[str, Any]], function: Dict[str, Any], constructor: bool) -> Optional[str]:
+        """明示した標準関数だけを直接接続し、宣言が対応する型から変わったら生成を拒否する。"""
+        target = FLOAT_UNARY_FUNCTIONS.get(function["name"]) if owner is None else None
+        if target is None:
+            return None
+        parameters = function["parameters"]
+        if (constructor or len(parameters) != 1 or parameters[0]["type"]["kind"] != "float"
+                or function["returnType"]["kind"] != "float"):
+            raise ValueError(function["name"] + ": 標準関数の宣言はfloat -> floatが必要です")
+        return target
+
+    def float_unary_helper(self) -> List[str]:
+        """直接接続するfloat単項関数の共通変換と、三角関数の仕様コメントを生成する。"""
+        return """        /**
+         * @brief float単項関数の引数を検査し、結果をVMスロットへ格納する。
+         * @param call VMの入出力領域。
+         * @param function float版の標準関数。
+         * @return 成功はNone、スロット数不一致はOperand、型不一致はType。
+         * @details
+         * sin・cos・tanの共通仕様。device.pyiの宣言からdevice_api_cpp.pyが
+         * invoke_sin/cos/tanとID表を生成し、BackendやDeviceNativeを介さず標準関数を呼ぶ。
+         * PythonBlockからimportなしで呼び出す。整数の引数はコンパイラーがfloatへ変換する。
+         * 引数・戻り値はVMのfloat32で、std::sin/cos/tanのfloat版を使う。角度はラジアン。
+         * 度からの変換、入力角度の制限、独自の周期丸めは行わない。
+         * 有限性の検査はbytecode_vm.cppのcallNative()/validValue()が呼出し前後に行う。
+         * NaN・無限大の引数と非有限の計算結果はそこでTypeとなり、VMの実行を停止する。
+         * tanは丸められたfloat32の角度に対して計算する。特異点付近でも独自のしきい値で
+         * 拒否せず、有限の結果はそのまま返す。数学上のπ/2等でも丸めにより大きな有限値になり得る。
+         * 機器・プログラムの起点には依存せず、待機・NativePendingは使わない。
+         * loop()からVMを通して呼ぶ。contextは使用しない。
+         */
+        BytecodeVM::Error invokeFloatUnary(BytecodeVM::NativeCall &call, float (*function)(float)) {
+            using Type = BytecodeVM::Type;
+            using Error = BytecodeVM::Error;
+            if (call.argumentSlots != 1 || call.resultSlots != 1) {
+                return Error::Operand;
+            }
+            if (call.arguments[0].type != Type::Float) {
+                return Error::Type;
+            }
+            call.results[0].type = Type::Float;
+            call.results[0].real = function(call.arguments[0].real);
+            return Error::None;
+        }
+""".splitlines() + [""]
+
     def generate(self) -> Tuple[bytes, bytes]:
         """全成果物をメモリー上で作る。未知のC++識別子や幅超過は書出し前に拒否する。"""
         keywords = set("alignas alignof and asm auto bool break case catch char class const constexpr continue default delete do double else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not nullptr operator or private protected public register reinterpret_cast return short signed sizeof static struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor".split())
@@ -102,14 +167,28 @@ class CppGenerator:
         source = [
             "/** @file device_api.generated.cpp",
             " * @brief device.pyiから自動生成した型検査・値スロット変換・単一ID登録表。直接編集しない。",
-            " */", '#include "device_api.generated.h"', "", "namespace device_api {",
+            " * @details 数学関数は共通変換から直接呼び、機器操作はBackendへ渡す。有限性はVMが検査する。",
+            " */", '#include "device_api.generated.h"', "#include <cmath>", "", "namespace device_api {",
             "    /** @brief 派生バックエンドを破棄する。 */", "    Backend::~Backend() = default;", "", "    namespace {",
         ]
+        if any(self.direct_function(*entry) is not None for entry in self.calls):
+            source.extend(self.float_unary_helper())
         entries = []
         for owner, function, constructor in self.calls:
             method = self.method_name(owner, function, constructor)
             arguments = self.arguments(owner, function, constructor)
             result = self.result_type(function, constructor)
+            stub = self.stub_name(owner, function, constructor)
+            target = self.direct_function(owner, function, constructor)
+            if target is not None:
+                entries.append("            {{{}, 1, 1, {}}},".format(function["nativeId"], stub))
+                source.extend([
+                    "        /** @brief {}のfloat版を共通変換から呼ぶ。@param call VMの入出力領域。@return 実行結果。 */".format(target),
+                    "        BytecodeVM::Error {}(BytecodeVM::NativeCall &call) {{".format(stub),
+                    "            return invokeFloatUnary(call, static_cast<float (*)(float)>({}));".format(target),
+                    "        }", "",
+                ])
+                continue
             parameters = [self.cpp_type(value) + " " + name for name, value in arguments]
             if result["kind"] != "none":
                 parameters.append(self.cpp_type(result) + " &result")
@@ -125,7 +204,6 @@ class CppGenerator:
             width = max(1, len(outputs))
             if len(leaves) > 1024 or width > 1024:
                 raise ValueError(method + ": VMのスロット上限1024を超えています")
-            stub = "invoke" + str(function["nativeId"])
             entries.append("            {{{}, {}, {}, {}}},".format(function["nativeId"], len(leaves), width, stub))
             source.extend(["        /** @brief {}の型を検査し、機器操作へ渡す。@param call VMの入出力領域。@return 実行結果。 */".format(method),
                            "        BytecodeVM::Error {}(BytecodeVM::NativeCall &call) {{".format(stub),

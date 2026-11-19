@@ -1,5 +1,11 @@
 # ビルドと回帰テスト
 
+## ネイティブスタブの共通化と数学関数の直接接続（2026-11-19）
+
+生成・命名・標準関数への接続は[device_api_cpp.py](../diagram/python/device_api_cpp.py)、三角関数の仕様は[生成スタブのinvokeFloatUnary](../../esp32/app/diagram-control/src/device_api.generated.cpp)を参照する。`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`で再生成し、`--check`による一致確認は成功した。公開JSON・数値ID・ABIハッシュは変更なし。
+
+ユーザー指定のESP32 default_envs（supermini_esp32s3）だけでビルド成功。コマンドとメモリー量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)へ記載した。テストは作成・実行せず、Webビルド・他ボード・Upload・ブラウザー操作・VMからの三角関数呼出しと実機確認は行っていない。
+
 ## VM開始表示と実行進捗（2026-11-18）
 
 PythonBlockのStart完了時に取得済みの実行状態を開始受付で上書きする処理を修正した。状態表示は[python-block.ts](../diagram/ts/python/python-block.ts)、Event v2のPC・命令数・VMエラーの通信仕様は[debug-protocol.ts先頭](../diagram/ts/ble-wifi/debug-protocol.ts)、ブラウザーの[Python VM]ログは[device-connection.ts](../diagram/ts/ble-wifi/device-connection.ts)を参照する。
@@ -31,7 +37,7 @@ Webの入力検査は[DeviceConnection::moveAngle()](../diagram/ts/ble-wifi/devi
 
 ## Pythonのsin・cos・tan（2026-11-10）
 
-API宣言は[device.pyi](../diagram/python/device.pyi)、単位・精度・不正値と生成APIの分担は[DeviceNative::function_sin](../../esp32/app/diagram-control/src/device_native.cpp)を参照する。
+API宣言は[device.pyi](../diagram/python/device.pyi)、単位・精度・不正値と生成APIの分担は[生成スタブのinvokeFloatUnary](../../esp32/app/diagram-control/src/device_api.generated.cpp)を参照する。
 
 uroaルートで`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`を実行し、JSONとC++の3成果物を再生成した。`--check`による一致確認と`npm.cmd run verify`は成功し、配信されたdevice-api.jsonのSHA-256は生成元と一致した。既存gameのimport併用警告2件は継続。ESP32は`default_envs`だけでビルドし、結果は[同リポジトリーの検証記録](../../esp32/docs/build-and-test.md)に置く。テスト・Upload・ブラウザー操作・実BLE／Wi-Fi・VMからの三角関数実行と実機の戻り値確認は行っていない。
 

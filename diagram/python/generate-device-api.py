@@ -6,7 +6,8 @@
 device.pyi、出力はuroa/public/diagram/device/device-api.json。既定パスは実行時の
 作業ディレクトリーに依存しない。--input/--outputの相対パスは作業ディレクトリー基準。
 JSONとC++は同じ解析結果・ABI指紋から生成する。C++変換はdevice_api_cpp.py、
-機器操作はESP32のdevice_native.h/.cppが担当する。TypeScriptは生成しない。
+機器操作はESP32のdevice_native.h/.cppが担当する。標準数学関数の直接接続と
+同型スタブの共通変換・命名はdevice_api_cpp.pyを参照する。TypeScriptは生成しない。
 
 入力はクラス、型注釈付きフィールド、位置引数の関数・メソッドに限定する。
 各スコープの先頭docstringは無視し、関数本体は...だけを許す。継承、デコレーター、
