@@ -73,7 +73,8 @@ export function openPythonSource(signal: AbortSignal): Promise<PythonSourceFile 
                         });
                         status.textContent = `${filename} を読み込み中…`;
                         try {
-                            const response = await fetch(`/diagram/python/${encodeURIComponent(filename)}`,
+                            // 選択のたびに時刻付きURLで要求し、キャッシュを使わず最新の本文を取得する。
+                            const response = await fetch(`/diagram/python/${encodeURIComponent(filename)}?t=${Date.now()}`,
                                 { signal: request.signal, cache: "no-store" });
                             if (!response.ok) {
                                 throw new Error();
