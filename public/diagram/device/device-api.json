@@ -681,7 +681,23 @@
             "returnType": {
                 "kind": "float"
             }
+        },
+        {
+            "id": 15,
+            "nativeId": 33,
+            "name": "abs",
+            "parameters": [
+                {
+                    "name": "value",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
         }
     ],
-    "abiHash": "086291abf1893460b6a9dbd2d3878646f78bda83b7b2eb9132ed073482473532"
+    "abiHash": "53fd97a62ddc1b1ed049aefa27727f8edd175dd1f867769a8589dfd53c6147e0"
 }

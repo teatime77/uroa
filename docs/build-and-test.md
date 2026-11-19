@@ -1,5 +1,11 @@
 # ビルドと回帰テスト
 
+## Pythonのabs追加（2026-11-19）
+
+宣言は[device.pyi](../diagram/python/device.pyi)、仕様は[生成スタブのinvokeFloatUnary](../../esp32/app/diagram-control/src/device_api.generated.cpp)、生成元は[device_api_cpp.py](../diagram/python/device_api_cpp.py)を参照する。`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`でJSONとC++を再生成し、`--check`による一致確認は成功した。既存IDを維持してabsを33に登録し、ABIハッシュを更新した。
+
+ESP32のdefault_envs（supermini_esp32s3）だけでビルド成功。コマンドとメモリー量は[ESP32の検証記録](../../esp32/docs/build-and-test.md)を参照する。テストは作成・実行せず、Webビルド・他ボード・Upload・ブラウザー操作・VMからのabs実行と実機確認は行っていない。
+
 ## Python数値関数8個の追加（2026-11-19）
 
 API宣言は[device.pyi](../diagram/python/device.pyi)、生成と標準関数への接続は[device_api_cpp.py](../diagram/python/device_api_cpp.py)、単項・二項の数値関数と小数部だけを返すmodfの仕様は[生成スタブのinvokeFloatUnary／invokeFloatBinary](../../esp32/app/diagram-control/src/device_api.generated.cpp)を参照する。`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`でJSONとC++を再生成し、`--check`による一致確認は成功した。既存の数値IDは維持し、追加分を25〜32に登録した。API追加でABIハッシュを更新したため、JSONとファームウェアをそろえてバイトコードを再ビルド・送信する。

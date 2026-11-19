@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple
 FLOAT_UNARY_FUNCTIONS = {
     "sin": "std::sin", "cos": "std::cos", "tan": "std::tan",
     "floor": "std::floor", "ceil": "std::ceil", "acos": "std::acos", "asin": "std::asin",
-    "modf": "fractionalPart",
+    "modf": "fractionalPart", "abs": "std::fabs",
 }
 FLOAT_BINARY_FUNCTIONS = {"min": "std::fmin", "max": "std::fmax", "atan2": "std::atan2"}
 
@@ -133,6 +133,7 @@ class CppGenerator:
          * invoke_<関数名>とID表を生成し、BackendやDeviceNativeを介さず標準関数を呼ぶ。
          * PythonBlockからimportなしで呼び出す。整数の引数はコンパイラーがfloatへ変換する。
          * 引数・戻り値はVMのfloat32で、対応するC++標準関数のfloat版を使う。
+         * absはstd::fabsで絶対値をfloatで返す。整数引数もfloatへ変換し、負のゼロは正のゼロになる。
          * floorは入力以下の最大の整数値、ceilは入力以上の最小の整数値をfloatで返す。
          * Python標準のmath.floor/ceilと異なりintは返さず、int32への変換・範囲制限は行わない。
          * modfはfractionalPartでstd::modfの整数部を破棄し、小数部だけをfloatで返す。
