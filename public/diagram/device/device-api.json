@@ -535,7 +535,153 @@
             "returnType": {
                 "kind": "float"
             }
+        },
+        {
+            "id": 7,
+            "nativeId": 25,
+            "name": "min",
+            "parameters": [
+                {
+                    "name": "a",
+                    "type": {
+                        "kind": "float"
+                    }
+                },
+                {
+                    "name": "b",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 8,
+            "nativeId": 26,
+            "name": "max",
+            "parameters": [
+                {
+                    "name": "a",
+                    "type": {
+                        "kind": "float"
+                    }
+                },
+                {
+                    "name": "b",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 9,
+            "nativeId": 27,
+            "name": "floor",
+            "parameters": [
+                {
+                    "name": "value",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 10,
+            "nativeId": 28,
+            "name": "ceil",
+            "parameters": [
+                {
+                    "name": "value",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 11,
+            "nativeId": 29,
+            "name": "modf",
+            "parameters": [
+                {
+                    "name": "value",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 12,
+            "nativeId": 30,
+            "name": "acos",
+            "parameters": [
+                {
+                    "name": "value",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 13,
+            "nativeId": 31,
+            "name": "asin",
+            "parameters": [
+                {
+                    "name": "value",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
+        },
+        {
+            "id": 14,
+            "nativeId": 32,
+            "name": "atan2",
+            "parameters": [
+                {
+                    "name": "y",
+                    "type": {
+                        "kind": "float"
+                    }
+                },
+                {
+                    "name": "x",
+                    "type": {
+                        "kind": "float"
+                    }
+                }
+            ],
+            "returnType": {
+                "kind": "float"
+            }
         }
     ],
-    "abiHash": "9f0440fbc4040fc629c60414776ddca136f38461552469c9485e5777ef966dc9"
+    "abiHash": "086291abf1893460b6a9dbd2d3878646f78bda83b7b2eb9132ed073482473532"
 }

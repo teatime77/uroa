@@ -3,21 +3,27 @@
 generate-device-api.pyから呼び出す。採番・ABI指紋は同じ解析結果を使い、
 機器操作はESP32のDeviceNative、スタックの所有権はBytecodeVMに任せる。
 生成スタブはinvoke_<関数名>、メソッドはinvoke_<クラス名>_<メソッド名>、
-コンストラクターはinvoke_<クラス名>_constructとし、数値IDとABI指紋は変更しない。
-FLOAT_UNARY_FUNCTIONSに明示したモジュール関数は標準C++関数へ直接接続し、
-同じfloat -> floatの型検査・結果格納をinvokeFloatUnaryで共通化する。
+コンストラクターはinvoke_<クラス名>_constructとする。命名だけでは数値IDとABI指紋は変わらない。
+FLOAT_UNARY_FUNCTIONS/FLOAT_BINARY_FUNCTIONSに明示したモジュール関数は標準C++関数へ直接接続し、
+同じfloat引数・float戻り値の型検査・結果格納を引数の個数ごとに共通化する。
 それらのBackend宣言は生成せず、device_native.h/.cppにも実装を置かない。
 未登録の関数・機器メソッドは従来のBackendを使う。数値の有限性はVMの
 callNative()/validValue()が引数・結果とも検査する。三角関数の仕様本文は
 生成するinvokeFloatUnaryのコメントに置き、device.pyiから参照する。
+modfだけは小数部を返すfractionalPartを介し、std::modfの整数部出力を破棄する。
 """
 
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
 
-# 標準関数への接続先は型だけでは判定しない。追加時はfloat -> floatの宣言を必須とする。
-FLOAT_UNARY_FUNCTIONS = {"sin": "std::sin", "cos": "std::cos", "tan": "std::tan"}
+# 標準関数への接続先は型だけでは判定しない。追加時は表の引数個数とfloat型を必須とする。
+FLOAT_UNARY_FUNCTIONS = {
+    "sin": "std::sin", "cos": "std::cos", "tan": "std::tan",
+    "floor": "std::floor", "ceil": "std::ceil", "acos": "std::acos", "asin": "std::asin",
+    "modf": "fractionalPart",
+}
+FLOAT_BINARY_FUNCTIONS = {"min": "std::fmin", "max": "std::fmax", "atan2": "std::atan2"}
 
 
 class CppGenerator:
@@ -96,30 +102,45 @@ class CppGenerator:
         """スタブ名はAPI名から作る。機器の同名メソッドはクラス名で区別する。"""
         return "invoke_" + (owner["name"] + "_" if owner else "") + ("construct" if constructor else function["name"])
 
-    def direct_function(self, owner: Optional[Dict[str, Any]], function: Dict[str, Any], constructor: bool) -> Optional[str]:
+    def direct_function(self, owner: Optional[Dict[str, Any]], function: Dict[str, Any], constructor: bool) -> Optional[Tuple[str, int]]:
         """明示した標準関数だけを直接接続し、宣言が対応する型から変わったら生成を拒否する。"""
-        target = FLOAT_UNARY_FUNCTIONS.get(function["name"]) if owner is None else None
-        if target is None:
+        if owner is not None:
+            return None
+        name = function["name"]
+        if name in FLOAT_UNARY_FUNCTIONS:
+            target = FLOAT_UNARY_FUNCTIONS[name]
+            count = 1
+        elif name in FLOAT_BINARY_FUNCTIONS:
+            target = FLOAT_BINARY_FUNCTIONS[name]
+            count = 2
+        else:
             return None
         parameters = function["parameters"]
-        if (constructor or len(parameters) != 1 or parameters[0]["type"]["kind"] != "float"
+        if (constructor or len(parameters) != count or any(parameter["type"]["kind"] != "float" for parameter in parameters)
                 or function["returnType"]["kind"] != "float"):
-            raise ValueError(function["name"] + ": 標準関数の宣言はfloat -> floatが必要です")
-        return target
+            raise ValueError(name + ": 標準関数はfloat引数{}個とfloat戻り値が必要です".format(count))
+        return target, count
 
     def float_unary_helper(self) -> List[str]:
         """直接接続するfloat単項関数の共通変換と、三角関数の仕様コメントを生成する。"""
         return """        /**
          * @brief float単項関数の引数を検査し、結果をVMスロットへ格納する。
          * @param call VMの入出力領域。
-         * @param function float版の標準関数。
+         * @param function float版の標準関数またはそのアダプター。
          * @return 成功はNone、スロット数不一致はOperand、型不一致はType。
          * @details
-         * sin・cos・tanの共通仕様。device.pyiの宣言からdevice_api_cpp.pyが
-         * invoke_sin/cos/tanとID表を生成し、BackendやDeviceNativeを介さず標準関数を呼ぶ。
+         * 数学関数の共通仕様。device.pyiの宣言からdevice_api_cpp.pyが
+         * invoke_<関数名>とID表を生成し、BackendやDeviceNativeを介さず標準関数を呼ぶ。
          * PythonBlockからimportなしで呼び出す。整数の引数はコンパイラーがfloatへ変換する。
-         * 引数・戻り値はVMのfloat32で、std::sin/cos/tanのfloat版を使う。角度はラジアン。
-         * 度からの変換、入力角度の制限、独自の周期丸めは行わない。
+         * 引数・戻り値はVMのfloat32で、対応するC++標準関数のfloat版を使う。
+         * floorは入力以下の最大の整数値、ceilは入力以上の最小の整数値をfloatで返す。
+         * Python標準のmath.floor/ceilと異なりintは返さず、int32への変換・範囲制限は行わない。
+         * modfはfractionalPartでstd::modfの整数部を破棄し、小数部だけをfloatで返す。
+         * Python標準のmath.modfと異なりタプルは返さない。小数部は入力と同符号で、
+         * modf(-1.25)は-0.25。整数部はゼロ方向へ切り捨てられ、整数入力の結果は符号付きゼロ。
+         * sin・cos・tanの引数とacos・asinの戻り値の角度はラジアン。
+         * acos・asinの入力範囲は[-1, 1]。範囲外の非有限な計算結果もVMがTypeとして拒否する。
+         * sin・cos・tanでは度からの変換、入力角度の制限、独自の周期丸めは行わない。
          * 有限性の検査はbytecode_vm.cppのcallNative()/validValue()が呼出し前後に行う。
          * NaN・無限大の引数と非有限の計算結果はそこでTypeとなり、VMの実行を停止する。
          * tanは丸められたfloat32の角度に対して計算する。特異点付近でも独自のしきい値で
@@ -138,6 +159,46 @@ class CppGenerator:
             }
             call.results[0].type = Type::Float;
             call.results[0].real = function(call.arguments[0].real);
+            return Error::None;
+        }
+""".splitlines() + [""]
+
+    def modf_adapter(self) -> List[str]:
+        """整数部を要求しないmodfを、共通のfloat単項呼出しへ接続する。"""
+        return """        /** @brief std::modfの小数部だけを返す。仕様はinvokeFloatUnaryを参照する。
+         * @param value 分解する値。@return 入力と同符号の小数部。
+         */
+        float fractionalPart(float value) {
+            float integerPart{};
+            return std::modf(value, &integerPart);
+        }
+""".splitlines() + [""]
+
+    def float_binary_helper(self) -> List[str]:
+        """float二項関数を共通変換し、min/max/atan2の契約を生成する。"""
+        return """        /**
+         * @brief float二項関数の引数を検査し、結果をVMスロットへ格納する。
+         * @param call VMの入出力領域。
+         * @param function float版の標準関数。
+         * @return 成功はNone、スロット数不一致はOperand、型不一致はType。
+         * @details
+         * float32・整数引数の変換・有限性・実行タスクの共通仕様はinvokeFloatUnaryを参照する。
+         * min/maxは数値2引数だけを受け、std::fmin/fmaxで小さい値/大きい値をfloatで返す。
+         * 整数同士でも戻り値はfloat。可変長引数・反復可能オブジェクト・key/defaultは未対応。
+         * atan2(y, x)はstd::atan2(y, x)で象限を含む角度をラジアンで返す。
+         * ゼロ・符号付きゼロの扱いは標準関数に従い、独自の原点判定は行わない。
+         */
+        BytecodeVM::Error invokeFloatBinary(BytecodeVM::NativeCall &call, float (*function)(float, float)) {
+            using Type = BytecodeVM::Type;
+            using Error = BytecodeVM::Error;
+            if (call.argumentSlots != 2 || call.resultSlots != 1) {
+                return Error::Operand;
+            }
+            if (call.arguments[0].type != Type::Float || call.arguments[1].type != Type::Float) {
+                return Error::Type;
+            }
+            call.results[0].type = Type::Float;
+            call.results[0].real = function(call.arguments[0].real, call.arguments[1].real);
             return Error::None;
         }
 """.splitlines() + [""]
@@ -173,19 +234,26 @@ class CppGenerator:
         ]
         if any(self.direct_function(*entry) is not None for entry in self.calls):
             source.extend(self.float_unary_helper())
+        if any(owner is None and function["name"] in FLOAT_BINARY_FUNCTIONS for owner, function, _ in self.calls):
+            source.extend(self.float_binary_helper())
+        if any(owner is None and function["name"] == "modf" for owner, function, _ in self.calls):
+            source.extend(self.modf_adapter())
         entries = []
         for owner, function, constructor in self.calls:
             method = self.method_name(owner, function, constructor)
             arguments = self.arguments(owner, function, constructor)
             result = self.result_type(function, constructor)
             stub = self.stub_name(owner, function, constructor)
-            target = self.direct_function(owner, function, constructor)
-            if target is not None:
-                entries.append("            {{{}, 1, 1, {}}},".format(function["nativeId"], stub))
+            direct = self.direct_function(owner, function, constructor)
+            if direct is not None:
+                target, count = direct
+                helper = "invokeFloatUnary" if count == 1 else "invokeFloatBinary"
+                signature = ", ".join(["float"] * count)
+                entries.append("            {{{}, {}, 1, {}}},".format(function["nativeId"], count, stub))
                 source.extend([
-                    "        /** @brief {}のfloat版を共通変換から呼ぶ。@param call VMの入出力領域。@return 実行結果。 */".format(target),
+                    "        /** @brief {}を共通変換から呼ぶ。@param call VMの入出力領域。@return 実行結果。 */".format(target),
                     "        BytecodeVM::Error {}(BytecodeVM::NativeCall &call) {{".format(stub),
-                    "            return invokeFloatUnary(call, static_cast<float (*)(float)>({}));".format(target),
+                    "            return {}(call, static_cast<float (*)({})>({}));".format(helper, signature, target),
                     "        }", "",
                 ])
                 continue
