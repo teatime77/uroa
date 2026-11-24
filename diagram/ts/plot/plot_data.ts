@@ -3,15 +3,27 @@ import type { DataType, StructValue } from "../data_type";
 
 /** 1本の折れ線に対応する名前・入力値内の参照経路・表示色。 */
 export interface PlotSeries {
+    /**
+     * パネルまたは系列の表示名。
+     */
     readonly name: string;
     /** 入力値から数値へたどるフィールド名の列。数値入力では空になる。 */
     readonly path: readonly string[];
+    /**
+     * 系列へ割り当てた表示色。
+     */
     readonly color: string;
 }
 
 /** 同じパネルと縦軸を共有する系列のまとまり。 */
 export interface PlotGroup {
+    /**
+     * パネルまたは系列の表示名。
+     */
     readonly name: string;
+    /**
+     * 同じパネルと縦軸へ表示する系列の一覧。
+     */
     readonly series: readonly PlotSeries[];
 }
 
@@ -25,13 +37,25 @@ export interface PlotSample {
 
 /** 系列の平均と母標準偏差。 */
 export interface PlotStatistics {
+    /**
+     * 対象系列の数値の平均。
+     */
     readonly mean: number;
+    /**
+     * 対象系列の母標準偏差。
+     */
     readonly sigma: number;
 }
 
 /** 縦軸の表示範囲と目盛り間隔。 */
 export interface PlotScale {
+    /**
+     * 縦軸の表示下限と上限。
+     */
     readonly range: [number, number];
+    /**
+     * 縦軸の目盛り間隔。
+     */
     readonly dtick: number;
 }
 
@@ -140,6 +164,9 @@ export class PlotHistory {
     readonly groups: readonly PlotGroup[];
     /** 全パネルの系列を表示順に並べた一覧。 */
     readonly series: readonly PlotSeries[];
+    /**
+     * 現在の時間窓に保持している時刻・全系列値の履歴。
+     */
     readonly samples: PlotSample[] = [];
     /** 最上位の数値型timeを横軸に使うかどうか。 */
     private readonly hasInputTime: boolean;
@@ -154,7 +181,7 @@ export class PlotHistory {
      * @param windowSeconds 最新サンプルを基準にした履歴の保持秒数。
      * @param maximumSamples 保持するサンプルの最大件数。
      */
-    constructor(readonly type: DataType, readonly windowSeconds = 30, readonly maximumSamples = 6000) {
+    constructor(/** 入力値を検証し、系列を構成するためのDataType。 */ readonly type: DataType, /** 表示履歴として保持する時間幅（秒）。 */ readonly windowSeconds = 30, /** 時間窓内でも保持するサンプル件数の上限。 */ readonly maximumSamples = 6000) {
         this.groups = getPlotGroups(type);
         this.series = this.groups.flatMap(group => [...group.series]);
         this.hasInputTime = type.struct?.members.some(field => field.name === "time" &&

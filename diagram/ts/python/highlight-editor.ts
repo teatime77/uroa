@@ -6,17 +6,44 @@
  */
 import type { PythonEditorDiagnostic } from "./editor-diagnostics";
 
+/**
+ * 実行の意味解析とは独立した、表示用の構文色の分類。
+ */
 type HighlightKind = "plain" | "keyword" | "builtin" | "number" | "string" | "comment" | "bracket" | "operator";
 
+/**
+ * 描画する原文断片と色分類。
+ */
 interface HighlightToken {
+    /**
+     * 文字色を選ぶためのトークンの分類。
+     */
     kind: HighlightKind;
+    /**
+     * 部品に表示する文字列。
+     */
     text: string;
 }
 
+/**
+ * 診断の波線とツールチップ判定に使う表示矩形。
+ */
 interface DiagnosticBox {
+    /**
+     * 診断の波線とマウス当たり判定に使う横座標。
+     */
     x: number;
+    /**
+     * 診断の波線とマウス当たり判定に使う縦座標。
+     */
     y: number;
+    /**
+     * 診断が占める描画範囲の幅（pixel）。
+     */
     width: number;
+    /**
+     * この表示矩形に対応する元ソースの診断。
+     */
     diagnostic: PythonEditorDiagnostic;
 }
 
@@ -32,13 +59,31 @@ const colors: Record<HighlightKind, string> = {
     operator: "#d4d4d4"
 };
 
+/**
+ * 表示上でPython予約語として色分けする名前の集合。
+ */
 const keywords = new Set(("False None True and as assert async await break class continue def del elif else "
     + "except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield").split(" "));
+/**
+ * 表示上で組込み名として色分けする名前の集合。実行対応範囲とは別に扱う。
+ */
 const builtins = new Set(("abs all any bool dict enumerate float int len list max min print range round set "
     + "str sum tuple type zip").split(" "));
+/**
+ * textareaとハイライト描画で合わせる等幅フォント。
+ */
 const font = "16px Consolas, 'Courier New', monospace";
+/**
+ * エディタの一行の表示高さ（pixel）。
+ */
 const lineHeight = 24;
+/**
+ * エディタの文字列描画の内側余白（pixel）。
+ */
 const padding = 12;
+/**
+ * 表示上でタブを展開する桁数。
+ */
 const tabSize = 4;
 
 /**
@@ -100,33 +145,105 @@ function highlightTokens(source: string): HighlightToken[] {
 
 /** 入力・スクロール・サイズ変更を1フレームにまとめ、CSS座標で描画して高DPIにも対応する。 */
 export class PythonHighlightEditor {
+    /**
+     * エディタの関連DOMを識別するための連番。
+     */
     private static nextId = 0;
+    /**
+     * 編集欄・描画層・診断説明をまとめる所有DOM。
+     */
     readonly element = document.createElement("div");
+    /**
+     * textareaと描画層を重ねるスクロール表示領域。
+     */
     private readonly viewport = document.createElement("div");
+    /**
+     * キャレット位置の診断説明またはチェック概要を表示する欄。
+     */
     private readonly description = document.createElement("div");
+    /**
+     * マウス位置にある診断の説明を表示する欄。
+     */
     private readonly tooltip = document.createElement("div");
+    /**
+     * 行ブレークポイントと現在の実行行を描く背景層。
+     */
     private readonly breakpointCanvas = document.createElement("canvas");
+    /**
+     * ソースの構文色分けと診断の波線を描く前面層。
+     */
     private readonly canvas = document.createElement("canvas");
+    /**
+     * 部品と子要素の描画に使う2Dコンテキスト。
+     */
     private readonly ctx: CanvasRenderingContext2D;
+    /**
+     * 停止点と実行行の背景層を描く2Dコンテキスト。
+     */
     private readonly breakpointContext: CanvasRenderingContext2D;
+    /**
+     * エディタ領域のサイズ変更を監視する所有ResizeObserver。
+     */
     private readonly observer: ResizeObserver;
+    /**
+     * この部品で登録したDOMイベントをまとめて解除するための取消元。
+     */
     private readonly events = new AbortController();
+    /**
+     * ハイライト再描画のrequestAnimationFrame予約ID。
+     */
     private frame?: number;
+    /**
+     * 解析・表示・位置照合に使用する元のPythonソース文字列。
+     */
     private source?: string;
+    /**
+     * 最後に色分けしたソースの表示用トークン列。
+     */
     private tokens: HighlightToken[] = [];
+    /**
+     * 最後にレイアウトしたソースを改行で分割した行列。
+     */
     private lines: string[] = [];
+    /**
+     * 行と診断を対応付ける、各行先頭のUTF-16位置。
+     */
     private lineStarts: number[] = [];
+    /**
+     * 行ブレークポイントとして選択したソース行番号の集合。
+     */
     private readonly breakpointLines = new Set<number>();
+    /**
+     * 現在の停止PCから解決した実行行。停止情報の失効時は消去する。
+     */
     private executionLine?: number;
+    /**
+     * 行ブレークポイントを設定した時点のソース。変更時は全解除する。
+     */
     private breakpointSource: string;
+    /**
+     * IME入力の変換中か。変換中の描画・キー操作を区別する。
+     */
     private composing = false;
+    /**
+     * 現在のソースに対応する編集用の診断範囲。
+     */
     private diagnostics: readonly PythonEditorDiagnostic[] = [];
+    /**
+     * 診断を計算した時点のソース。現在値と異なる診断は表示しない。
+     */
     private diagnosticSource?: string;
+    /**
+     * 描画時に計算した診断の矩形と元診断の対応。
+     */
     private diagnosticBoxes: DiagnosticBox[] = [];
+    /**
+     * 未チェック・チェック済み・失敗等を表示する概要メッセージ。
+     */
     private summary = "未チェックです。「チェック」またはStartで確認してください。";
 
     /** textareaの入力機能を維持し、Canvasは選択・クリック・読み上げの対象にしない。 */
-    constructor(private readonly textarea: HTMLTextAreaElement) {
+    constructor(/** ソース・キャレット・選択・IME・スクロールの正本となる編集DOM。 */ private readonly textarea: HTMLTextAreaElement) {
         this.ctx = this.canvas.getContext("2d")!;
         this.breakpointContext = this.breakpointCanvas.getContext("2d")!;
         this.breakpointSource = textarea.value;
@@ -298,6 +415,9 @@ export class PythonHighlightEditor {
         this.refresh();
     }
 
+    /**
+     * 診断のソース位置から行・列を求め、説明を表示用の文字列へまとめる。
+     */
     private diagnosticMessage(diagnostic: PythonEditorDiagnostic): string {
         const before = this.textarea.value.slice(0, diagnostic.start);
         const row = before.split("\n").length;
@@ -458,6 +578,11 @@ export class PythonHighlightEditor {
         return left;
     }
 
+    /**
+     * タブを指定した桁幅へ展開し、描画文字列の横幅を計測する。
+     *
+     * @param text 処理する文字列。
+     */
     private textWidth(text: string, tabWidth: number): number {
         let x = 0;
         for (const [index, part] of text.split("\t").entries()) {

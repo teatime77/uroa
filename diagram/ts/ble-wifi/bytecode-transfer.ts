@@ -1,7 +1,162 @@
 /**
- * Python一括転送version=2の中心契約。バイナリ版1/2/3はpython/bytecode.tsを参照する。
+ * Python一括転送version=2の中心契約。バイナリversion=3だけを扱う。形式はpython/bytecode.tsを参照する。
  * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
  * python-block.tsが同一生成のコードとPC一覧、ESP32のbytecode_receiver.cppが検証、main.cppが開始を担当する。
+ */
+import {
+    bytecodeFunctionRecordLength, bytecodeHeaderLength, bytecodeMaxLength,
+    bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion
+} from "../python/bytecode.js";
+
+/** 一括転送の上限。BLEの実サイズはResultから決定する。 */
+export const bytecodeTransfer = {
+    version: 2, maxLength: bytecodeMaxLength, packetLength: 1024, headerLength: 10,
+    resultLength: 20, timeoutMs: 2500, begin: 1, data: 2, commit: 3, abort: 4,
+    receiving: 1, ready: 2, started: 4,
+} as const;
+
+/** 配送経路。packetLengthは現在の接続で利用できる上限。 */
+export interface BytecodeChannel {
+    /**
+     * 現在の接続で一回に書き込める最大バイト数。
+     */
+    readonly packetLength: number;
+    /**
+     * 通常指令または転送フレームを、現在の通信経路へ書き込む。
+     *
+     * @param value 検証または反映する値。
+     */
+    write(value: Uint8Array): Promise<void>;
+    /**
+     * 専用の受付結果を読み取る。書込みの成功とは別に照合する。
+     */
+    readResult(): Promise<DataView>;
+}
+
+/** コードの保持結果。revisionはデバッグ監視の対象世代。 */
+export interface BytecodeReceipt {
+    /**
+     * 保持コードまたは停止データ全体のバイト数。
+     */
+    byteLength: number;
+    /**
+     * 対応するコードまたは停止データ全体のCRC-32。
+     */
+    crc32: number;
+    /**
+     * ESP32が確定したプログラムを識別する世代番号。
+     */
+    revision?: number;
+}
+
+/** 同一生成のPC一覧と検証後の開始要求。省略時は保持だけを行う。 */
+export interface BytecodeDeployment {
+    /**
+     * 同一生成のコードに対応する行ブレークポイントの命令PC列。
+     */
+    breakpoints: readonly number[];
+    /**
+     * 同一生成の文開始・関数入口・暗黙returnに対応するステップ停止PC列。
+     */
+    stepPcs: readonly number[];
+    /**
+     * 全体検証と停止点設定の成功後にVMを開始する要求。
+     */
+    start: boolean;
+}
+
+/** 書込みAPI完了量。completeは最終結果確認済み、速度はB/s。 */
+export interface BytecodeProgress {
+    /**
+     * ヘッダー・PC一覧を除いた元のバイトコード全体のバイト数。
+     */
+    readonly totalBytes: number;
+    /**
+     * 書込みAPIが完了したコード部分のバイト数。機器側の検証済み量とは区別する。
+     */
+    readonly sentBytes: number;
+    /**
+     * 転送開始から現在までのコード送信量を時間で割った速度（B/s）。
+     */
+    readonly bytesPerSecond: number;
+    /**
+     * 接続または転送の進行段階。
+     */
+    readonly phase: "sending" | "validating" | "complete";
+}
+
+/** CRC-32/ISO-HDLC。初期値と最終XORは0xFFFFFFFF。
+ *
+ * @remarks
+ * CRCはヘッダー・関数表・命令列・文字列表・UTF-8データを含む全体のCRC-32/ISO-HDLC（反転多項式0xEDB88320、初期値・最終XOR=0xFFFFFFFF）。
+ */
+export function bytecodeCrc32(bytes: Uint8Array): number {
+    let crc = 0xFFFFFFFF;
+    for (const value of bytes) {
+        crc ^= value;
+        for (let bit = 0; bit < 8; bit++) {
+            crc = (crc >>> 1) ^ ((crc & 1) === 0 ? 0 : 0xEDB88320);
+        }
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+/** 転送上限・version=3ヘッダー・文字列領域を検査する。全命令の検証は受信側で行う。 */
+export function checkBytecodeTransfer(bytes: Uint8Array): void {
+    if (bytes.byteLength < bytecodeHeaderLength || bytes.byteLength > bytecodeTransfer.maxLength) {
+        throw new RangeError(`バイトコード全体は${bytecodeHeaderLength}〜${bytecodeTransfer.maxLength}バイトにしてください。`);
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint16(2, true) !== bytecodeVersion) {
+        throw new Error("バイトコードはversion=3だけに対応しています。");
+    }
+    const headerLength = bytecodeHeaderLength;
+    const functionRecordLength = bytecodeFunctionRecordLength;
+    const codeLength = view.getUint32(8, true);
+    const stringCount = view.getUint16(16, true);
+    const dataLength = view.getUint32(20, true);
+    const functionCount = view.getUint16(6, true);
+    const codeOffset = headerLength + functionCount * functionRecordLength;
+    const tableOffset = codeOffset + codeLength;
+    const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
+    if (view.getUint16(0, true) !== bytecodeSignature
+        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 2
+        || view.getUint16(18, true) !== 2
+        || codeLength < 1 || codeLength > 65536
+        || bytes.byteLength !== dataOffset + dataLength) {
+        throw new Error("バイトコードのヘッダーまたは長さが不正です。");
+    }
+    for (let index = 0; index < functionCount; index++) {
+        const recordOffset = headerLength + index * functionRecordLength;
+        if (view.getUint16(recordOffset + 8, true) === 0 || view.getUint16(recordOffset + 10, true) !== 0) {
+            throw new Error("バイトコードの関数表の戻り値スロット数または予約領域が不正です。");
+        }
+    }
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let expectedOffset = 0;
+    for (let id = 0; id < stringCount; id++) {
+        const recordOffset = tableOffset + id * bytecodeStringRecordLength;
+        const offset = view.getUint32(recordOffset, true);
+        const length = view.getUint32(recordOffset + 4, true);
+        if (offset !== expectedOffset || offset > dataLength || length > dataLength - offset) {
+            throw new Error("バイトコードの文字列表の範囲または連続性が不正です。");
+        }
+        try {
+            decoder.decode(bytes.subarray(dataOffset + offset, dataOffset + offset + length));
+        }
+        catch {
+            throw new Error("バイトコードの文字列データがUTF-8として不正です。");
+        }
+        expectedOffset += length;
+    }
+    if (expectedOffset !== dataLength) {
+        throw new Error("バイトコードの文字列データ長が文字列表と一致しません。");
+    }
+}
+
+/**
+ * この関数の契約に従いコード→PC一覧を連続送信し、COMMIT後だけResultを読む。
+ *
  * 全整数little endian。専用Bytecode/Result UUIDは維持し、旧転送version=1は非対応。
  * 共通10バイト: version:u8@0=2、op:u8@1（1 BEGIN/2 DATA/3 COMMIT/4 ABORT）、
  * transferId:u16@2（接続内非0・再利用禁止）、sequence:u16@4（BEGIN=1、以後+1）、position:u32@6。
@@ -33,123 +188,6 @@
  * PC・ヘッダーの量を除き時間には全送信・最終Read・キュー待ちを含む。250ms間隔、開始・検証待ち・完了は即時通知。
  * 完了速度は固定。切断・失敗・次回転送・切替で初期化し、保存・コピーしない。模擬テストは従来の指定で実行しない。
  */
-import {
-    bytecodeApiFunctionRecordLength, bytecodeApiHeaderLength, bytecodeApiVersion,
-    bytecodeFunctionRecordLength, bytecodeHeaderLength, bytecodeMaxLength,
-    bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion
-} from "../python/bytecode.js";
-
-/** 一括転送の上限。BLEの実サイズはResultから決定する。 */
-export const bytecodeTransfer = {
-    version: 2, maxLength: bytecodeMaxLength, packetLength: 1024, headerLength: 10,
-    resultLength: 20, timeoutMs: 2500, begin: 1, data: 2, commit: 3, abort: 4,
-    receiving: 1, ready: 2, started: 4,
-} as const;
-
-/** 配送経路。packetLengthは現在の接続で利用できる上限。 */
-export interface BytecodeChannel {
-    readonly packetLength: number;
-    write(value: Uint8Array): Promise<void>;
-    readResult(): Promise<DataView>;
-}
-
-/** コードの保持結果。revisionはデバッグ監視の対象世代。 */
-export interface BytecodeReceipt {
-    byteLength: number;
-    crc32: number;
-    revision?: number;
-}
-
-/** 同一生成のPC一覧と検証後の開始要求。省略時は保持だけを行う。 */
-export interface BytecodeDeployment {
-    breakpoints: readonly number[];
-    stepPcs: readonly number[];
-    start: boolean;
-}
-
-/** 書込みAPI完了量。completeは最終結果確認済み、速度はB/s。 */
-export interface BytecodeProgress {
-    readonly totalBytes: number;
-    readonly sentBytes: number;
-    readonly bytesPerSecond: number;
-    readonly phase: "sending" | "validating" | "complete";
-}
-
-/** CRC-32/ISO-HDLC。初期値と最終XORは0xFFFFFFFF。
- *
- * @remarks
- * CRCはヘッダー・関数表・命令列・文字列表・UTF-8データを含む全体のCRC-32/ISO-HDLC（反転多項式0xEDB88320、初期値・最終XOR=0xFFFFFFFF）。
- */
-export function bytecodeCrc32(bytes: Uint8Array): number {
-    let crc = 0xFFFFFFFF;
-    for (const value of bytes) {
-        crc ^= value;
-        for (let bit = 0; bit < 8; bit++) {
-            crc = (crc >>> 1) ^ ((crc & 1) === 0 ? 0 : 0xEDB88320);
-        }
-    }
-    return (crc ^ 0xFFFFFFFF) >>> 0;
-}
-
-/** 転送上限・版別ヘッダー・文字列領域を検査する。全命令の検証は受信側で行う。 */
-export function checkBytecodeTransfer(bytes: Uint8Array): void {
-    const legacyHeaderLength = 16;
-    if (bytes.byteLength < legacyHeaderLength || bytes.byteLength > bytecodeTransfer.maxLength) {
-        throw new RangeError(`バイトコード全体は${legacyHeaderLength}〜${bytecodeTransfer.maxLength}バイトにしてください。`);
-    }
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const version = view.getUint16(2, true);
-    const apiFormat = version === bytecodeApiVersion;
-    const headerLength = version === 1 ? legacyHeaderLength : apiFormat ? bytecodeApiHeaderLength : bytecodeHeaderLength;
-    const functionRecordLength = apiFormat ? bytecodeApiFunctionRecordLength : bytecodeFunctionRecordLength;
-    if ((version !== 1 && version !== bytecodeVersion && !apiFormat) || bytes.byteLength < headerLength) {
-        throw new Error("バイトコードのversionまたはヘッダー長が不正です。");
-    }
-    const codeLength = view.getUint32(8, true);
-    const stringCount = version === 1 ? 0 : view.getUint16(16, true);
-    const dataLength = version === 1 ? 0 : view.getUint32(20, true);
-    const functionCount = view.getUint16(6, true);
-    const codeOffset = headerLength + functionCount * functionRecordLength;
-    const tableOffset = codeOffset + codeLength;
-    const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
-    if (view.getUint16(0, true) !== bytecodeSignature
-        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== (apiFormat ? 2 : 0)
-        || (version !== 1 && view.getUint16(18, true) !== (apiFormat ? 2 : 0))
-        || codeLength < 1 || codeLength > 65536
-        || bytes.byteLength !== dataOffset + dataLength) {
-        throw new Error("バイトコードのヘッダーまたは長さが不正です。");
-    }
-    if (apiFormat) {
-        for (let index = 0; index < functionCount; index++) {
-            const recordOffset = headerLength + index * functionRecordLength;
-            if (view.getUint16(recordOffset + 8, true) === 0 || view.getUint16(recordOffset + 10, true) !== 0) {
-                throw new Error("バイトコードの関数表の戻り値スロット数または予約領域が不正です。");
-            }
-        }
-    }
-    const decoder = new TextDecoder("utf-8", { fatal: true });
-    let expectedOffset = 0;
-    for (let id = 0; id < stringCount; id++) {
-        const recordOffset = tableOffset + id * bytecodeStringRecordLength;
-        const offset = view.getUint32(recordOffset, true);
-        const length = view.getUint32(recordOffset + 4, true);
-        if (offset !== expectedOffset || offset > dataLength || length > dataLength - offset) {
-            throw new Error("バイトコードの文字列表の範囲または連続性が不正です。");
-        }
-        try {
-            decoder.decode(bytes.subarray(dataOffset + offset, dataOffset + offset + length));
-        }
-        catch {
-            throw new Error("バイトコードの文字列データがUTF-8として不正です。");
-        }
-        expectedOffset += length;
-    }
-    if (expectedOffset !== dataLength) {
-        throw new Error("バイトコードの文字列データ長が文字列表と一致しません。");
-    }
-}
-
-/** 先頭の契約に従いコード→PC一覧を連続送信し、COMMIT後だけResultを読む。 */
 export async function uploadBytecode(
     input: Uint8Array, transferId: number, channel: BytecodeChannel,
     run: <T>(operation: () => Promise<T>) => Promise<T>, check: () => void,

@@ -1,5 +1,16 @@
+/**
+ * 固定したJPEG画像の説明・物体検出の要求と、返却文字列・矩形の検証を行う。共通のREST通信はai-client.tsを使用する。
+ */
 import { AIRequestError, requestAIInteraction } from "./ai-client";
 
+/**
+ * JPEGを説明する要求を送り、空でなく上限内の日本語説明文字列を返す。
+ *
+ * @param apiKey 要求中だけ使用するAPIキー。
+ * @param model 利用するモデル名。
+ * @param jpeg Base64化したJPEG画像データ。
+ * @param signal 処理を取り消すシグナル。
+ */
 export async function captionGeminiImage(apiKey: string, model: string, jpeg: string, signal: AbortSignal): Promise<string> {
     const answer = await requestAIInteraction(apiKey, {
         model, store: false,
@@ -15,13 +26,36 @@ export async function captionGeminiImage(apiKey: string, model: string, jpeg: st
 
 /** Boxes use normalized coordinates (0..1) in the uploaded snapshot. No confidence is fabricated. */
 export interface DetectedObject {
+    /**
+     * 検出した物体の短い日本語名。
+     */
     readonly label: string;
+    /**
+     * 画像幅に対する物体矩形の左端比率（0〜1）。
+     */
     readonly x: number;
+    /**
+     * 画像高に対する物体矩形の上端比率（0〜1）。
+     */
     readonly y: number;
+    /**
+     * 画像幅に対する物体矩形の幅の比率。
+     */
     readonly width: number;
+    /**
+     * 画像高に対する物体矩形の高さの比率。
+     */
     readonly height: number;
 }
 
+/**
+ * 最大20物体の検出を要求し、ラベルと矩形を検証して0〜1の座標へ変換する。
+ *
+ * @param apiKey 要求中だけ使用するAPIキー。
+ * @param model 利用するモデル名。
+ * @param jpeg Base64化したJPEG画像データ。
+ * @param signal 処理を取り消すシグナル。
+ */
 export async function detectGeminiObjects(apiKey: string, model: string, jpeg: string, signal: AbortSignal): Promise<readonly DetectedObject[]> {
     const answer = await requestAIInteraction(apiKey, {
         model, store: false,

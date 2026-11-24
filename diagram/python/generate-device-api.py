@@ -1,44 +1,16 @@
 #!/usr/bin/env python3
 """device.pyiを静的に解析し、コンパイラー用JSONとESP32のC++スタブを生成する。
 
-仕様の正本はこのコメントと各処理のdocstring。Python 3.8以降の標準ライブラリー
-だけを使い、入力のimport・exec・evalは行わない。既定の入力は同じディレクトリーの
-device.pyi、出力はuroa/public/diagram/device/device-api.json。既定パスは実行時の
-作業ディレクトリーに依存しない。--input/--outputの相対パスは作業ディレクトリー基準。
+仕様の正本はこのモジュールと各処理のdocstringとする。Python 3.8以降の
+標準ライブラリーだけを使い、入力のimport・exec・evalは行わない。
 JSONとC++は同じ解析結果・ABI指紋から生成する。C++変換はdevice_api_cpp.py、
 機器操作はESP32のdevice_native.h/.cppが担当する。標準数学関数の直接接続と
 同型スタブの共通変換・命名はdevice_api_cpp.pyを参照する。TypeScriptは生成しない。
 
-入力はクラス、型注釈付きフィールド、位置引数の関数・メソッドに限定する。
-各スコープの先頭docstringは無視し、関数本体は...だけを許す。継承、デコレーター、
-既定引数、位置専用・キーワード専用・可変長引数、型パラメーター、任意の実行文、
-文字列の型注釈は拒否する。メソッドの先頭は注釈なしのselfを必須とする。
-型はint/float/str/Noneと、入力内のクラス名。Noneは戻り値だけに許可する。
-strはDisplay.printとモジュール関数printのtext引数だけに許可し、両APIは
-(text: str) -> Noneに限定する。Vec3/IMUValueだけが公開フィールドを持てる。
-
-JSONのschemaVersion/callingConventionVersionは2、stringPolicyVersionは1。
-classes/functionsと、各クラスのconstructor/methods/fieldsを出力する。
-classId相当のidはクラス宣言順、functionId相当のidは関数宣言順で1から。
-methodId相当のidはクラスごとに__init__=0、通常メソッドを宣言順で1から。
-fieldId相当のidはクラスごとのフィールド宣言順で1から。すべてuint16範囲。
-全コンストラクター・メソッド・関数には、ファイル内の宣言順で共通のnativeIdを1から
-付ける。CALL_NATIVEはこの単一IDを使用し、idは名前解決用の従来の名前空間に残す。
-呼出し規約version=2ではrecordを宣言順の末端フィールドの連続スロットへ展開し、
-代入・引数・戻り値で値をコピーする。deviceは1スロットのハンドルとして扱う。
-constructorが未宣言ならnullとし、暗黙に作らない。selfはparametersに含めない。
-コンストラクターのreturnTypeは宣言のnone、resultTypeは生成されるobject型。
-フィールドはreadable/writableともtrue。型は{"kind": "int"}等の形式とし、
-クラス型だけは{"kind": "object", "classId": id}とする。
-
-abiHashは、abiHash自身を除いたJSON全体をsort_keys=True、ensure_ascii=False、
-separators=(",", ":")で正規化したUTF-8のSHA-256（小文字16進64桁）。
-通常の出力は4スペース整形・末尾LF付き。位置・パス・日時・docstringは含めない。
-宣言順やシグネチャの変更で指紋が変わる。意味・呼出し規約の変更時は対応する版を
-更新する。C++生成もこのJSONと同じID・型・指紋を使用する。
-
-解析・検証・シリアライズの成功後にだけ出力を一時ファイル経由で置換する。
---checkは出力を変更せず、生成予定のバイト列と一致すれば0、不一致・欠落・エラーは1。
+InterfaceErrorは入力の制約違反、InterfaceParserは静的解析とAPI定義の構築、
+write_outputは成果物の書込み、mainはCLIでの生成・照合を担当する。
+入力の対応範囲とJSON形式はInterfaceParserの各メソッド、実行オプションと
+既定パスはmain、出力の置換手順はwrite_outputのdocstringを参照する。
 """
 
 import argparse
@@ -68,21 +40,54 @@ class InterfaceError(Exception):
 
 
 class InterfaceParser:
-    """名前を先に登録し、前方参照を解決してから宣言順のJSONを構築する。"""
+    """入力の宣言を静的に解析し、宣言順のAPI定義を構築する。
+
+    parseでクラス名を先に登録し、前方参照を解決してから各宣言を検証する。
+    入力のASTは実行せず、入力ファイルごとに新しいインスタンスを作成して使う。
+    型はread_type、呼出し定義はread_callable、クラスはread_classが担当する。
+
+    Attributes:
+        path: 入力する.pyiファイルのパス。診断にも使用する。
+        class_ids: 入力内のクラス名と、宣言順に採番したIDの対応。
+        native_count: 全呼出し定義で共有する、最後に割り当てたnativeId。
+    """
 
     def __init__(self, path: Path) -> None:
+        """入力パスと、宣言の採番に使う状態を初期化する。
+
+        Args:
+            path: 解析対象の.pyiファイル。ここでは読込みを行わない。
+        """
         self.path = path
         self.class_ids: Dict[str, int] = {}
         self.native_count = 0
 
     def fail(self, node: ast.AST, message: str) -> NoReturn:
-        """対象ファイルと1始まりの行・列を付けて生成を中止する。"""
+        """対象ファイルと1始まりの行・列を付けて解析を中止する。
+
+        Args:
+            node: 診断対象のASTノード。位置属性がなければ1行1列とする。
+            message: 制約違反の説明。
+
+        Raises:
+            InterfaceError: ファイル・行・列と説明を含む入力エラー。
+        """
         line = getattr(node, "lineno", 1)
         column = getattr(node, "col_offset", 0) + 1
         raise InterfaceError("{}:{}:{}: {}".format(self.path, line, column, message))
 
     def body(self, nodes: List[ast.stmt]) -> List[ast.stmt]:
-        """先頭の説明用docstringだけを除外する。"""
+        """文列の先頭にある説明用docstringだけを除外する。
+
+        モジュール・クラス・関数の各スコープで共通に使う。先頭以外の文字列は
+        取り除かず、呼出し元が未対応の文として検証できるようにする。
+
+        Args:
+            nodes: スコープ内の文列。元のリストとASTは変更しない。
+
+        Returns:
+            先頭が文字列式なら、それを除く新しいリスト。それ以外は元のリスト。
+        """
         if nodes and isinstance(nodes[0], ast.Expr):
             value = nodes[0].value
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
@@ -90,20 +95,60 @@ class InterfaceParser:
         return nodes
 
     def register(self, names: Set[str], name: str, node: ast.AST) -> None:
-        """同一スコープでの重複名を拒否する。"""
+        """同一スコープでの重複を検査し、名前を登録する。
+
+        Args:
+            names: 既に登録した名前の集合。成功時にnameを追加する。
+            name: 登録する名前。
+            node: 名前が重複する場合の診断対象。
+
+        Raises:
+            InterfaceError: 同じスコープに同名の宣言がある場合。
+        """
         if name in names:
             self.fail(node, "名前が重複しています: " + name)
         names.add(name)
 
     def check_id(self, value: int, node: ast.AST) -> int:
-        """連番の上限を検査し、範囲外を切り詰めない。"""
+        """採番したIDがuint16の上限を超えていないことを確認する。
+
+        通常のIDは1から、コンストラクターのクラス内IDは0として呼び出す。
+        下限の判定は行わず、上限を超える値は切り詰めずに拒否する。
+
+        Args:
+            value: 呼出し元が採番したID。
+            node: 上限を超えた場合の診断対象。
+
+        Returns:
+            上限65535以下であることを確認した元の値。
+
+        Raises:
+            InterfaceError: IDが65535を超える場合。
+        """
         if value > MAX_ID:
             self.fail(node, "IDがuint16の上限65535を超えています")
         return value
 
     def read_type(self, node: Optional[ast.AST], owner: ast.AST,
                   allow_none: bool = False) -> Dict[str, Any]:
-        """型注釈を実行せず、組込み型名か登録済みクラスIDへ解決する。"""
+        """型注釈を実行せず、組込み型名か登録済みクラスIDへ解決する。
+
+        int・float・strと入力内のクラス名を受理し、Noneは戻り値だけに許す。
+        文字列による型注釈や、それ以外の型の式は拒否する。strの使用位置は
+        read_callableとread_classで追加検証する。
+
+        Args:
+            node: 型注釈のASTノード。省略された注釈はNone。
+            owner: 注釈がない場合に診断対象とする宣言ノード。
+            allow_none: None型を受理するか。戻り値の検証時だけTrueにする。
+
+        Returns:
+            組込み型は{"kind": "int"}等、クラス型は
+            {"kind": "object", "classId": id}の形式の辞書。
+
+        Raises:
+            InterfaceError: 型注釈がない、または対応範囲外の場合。
+        """
         if node is None:
             self.fail(owner, "型注釈が必要です")
         if isinstance(node, ast.Constant) and node.value is None and allow_none:
@@ -117,7 +162,33 @@ class InterfaceParser:
 
     def read_callable(self, node: ast.FunctionDef, api_id: int,
                       class_name: Optional[str] = None) -> Dict[str, Any]:
-        """selfを除いた明示引数と戻り値を検証して呼出し情報を作る。"""
+        """明示引数と戻り値を検証し、呼出し定義とnativeIdを構築する。
+
+        先頭docstringを除いた関数本体は...だけを許す。デコレーター、型パラメーター、
+        既定引数、位置専用・キーワード専用・可変長引数、実行文は拒否する。
+        メソッドの先頭には注釈なしのselfを要求し、parametersには含めない。
+        strはDisplay.printとモジュール関数printのtext引数だけに許し、
+        両APIは(text: str) -> Noneに限定する。strの戻り値は許可しない。
+
+        全コンストラクター・メソッド・関数に、入力ファイル内の宣言順で共通の
+        nativeIdを1から付ける。CALL_NATIVEはこの単一IDを使用し、idは
+        名前解決用のクラス内またはモジュール内の名前空間に残す。
+        コンストラクターのreturnTypeは宣言のnone、resultTypeは生成する
+        object型とする。native_countを更新する。
+
+        Args:
+            node: 検証する関数またはメソッドの宣言。
+            api_id: 名前解決用のID。コンストラクターは0、それ以外は1から。
+            class_name: 所属クラス名。モジュール関数の場合はNone。
+
+        Returns:
+            id・nativeId・name・parameters・returnTypeを持つ辞書。
+            コンストラクターにはresultTypeも含める。
+
+        Raises:
+            InterfaceError: 宣言・引数・型・本体が制約に違反する場合、
+                またはIDがuint16の上限を超える場合。
+        """
         qualified_name = node.name if class_name is None else class_name + "." + node.name
         if node.decorator_list or getattr(node, "type_params", []):
             self.fail(node, qualified_name + ": デコレーター・型パラメーターは未対応です")
@@ -170,7 +241,28 @@ class InterfaceParser:
         return result
 
     def read_class(self, node: ast.ClassDef) -> Dict[str, Any]:
-        """recordの公開フィールドと、クラスごとのメソッドIDを構築する。"""
+        """クラスの公開フィールド・コンストラクター・メソッドを構築する。
+
+        継承、クラス引数、デコレーター、型パラメーター、任意の実行文は拒否する。
+        先頭docstringを除き、メソッドと型注釈付きフィールドだけを受理する。
+        Vec3/IMUValueをrecord、それ以外をdeviceとし、公開フィールドは
+        recordだけに許す。フィールドは初期値のない単一名の宣言に限定し、
+        readable/writableをともにTrueにする。strのフィールドは拒否する。
+
+        メソッドとフィールドの名前は同じクラス内で一意とする。クラスごとの
+        methodId相当のidは__init__が0、通常メソッドが宣言順で1からとなる。
+        fieldId相当のidもクラスごとの宣言順で1から付ける。
+        constructorが未宣言ならNoneとし、JSONではnullとして出力する。
+
+        Args:
+            node: クラスIDを登録済みのクラス宣言。
+
+        Returns:
+            id・name・kind・constructor・methods・fieldsを持つ辞書。
+
+        Raises:
+            InterfaceError: クラス・メンバーの宣言が制約に違反する場合。
+        """
         if (node.bases or node.keywords or node.decorator_list
                 or getattr(node, "type_params", [])):
             self.fail(node, node.name + ": 継承・クラス引数・デコレーター・型パラメーターは未対応です")
@@ -213,7 +305,36 @@ class InterfaceParser:
         return result
 
     def parse(self) -> Dict[str, Any]:
-        """入力全体を検証してJSON本体と、その本体のABI指紋を作る。"""
+        """入力全体を検証してAPI定義と、その定義のABI指紋を作る。
+
+        UTF-8の入力を読み、先頭BOMがあれば除去してASTへ変換する。
+        モジュール直下は先頭docstringとクラス・関数の宣言だけを許す。
+        クラス名を先に登録し、前方参照を解決できる状態で各宣言を解析する。
+        classId相当のidはクラス宣言順、functionId相当のidは関数宣言順で
+        それぞれ1から付ける。各IDの上限は65535とする。
+
+        JSONのschemaVersion/callingConventionVersionは2、
+        stringPolicyVersionは1とし、classes/functionsを出力する。
+        呼出し規約version=2ではrecordを宣言順の末端フィールドの連続スロットへ
+        展開し、代入・引数・戻り値で値をコピーする。deviceは1スロットの
+        ハンドルとする。配置とコピーはsemantic.ts・bytecode.ts・VMが担当する。
+
+        abiHashは、指紋自身を除いたJSON全体をsort_keys=True、
+        ensure_ascii=False、separators=(",", ":")で正規化したUTF-8の
+        SHA-256とし、小文字16進64桁で保持する。位置・パス・日時・docstringは
+        出力に含めない。宣言順やシグネチャの変更で指紋が変わる。
+        意味・呼出し規約の変更時は対応する版を更新する。
+        C++生成もこのJSONと同じID・型・指紋を使用する。
+
+        Returns:
+            検証済みのAPI定義とabiHashを含む辞書。
+
+        Raises:
+            InterfaceError: 入力の宣言・名前・型・IDが制約に違反する場合。
+            SyntaxError: 入力をPythonの構文として解析できない場合。
+            OSError: 入力ファイルの読込みに失敗した場合。
+            UnicodeError: 入力をUTF-8として復号できない場合。
+        """
         source = self.path.read_text(encoding="utf-8-sig")
         module = ast.parse(source, filename=str(self.path))
         declarations = self.body(module.body)
@@ -247,7 +368,19 @@ class InterfaceParser:
 
 
 def write_output(path: Path, content: bytes) -> None:
-    """検証済み内容だけを同じディレクトリーの一時ファイルから原子的に置換する。"""
+    """検証済み内容を同じディレクトリーの一時ファイルから原子的に置換する。
+
+    出力先の親ディレクトリーを作成し、全バイトを書き終えてからos.replaceで
+    ファイルを置換する。終了時には残っている一時ファイルを削除する。
+    mainが成果物ごとに呼び出し、ファイル単位で置換する。
+
+    Args:
+        path: 置換する出力先のパス。
+        content: 解析・検証・シリアライズ済みのバイト列。
+
+    Raises:
+        OSError: ディレクトリー作成、書込み、置換、一時ファイル削除の失敗。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = None
     try:
@@ -262,7 +395,29 @@ def write_output(path: Path, content: bytes) -> None:
 
 
 def main() -> int:
-    """CLIで生成または既存成果物との照合を行い、成功時0を返す。"""
+    """CLIの引数に従って成果物を生成または照合し、終了コードを返す。
+
+    --inputは入力.pyi、--outputはJSON、--cpp-headerと--cpp-sourceは
+    C++成果物の出力先を指定する。既定の入力はこのスクリプトと同じ
+    ディレクトリーのdevice.pyi、JSONはuroa/public/diagram/device/
+    device-api.json、C++は隣接するesp32リポジトリーのapp/diagram-control/
+    include/device_api.generated.hとsrc/device_api.generated.cppとする。
+    既定パスは作業ディレクトリーに依存しない。指定した相対パスは作業
+    ディレクトリーを基準とする。
+
+    --json-onlyではJSONだけを対象とする。JSONはensure_ascii=Falseと
+    4スペースで整形し、末尾LF付きのUTF-8にする。解析・検証・全成果物の
+    シリアライズと入出力パスの重複検査に成功してからwrite_outputを呼ぶ。
+    --checkはファイルを書き換えず、生成予定のバイト列と既存成果物を照合する。
+    成功時は対象パスを標準出力へ、失敗時は診断を標準エラー出力へ表示する。
+
+    Returns:
+        生成または照合がすべて成功した場合は0。不一致・欠落、入力の構文・
+        宣言の不正、入出力・文字コード・C++生成等の処理エラーの場合は1。
+
+    Raises:
+        SystemExit: argparseによる--helpの表示時、またはCLI引数が不正な場合。
+    """
     arguments = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     arguments.add_argument("--input", type=Path, default=SCRIPT_DIRECTORY / "device.pyi",
                            help="入力.pyi（既定: このスクリプトと同じディレクトリー）")

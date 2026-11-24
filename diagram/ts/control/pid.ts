@@ -8,12 +8,33 @@ import type { Attr } from "../ui";
 
 /** 保存対象のゲインと、モータごとの停止範囲。速度の単位は%。 */
 interface PIDSettings {
+    /**
+     * 比例制御のゲイン。
+     */
     kp: number;
+    /**
+     * 積分制御のゲイン設定。現在のP制御では演算に使用しない。
+     */
     ki: number;
+    /**
+     * 微分制御のゲイン設定。現在のP制御では演算に使用しない。
+     */
     kd: number;
+    /**
+     * M1出力を停止値へ置き換える帯域の下限。
+     */
     motor1StopMin: number;
+    /**
+     * M1出力を停止値へ置き換える帯域の上限。
+     */
     motor1StopMax: number;
+    /**
+     * M2出力を停止値へ置き換える帯域の下限。
+     */
     motor2StopMin: number;
+    /**
+     * M2出力を停止値へ置き換える帯域の上限。
+     */
     motor2StopMax: number;
 }
 
@@ -28,6 +49,9 @@ const defaultSettings: PIDSettings = {
     motor2StopMax: 0
 };
 
+/**
+ * 設定キーを画面の日本語ラベルへ対応付ける一覧。
+ */
 const settingLabels: Record<keyof PIDSettings, string> = {
     kp: "Kp",
     ki: "Ki（未使用）",
@@ -40,20 +64,65 @@ const settingLabels: Record<keyof PIDSettings, string> = {
 
 /** IMUの加速度Yによる傾きをP制御し、2個のモータへ速度を出力する。 */
 export class PIDBlock extends FunctionBlock {
+    /**
+     * Start時の依存順実行の対象に含める指定。
+     */
     readonly runOnStart = true;
+    /**
+     * ブロックの処理に渡す値の入力ポート。
+     */
     readonly inputPort = new StructPort(this, PortType.inputPort, imuStruct, "imu");
+    /**
+     * 計算したM1の速度指令を渡す数値出力。
+     */
     readonly motor1Port = new NumberPort(this, PortType.outputPort, "M1");
+    /**
+     * 計算したM2の速度指令を渡す数値出力。
+     */
     readonly motor2Port = new NumberPort(this, PortType.outputPort, "M2");
+    /**
+     * ゲインと停止帯域を編集する設定キー別のDOM入力欄。
+     */
     readonly settingInputs = new Map<keyof PIDSettings, HTMLInputElement>();
+    /**
+     * 画面で編集中の制御パラメーター。保存時もこの値を使用する。
+     */
     private settings: PIDSettings = { ...defaultSettings };
+    /**
+     * Start時に取得した垂直基準の傾き。停止・切断時に失効する。
+     */
     private referenceTilt?: number;
+    /**
+     * 現在の実行でセンサー入力を制御出力へ反映している状態。
+     */
     private active = false;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
+    /**
+     * 基準取得・制御中・入力待ち等を表示するメッセージ。
+     */
     private status = "Startで垂直基準を取得";
+    /**
+     * Startから停止までの実行完了を表すPromise。
+     */
     private completion = Promise.resolve();
+    /**
+     * 停止時にcompletionを解決する処理。
+     */
     private finish?: () => void;
+    /**
+     * diagram停止通知の購読を解除する関数。
+     */
     private releaseStop?: () => void;
+    /**
+     * 入力接続の変更通知を解除する関数。
+     */
     private releaseConnection?: () => void;
+    /**
+     * この部品で登録したDOMイベントをまとめて解除するための取消元。
+     */
     private readonly events = new AbortController();
 
     /** 入出力、設定欄、停止・接続変更の購読を作成する。 */

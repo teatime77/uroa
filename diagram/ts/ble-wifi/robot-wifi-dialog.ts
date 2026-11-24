@@ -1,12 +1,33 @@
+/**
+ * 現在のBLE接続先へWi-Fi設定と接続を行うダイアログ。資格情報は一時入力とブラウザー管理の保存候補だけに渡し、図の保存へ含めない。
+ */
 import { BLEWifiSetup, endpoint, rememberWifiSSID, savedWifiSSIDs, savePassword, type RobotEndpoint } from "./robot-wifi";
 
 /** Dialog owns temporary credentials and cancellation; the diagram JSON never owns them. */
 export class RobotWifiDialog {
+    /**
+     * この設定UIが所有するモーダルダイアログのDOM。
+     */
     private dialog = document.createElement("dialog");
+    /**
+     * この通信経路の要求を切断時にまとめて取り消す制御元。
+     */
     private controller = new AbortController();
+    /**
+     * 設定または通信操作を処理中であることを示す状態。
+     */
     private busy = false;
-    constructor(private connect: (target: RobotEndpoint, signal: AbortSignal) => Promise<void>,
-        private closed: () => void, private setup: BLEWifiSetup) {}
+    /**
+     * この型の状態と依存先を初期化する。
+     */
+    constructor(/** 確認した機器情報を使ってWi-Fi制御経路へ接続する処理。 */ private connect: (target: RobotEndpoint, signal: AbortSignal) => Promise<void>,
+        /**
+         * ダイアログ終了を所有元へ通知する処理。
+         */
+        private closed: () => void, /** 現在のBLE接続先へ設定・検索要求を送る窓口。 */ private setup: BLEWifiSetup) {}
+    /**
+     * 現在のBLE機器向けのWi-Fi検索・SSID・パスワード設定と接続UIを表示する。
+     */
     open(): void {
         const dialog = this.dialog, signal = this.controller.signal;
         dialog.setAttribute("aria-label", "ESP32のWi-Fi設定と接続");
@@ -39,7 +60,7 @@ export class RobotWifiDialog {
         noPassword.onchange = passwordChanged; passwordChanged();
         [ssid, wifiUser, password].forEach(element => { element.style.cssText = "display:block;box-sizing:border-box;width:100%;font:inherit;margin:8px 0"; element.spellcheck = false; element.autocapitalize = "none"; });
         ssid.oninput = () => { networks.value = ""; wifiUser.value = `wifi:${ssid.value}`; password.value = ""; };
-        let choices: { ssid: string; open: boolean }[] = [];
+        let choices: { /** アクセスポイントのネットワーク名。 */ ssid: string; /** パスワードなしで接続するアクセスポイントか。 */ open: boolean }[] = [];
         const history = savedWifiSSIDs();
         const refreshNetworks = () => {
             networks.replaceChildren(manual);
@@ -98,6 +119,9 @@ export class RobotWifiDialog {
         cancel.onclick = () => this.close(); dialog.oncancel = event => { event.preventDefault(); this.close(); };
         dialog.append(note, cancel); (document.getElementById("layer-diagram") || document.body).appendChild(dialog); dialog.showModal();
     }
+    /**
+     * 設定処理を取り消し、一時入力を消去してダイアログを閉じる。
+     */
     close(): void {
         this.controller.abort(); this.dialog.querySelectorAll("input").forEach(input => { input.value = ""; });
         if (this.dialog.open) this.dialog.close(); this.dialog.remove(); this.closed();

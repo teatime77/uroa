@@ -1,18 +1,51 @@
+/**
+ * CameraBlockごとの端末カメラの権限要求・映像・イベントと描画予約の寿命を管理する。
+ */
 import { theCanvas } from "../diagram_util";
 
 /** One CameraBlock's device camera. Permission requests may finish after stop(). */
 export class DeviceCameraFeed {
+    /**
+     * 描画に利用できる準備済みの端末カメラ映像。
+     */
     image?: HTMLVideoElement;
+    /**
+     * 現在のカメラ取得世代が開始・再生中であることを示す状態。
+     */
     active = false;
+    /**
+     * 停止後に返る権限要求や映像の結果を無効にする世代。
+     */
     private version = 0;
+    /**
+     * 取得済みのMediaStream。stop()で全トラックを停止する。
+     */
     private stream?: MediaStream;
+    /**
+     * MediaStreamを再生する所有video要素。
+     */
     private video?: HTMLVideoElement;
+    /**
+     * 映像更新に合わせた再描画の予約ID。
+     */
     private frame?: number;
+    /**
+     * 端末カメラ開始の30秒タイムアウト。
+     */
     private timer?: ReturnType<typeof setTimeout>;
+    /**
+     * この部品で登録したDOMイベントをまとめて解除するための取消元。
+     */
     private events?: AbortController;
 
-    constructor(private readonly show: (message: string) => void) {}
+    /**
+     * この型の状態と依存先を初期化する。
+     */
+    constructor(/** カメラの権限・再生・失敗の状態を所有ブロックへ通知する処理。 */ private readonly show: (message: string) => void) {}
 
+    /**
+     * 権限とAPIの利用条件を確認し、端末の背面カメラ取得と映像再生を開始する。
+     */
     start(): void {
         this.stop();
         if (document.hidden) return;
@@ -87,6 +120,11 @@ export class DeviceCameraFeed {
         });
     }
 
+    /**
+     * 取得世代を失効させ、映像・全トラック・タイマー・イベントと描画予約を解放する。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     stop(message = "「開始」で端末カメラを使います。"): void {
         this.version++;
         this.active = false;

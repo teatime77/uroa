@@ -1,152 +1,8 @@
 /**
- * # Python構文木からアセンブリを生成する実装方針
- *
- * この文書は[バイトコード仕様](../../../docs/diagram/python/bytecode.md)と[既存の構文木](../../../docs/diagram/python/parser.md)を基にした実装方針。2026-11-03に[bytecode.ts](./bytecode.ts)へアセンブリ生成器とバイナリ生成器を実装した。[BLE転送](../ble-wifi/bytecode-transfer.ts)とESP32の形式検証・RAM保持まで対応し、数値・分岐・関数呼出しのVMまで実装した。以下に実装した方式と後続の課題を記す。
- *
- * ## 次の実装へ渡す事項
- *
- * `bytecode.md`に本ファイルに記したCALL／RET拡張と追加命令、関数情報、未初期化値の扱いを反映した。VMはこの契約に従って実装した。
- *
- * ## 構造体・ネイティブ呼出しのコード生成（2026-11-04）
- *
- * generateAssembly(module, analysis)とgenerateBytecode(module, analysis)は
- * semantic.tsのPythonAnalysisを使う拡張入口で、同じ命令列からテキストとバイナリを作る。
- * 意味診断が1件以上ある部分的な解析結果は、両生成入口で命令生成前に拒否する。
- * analysis.moduleとmoduleは同じ木を指定する。未指定時は従来の数値・通常文字列用の
- * アセンブリとversion=2のバイナリ生成を維持する。構文木と意味解析結果は書き換えない。
- *
- * recordは値コピー。semantic.tsのvalueSlotTypesで宣言順の末端フィールドへ展開し、
- * Vec3は3、IMUValueは6スロット、deviceハンドルは1スロットとする。フィールドは
- * 大域領域・BPからの固定位置を使い、LOAD_G/LOAD_L、STORE_G/STORE_Lで操作する。
- * 全体コピーは先頭から全スロットをLOADし、末尾からSTOREする。属性の対象が関数の
- * 戻り値等なら一度だけ評価して一時領域へ保存する。属性代入では右辺→対象の順、
- * 複合代入では対象・旧値→右辺の順を守る。未初期化recordへの属性代入を防ぐため、
- * 書込み前に対象recordをLOAD/POPで検査する。参照共有・record用ヒープ・GET_FIELDは不要。
- *
- * 引数も戻り値もrecordの全スロットを渡す。関数内はBP+0/1を管理用とし、BP+2から
- * 平坦化した引数、局所変数、コンパイラーの一時領域を配置する。一時領域は文ごとに
- * 再利用し、同時に必要な最大数を確保する。.functionは「名前 入口PC 引数スロット数
- * 追加局所スロット数 戻り値スロット数」。RETはこの戻り値数を保ってフレームを破棄
- * する契約。非None関数の末尾RETは解析上到達不能で、到達時は戻り値不足で停止する。
- * Noneも1スロット。式文は結果のスロット数だけPOPする。
- *
- * APIのコンストラクター・メソッド・関数は、device-api.jsonの共通nativeIdによる
- * CALL_NATIVE 単一IDへ変換する。メソッドはselfを最初に、その後に明示引数を積む。
- * コンストラクターの結果はresultType、その他はreturnTypeの幅を使う。
- * .apiには呼出し規約版とABI指紋、.nativeには「ID 名前 引数スロット数 戻り値スロット数」
- * を出力する。詳細な型・selfのクラス情報は指紋で結合したAPI表から取得する。
- * int→floatの暗黙変換にはTO_FLOATを使う。floatなら変更せず、
- * その他の型は実行時の型エラーにする契約。構造体・機器の比較や条件値への直接使用は
- * この生成器では未対応として拒否し、複数スロットを単一値の演算命令へ渡さない。
- *
- * 表示引数のf文字列はFORMAT_VALUE 書式定数IDとBUILD_STRING 断片数で生成する。
- * 置換式は左から1回ずつ評価し、表示APIは結合後に1回だけ呼ぶ。通常文字列の解釈は
- * 下記と共通で、f文字列の定数断片だけは原文の{{/}}を単一の括弧へ戻す。
- *
- * ユーザー関数はCALL 入口PC。PCは命令列先頭=0のバイト位置で、CALL/分岐等の
- * uint16オペランド命令とCALL_NATIVE/FORMAT_VALUE/BUILD_STRINGは3バイト、
- * PUSH_INT/PUSH_FLOATは5バイト、TO_FLOATを含むオペランドなし命令は1バイトとして
- * PCを計算する。分岐は所属関数先頭からの相対位置。ラベルはテキストの表示にも残す。
- *
- * ## バイナリversion=3（意味解析を指定した生成経路）
- *
- * 56バイトヘッダー、関数表(F個×12バイト)、命令列(Cバイト)、文字列表(S個×8バイト)、
- * UTF-8データ(Dバイト)の順。パディングなし、全体は128KiB以内、命令列は1〜65536バイト。
- * ヘッダーは次の配置で、整数はlittle endian、指紋はSHA-256の生の32バイト。
- *
- * | 位置 | 型 | 内容 |
- * |---|---|---|
- * | 0 | uint16 | 識別子0xB1C0 |
- * | 2 | uint16 | バイナリversion=3 |
- * | 4 | uint16 | 大域スロット数。一時領域を含む |
- * | 6 | uint16 | 関数数F |
- * | 8 | uint32 | 命令列長C |
- * | 12 | uint16 | 開始PC=0 |
- * | 14 | uint16 | callingConventionVersion=2 |
- * | 16 | uint16 | 文字列定数数S |
- * | 18 | uint16 | device APIのschemaVersion=2 |
- * | 20 | uint32 | UTF-8データ長D |
- * | 24 | 32 bytes | device-api.jsonのabiHashを16進文字列から復号した値 |
- *
- * 関数表の各レコードは、入口PC:uint16、命令列長:uint16、引数スロット数:uint16、
- * 追加局所スロット数:uint16、戻り値スロット数:uint16（1以上）、予約:uint16（0）。
- * 先頭の管理領域2個は追加局所スロット数へ含めず、一時領域は含める。
- * 命令列先頭は56+F*12、文字列表先頭は56+F*12+C、データ先頭は56+F*12+C+S*8。
- * LOAD/STOREは固定スロット番号、CALLは絶対PC、分岐は所属関数先頭からの相対PC。
- *
- * 追加opcodeはCALL_NATIVE=0x1A（ID:uint16）、TO_FLOAT=0x1B（オペランドなし）、
- * FORMAT_VALUE=0x1C（書式の文字列ID:uint16）、BUILD_STRING=0x1D（断片数:uint16）。
- * CALL_NATIVEのIDはAPI定義内に存在するものだけを許し、FORMAT_VALUEのIDはS未満。
- * BUILD_STRINGは断片0個でも空文字列を1個生成する契約。0x01〜0x19の番号・長さは維持する。
- * ネイティブの型・引数数・戻り値数の表はバイナリへ重複格納せず、同じABI指紋を持つ
- * ファームウェアの生成スタブ表を使う契約とする。.nativeの名前等もバイナリへは書かない。
- *
- * アドレス解決・命令長・文字列定数表はアセンブリと共通。範囲外のスロット・PC・IDや
- * 形式上限の超過は切り詰めず拒否する。bytecodeVersion等の既存公開定数は従来の
- * version=2用として維持し、version=3にはbytecodeApiVersion等の別定数を用意する。
- * BLE転送と受信形式検証はble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppが
- * 対応する。ESP32のbytecode_vm.cppは新形式の値コピー・呼出し・文字列命令と、登録スタブ表との
- * ABI/nativeId照合に対応する。生成登録表はdevice_api.generated.cpp、機器操作はdevice_native.cpp。
- * 未登録の呼出しは実行エラーとなる。
- *
- * ## 文字列定数の生成（2026-11-04）
- *
- * generateAssembly()はsyntax.tsのStrを定数として登録し、`.string ID "値"`と
- * `PUSH_STRING ID`を出力する。同じ実行時の値は関数をまたいで共有する。
- * IDは0始まりで、モジュール本体、次いで関数の定義順に命令生成した初出順。
- * 定数は最大65535個。疑似指示は.globalsの直後にID順で置き、命令PCを進めない。
- *
- * Str.textは原文なので、生成時にエスケープを解釈して値へ変換する。対応するのは
- * バックスラッシュ・両引用符、a/b/f/n/r/t/v、xの2桁・uの4桁・Uの8桁の16進表記、
- * 1〜3桁で値が0〜255の8進表記、バックスラッシュ直後のLF/CRLF/CRによる行継続。
- * 未知のエスケープ・桁数不足・Unicodeスカラー値でない文字はcharPos付きで拒否する。
- * 変換済み値をキャッシュし、構文木・Str.text・toString()のキャッシュは変更しない。
- * .stringの値は二重引用符・バックスラッシュ・制御文字・行区切りをエスケープして
- * 1行に出力する。空文字列・日本語・BMP外文字・埋め込みNULも値として保持する。
- *
- * generateBytecode()も同じ定数IDを使い、値をTextEncoderでUTF-8へ符号化する。
- * NUL終端は付けず、空文字列・埋め込みNULも明示的なバイト長で保持する。
- * UTF-16の文字数をバイト長として使わず、Unicode正規化も行わない。
- *
- * ## バイナリversion=2
- *
- * 全体は24バイトヘッダー、関数表(F個×8バイト)、命令列(Cバイト)、
- * 文字列表(S個×8バイト)、UTF-8文字列データ(Dバイト)の順。パディングなし。
- * ヘッダーは次の位置に書き、複数バイトの数値はすべてlittle endianとする。
- *
- * | バイト位置 | 型 | 内容 |
- * |---|---|---|
- * | 0 | uint16 | 識別子0xB1C0 |
- * | 2 | uint16 | バイナリversion=2 |
- * | 4 | uint16 | 大域変数数 |
- * | 6 | uint16 | 関数数F |
- * | 8 | uint32 | 命令列長C（1〜65536） |
- * | 12 | uint16 | 開始PC。0固定 |
- * | 14 | uint16 | 予約。0固定 |
- * | 16 | uint16 | 文字列定数数S（0〜65535） |
- * | 18 | uint16 | 予約。0固定 |
- * | 20 | uint32 | UTF-8データの全バイト長D |
- *
- * 関数表は位置24、命令列は24+F*8、文字列表は24+F*8+C、
- * UTF-8データは24+F*8+C+S*8から始まる。全体長は24+F*8+C+S*8+Dで128KiB以内。
- * 文字列表の各レコードは、データ先頭からの相対offset:uint32とlength:uint32。
- * ID順にデータを連続配置し、最後の末尾をDに一致させる。空文字列のlengthは0。
- * 文字列なしのプログラムもversion=2でS=D=0とする。上限超過は切り詰めずRangeError。
- *
- * PUSH_STRINGはopcode=0x19、uint16のIDを直後へ置く3バイト命令で、ID<Sを必須とする。
- * 既存の0x01〜0x18の命令番号・長さ、関数表の8バイト形式は維持する。
- * 命令PCは命令列先頭を0とし、文字列表・データの長さを分岐先・CALL先へ加算しない。
- *
- * ble-wifi/bytecode-transfer.tsとESP32のbytecode_receiver.cppはversion=1・2・3の
- * BLE転送・検証・RAM保持、bytecode_vm.cppは各版の実行に対応する。
- * 受信完了のACKはVMの開始・正常終了を表さない。PythonBlockと機器接続ブロックは
- * 保持完了後にVM_STARTを送る。開始・停止の共通契約はpython-block.tsを参照する。
- * f文字列（関数名f"）・@formatは意味解析指定時にversion=3で生成する。
- * 実BLE・実機の実行確認はビルドと区別する。
- *
- * ### 実装時の確認方針（当時の記録）
- *
- * 実行確認時の観点は、演算の評価順、両側の分岐、whileの入れ子、仮引数への再代入、条件内で代入する局所変数、式中の関数呼出し、再帰、戻り値の破棄とスタックの増減。ユーザーの従来の指定に従い、今回テストは作成・実行せず、ビルドと静的確認のみ行う。BLE・VM・実機での実行確認とは分けて報告する。
+ * PythonAnalysisを入力とするversion=3専用のアセンブリ・バイナリ生成器。
+ * 名前・型・変数配置はsemantic.tsを使用し、意味解析なしの旧生成経路と版1/2は扱わない。
+ * 形式の仕様はencodeBinary、値コピーとCALL/RETはcompileTypedと関連メソッドを参照する。
+ * BLE/Wi-Fiの形式検査はbytecode-transfer.ts、実行はESP32のbytecode_vm.cppが担当する。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
@@ -155,13 +11,11 @@ import {
 } from "./syntax.js";
 import { valueSlotTypes } from "./semantic.js";
 import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
-import { collectScopeGlobals } from "./global-scope";
 import type { PythonDebugBuild, PythonDebugInfo } from "./debug-info";
 
 /**
- * version=1は0x18まで、version=2は0x19まで、version=3は0x1Dまでの命令を使う。
- * 生成・転送するopcodeのbit7は0。ESP32のデバッガが受信検証後にだけbit7をブレークポイントへ使う。
- * 命令番号・長さは変えず、元イメージとの照合はフラグ設定前のCRCで行う。通信はble-wifi/debug-protocol.tsを参照。
+ * opcodeは0x01〜0x1D。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
+ * 命令番号・長さと元イメージのCRCを維持する。通信の正本はdebug-protocol.ts。
  */
 export enum BytecodeOpcode {
     LOAD_L = 0x01,
@@ -197,17 +51,28 @@ export enum BytecodeOpcode {
 
 /** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
 export const bytecodeSignature = 0xB1C0;
-/** 既存のBLE転送も参照する従来形式の定数。意味解析なしの生成に使用する。 */
-export const bytecodeVersion = 2;
-export const bytecodeHeaderLength = 24;
-export const bytecodeFunctionRecordLength = 8;
-/** 意味解析付きの生成で使用する形式。転送側も版ごとに対応する定数を参照する。 */
-export const bytecodeApiVersion = 3;
-export const bytecodeApiHeaderLength = 56;
-export const bytecodeApiFunctionRecordLength = 12;
+/**
+ * バイナリversion=3の固定配置。呼出し規約/API schemaは2。旧版は生成しない。
+ */
+export const bytecodeVersion = 3;
+/**
+ * version=3のバイナリヘッダー長（56バイト）。
+ */
+export const bytecodeHeaderLength = 56;
+/**
+ * version=3の関数表1件の長さ（12バイト）。
+ */
+export const bytecodeFunctionRecordLength = 12;
+/**
+ * 文字列定数表のoffsetとlengthが占める長さ（8バイト）。
+ */
 export const bytecodeStringRecordLength = 8;
+/**
+ * ヘッダー・各表・命令・UTF-8データを含むバイナリ全体の上限。
+ */
 export const bytecodeMaxLength = 128 * 1024;
 
+/** 内部命令列とアセンブリで使う命令名。バイナリではBytecodeOpcodeの数値へ変換する。 */
 type Opcode = keyof typeof BytecodeOpcode;
 
 /** オペランドなしの命令は登録しない。複数バイト値は全てlittle endian。 */
@@ -228,6 +93,7 @@ const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> 
     BUILD_STRING: "u16"
 };
 
+/** 生成器が対応する四則演算。その他の数値演算は意味解析で受理しても生成時に拒否する。 */
 const arithmetic: Readonly<Record<string, Opcode>> = {
     "+": "ADD",
     "-": "SUB",
@@ -235,6 +101,7 @@ const arithmetic: Readonly<Record<string, Opcode>> = {
     "/": "DIV"
 };
 
+/** 連鎖しない二項比較の命令対応。is・in等は生成対象に含めない。 */
 const comparisons: Readonly<Record<string, Opcode>> = {
     "==": "EQ",
     "!=": "NE",
@@ -246,16 +113,23 @@ const comparisons: Readonly<Record<string, Opcode>> = {
 
 /** 変数の番号は、大域領域または管理領域2個を含むBPからのスロット位置。 */
 interface Scope {
+    /**
+     * このスコープの関数定義。モジュール本体ではundefined。
+     */
     fn: Fn | undefined;
+    /**
+     * このスコープで命令へ変換する文列。
+     */
     block: BlockStatement;
-    variables: Map<string, number>;
-    globalNames: ReadonlySet<string>;
 }
 
 /** 関数名がundefinedならモジュール本体。ラベルのアドレス解決に使う。 */
 interface SourceLocation {
     /** 元ソースのUTF-16位置。対応するノードのない自動生成命令は-1。 */
     charPos: number;
+    /**
+     * この命令・ラベルが属するユーザー関数名。モジュール本体ではundefined。
+     */
     owner: string | undefined;
 }
 
@@ -265,91 +139,137 @@ interface SourceLocation {
  * 命令は内部では「命令名・オペランド・元の`charPos`」として保持する。これにより、後から同じ命令列へアドレス解決とバイナリ出力を追加できる。構文木の`toString()`やキャッシュは変更しない。
  */
 type AssemblyEntry = SourceLocation & (
-    { kind: "instruction"; opcode: Opcode; operand: string | undefined }
-    | { kind: "label"; name: string }
-    | { kind: "globals"; count: number }
-    | { kind: "function"; name: string; args: number; locals: number; returns?: number }
+    { /** この共用型の要素を区別する種別。 */ kind: "instruction"; /** 内部命令列で扱う命令名。 */ opcode: Opcode; /** 命令に付くオペランドの文字列表現。オペランドなしではundefined。 */ operand: string | undefined }
+    | { /** この共用型の要素を区別する種別。 */ kind: "label"; /** 表示・保存・名前解決に使用する名前。 */ name: string }
+    | { /** この共用型の要素を区別する種別。 */ kind: "globals"; /** 大域領域として確保するスロット数。一時領域を含む。 */ count: number }
+    | { /** この共用型の要素を区別する種別。 */ kind: "function"; /** 表示・保存・名前解決に使用する名前。 */ name: string; /** 宣言順に展開した引数のスロット数。 */ args: number; /** 引数と管理領域を除く、追加局所変数と一時領域のスロット数。 */ locals: number; /** 戻り値を宣言順に展開したスロット数。Noneも1個を使う。 */ returns: number }
 );
 
-type InstructionEntry = Extract<AssemblyEntry, { kind: "instruction" }>;
-type FunctionEntry = Extract<AssemblyEntry, { kind: "function" }>;
+/** PCを進める実行命令。疑似指示とラベルは含まない。 */
+type InstructionEntry = Extract<AssemblyEntry, { /** この共用型の要素を区別する種別。 */ kind: "instruction" }>;
+/** 関数の引数・追加局所領域と、生成経路での戻り値の幅を表す疑似指示。 */
+type FunctionEntry = Extract<AssemblyEntry, { /** この共用型の要素を区別する種別。 */ kind: "function" }>;
 
 /** 名前はコンパイル時だけ保持し、バイナリには数値のPCだけを書き込む。 */
 interface LabelAddress {
+    /**
+     * 命令列の先頭を0とする命令のバイト位置。
+     */
     pc: number;
+    /**
+     * この命令・ラベルが属するユーザー関数名。モジュール本体ではundefined。
+     */
     owner: string | undefined;
 }
 
 /** 連続した値スロットの位置。typeがrecordなら末端フィールドを複数スロット占有する。 */
 interface ValueAddress {
+    /**
+     * この共用型の要素を区別する種別。
+     */
     kind: "G" | "L";
+    /**
+     * 大域領域またはBPを基準とする固定スロットの先頭位置。
+     */
     slot: number;
+    /**
+     * 対象の種別またはデータ型。
+     */
     type: PythonType;
 }
 
+/** 生成経路の固定スロット領域と、文ごとに再利用する一時領域の割当て状態。 */
 interface SlotAllocation {
+    /** 変数領域の直後。一時領域の開始位置でもある。 */
     variablesEnd: number;
+    /** 現在の文で次に確保する位置。 */
     cursor: number;
+    /** これまでの最大使用位置の直後。関数情報や大域領域のサイズに使う。 */
     end: number;
 }
 
-/** 元の構文木を変更せず、名前の収集・検査と命令生成を順に行う。
- *
- * @remarks
- * ## 今回の範囲
- *
- * `parsePython()`が返す`Module`を入力に、変数名とラベルを使ったアセンブラソースを出力する。対象は変数への代入、四則演算、単独の比較、`if`／`elif`／`else`、`while`、関数定義・位置引数による呼出し・`return`。`pass`は命令を出さず、`break`／`continue`は所属するwhileのラベルへの分岐にする。
- *
- * 通常文字列はアセンブリとバイナリの生成に対応する。構造体・機器API・属性・f文字列のアセンブリはPythonAnalysis指定時に対応する。`for`、添字・コンテナ、import、クロージャ、関数を値として扱う処理、論理演算・連鎖比較や仕様にない演算子は拒否する。パーサーが受理しても生成対象外のノードには`charPos`付きのエラーを出し、黙って読み飛ばさない。
- *
- * ## 処理を2段階に分ける
- *
- * `diagram/ts/python/bytecode.ts`の入口は`generateAssembly(module: Module, analysis?: PythonAnalysis): string`と`generateBytecode(module: Module, analysis?: PythonAnalysis): Uint8Array`。以下は意味解析結果を指定しない従来経路の説明。
- *
- * 1. **事前走査**で関数表・大域変数表・関数ごとの局所変数表を作り、対応範囲、名前、引数個数を検査する。
- * 2. **命令生成**で構文木を再帰的にたどり、命令・ラベル・関数情報を配列へ追加し、最後にテキストへ整形する。
+/**
+ * 意味解析済みの構文木から命令列を作り、同じ配置でテキスト・バイナリを生成する。
  */
 class BytecodeGenerator {
+    /**
+     * ユーザー関数またはAPI関数の名前と定義を管理する一覧。
+     */
     private readonly functions = new Map<string, Scope>();
+    /** テキスト・バイナリ・デバッグ情報が共有する内部命令列。 */
     private readonly entries: AssemblyEntry[] = [];
-    private readonly loops: { start: string; end: string }[] = [];
+    /** 入れ子のwhileの分岐先。末尾が現在のbreak/continueの対象。 */
+    private readonly loops: { /** 現在の繰返し条件へ戻るための内部ラベル。 */ start: string; /** 現在の繰返しから抜けるための内部ラベル。 */ end: string }[] = [];
+    /** 元の文字列ノードからエスケープ解釈済みの値へのキャッシュ。 */
     private readonly stringValues = new Map<Str, string>();
+    /** モジュールと全関数で共有する、文字列値から初出順のIDへの対応。 */
     private readonly stringIds = new Map<string, number>();
+    /**
+     * スコープごとの固定変数末尾・一時カーソル・最大使用位置。
+     */
     private readonly allocations = new Map<Scope, SlotAllocation>();
+    /**
+     * API定義内に存在するnativeId。バイナリ化時に呼出しIDを検査する。
+     */
     private readonly nativeIds = new Set<number>();
-    private readonly statementStarts: { index: number; charPos: number; owner?: string }[] = [];
+    /** 文全体の評価前を示す内部要素の位置。命令長確定後に停止PCへ変換する。 */
+    private readonly statementStarts: { /** 停止候補を対応付ける内部命令列の要素位置。 */ index: number; /** 元のPythonソース内のUTF-16位置。自動生成命令では-1を使う。 */ charPos: number; /** この命令・ラベルが属するユーザー関数名。モジュール本体ではundefined。 */ owner?: string }[] = [];
+    /** 行ブレークポイントにはせず、ステップ停止にだけ使う暗黙returnの内部要素の位置。 */
     private readonly implicitReturns: number[] = [];
+    /**
+     * ユーザー識別子と衝突しない内部ラベルの採番状態。
+     */
     private labelCount = 0;
+    /**
+     * モジュール直下の文列と大域変数の配置を保持する生成スコープ。
+     */
     private readonly globalScope: Scope;
+    /**
+     * アセンブリの原文コメントへ表示する元ソースの行列。
+     */
     private readonly sourceLines: string[];
+    /**
+     * charPosを行番号へ変換する、各行先頭のUTF-16位置。
+     */
     private readonly lineStarts = [0];
+    /**
+     * 現在命令を生成しているモジュールまたは関数のスコープ。
+     */
     private scope: Scope;
+    /**
+     * 意味解析と同一の構文木。生成では変更しない。
+     */
+    private readonly module: Module;
 
-    constructor(private readonly module: Module, private readonly analysis?: PythonAnalysis) {
-        if (analysis !== undefined && analysis.module !== module) {
-            throw new Error("コード生成には同じ構文木の意味解析結果を指定してください");
-        }
+    /**
+     * 意味解析結果とその構文木から、生成用の索引と元ソースの行位置を準備する。
+     * 意味診断がある結果は命令生成前に拒否し、構文木と意味解析結果は書き換えない。
+     *
+      * @param analysis 診断のない意味解析結果。構文木もこの結果から取得する。
+      * @throws SyntaxError 意味診断が1件以上ある場合。
+     */
+    constructor(/** 同じ構文木に対応する、診断のない意味解析結果。 */ private readonly analysis: PythonAnalysis) {
+        this.module = analysis.module;
+        const module = this.module;
         // 意味解析は診断を蓄積して正常に戻るため、部分的な解析結果を命令へ変換する前に拒否する。
         // generateAssembly/generateBytecodeの両入口とBLE送信元に共通の境界。契約はsemantic.tsを参照。
-        if (analysis !== undefined && analysis.diagnostics.length !== 0) {
+        if (analysis.diagnostics.length !== 0) {
             const first = analysis.diagnostics[0];
             throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
         }
-        this.globalScope = { fn: undefined, block: module.block, variables: new Map(), globalNames: new Set() };
+        this.globalScope = { fn: undefined, block: module.block };
         this.scope = this.globalScope;
         this.sourceLines = module.source?.split(/\r\n|\r|\n/) ?? [];
-        if (analysis !== undefined) {
-            for (const owner of analysis.api.classes) {
-                if (owner.constructor !== null) {
-                    this.nativeIds.add(owner.constructor.nativeId);
-                }
-                for (const method of owner.methods) {
-                    this.nativeIds.add(method.nativeId);
-                }
+        for (const owner of analysis.api.classes) {
+            if (owner.constructor !== null) {
+                this.nativeIds.add(owner.constructor.nativeId);
             }
-            for (const fn of analysis.api.functions) {
-                this.nativeIds.add(fn.nativeId);
+            for (const method of owner.methods) {
+                this.nativeIds.add(method.nativeId);
             }
+        }
+        for (const fn of analysis.api.functions) {
+            this.nativeIds.add(fn.nativeId);
         }
         if (module.source !== undefined) {
             for (const match of module.source.matchAll(/\r\n|\r|\n/g)) {
@@ -358,135 +278,63 @@ class BytecodeGenerator {
         }
     }
 
+    /**
+     * 生成エラーを元ソースの位置付きで報告する。
+     *
+     * @param node 問題に対応する構文木のノード。
+     * @param message エラーの説明。
+     * @throws SyntaxError charPosを含む生成エラー。
+     */
     private fail(node: AbstractSyntaxNode, message: string): never {
         throw new SyntaxError(`${message} (charPos=${node.charPos})`);
     }
 
+    /**
+     * 現在の所属関数と元ソースの位置を内部命令用にまとめる。
+     *
+     * @param node 位置を取得するノード。省略時は自動生成命令として扱う。
+     * @returns UTF-16位置と所属関数名。自動生成の位置は-1、モジュールの所属はundefined。
+     */
     private location(node?: AbstractSyntaxNode): SourceLocation {
         return { charPos: node?.charPos ?? -1, owner: this.scope.fn?.name };
     }
 
-    /** 先頭に連続するdefを登録し、実行するモジュール本体から分離する。 */
+    /**
+     * 意味解析で検証済みの関数とモジュール本体を生成用スコープへ分ける。
+     */
     private collectFunctions(): void {
-        const statements: Statement[] = [];
-        let executable = false;
-        for (const statement of this.module.block.statements) {
-            if (statement instanceof Fn) {
-                if (executable) {
-                    this.fail(statement, "関数定義はモジュール先頭にまとめてください");
-                }
-                if (this.functions.has(statement.name)) {
-                    this.fail(statement, `関数が重複しています: ${statement.name}`);
-                }
-                const scope: Scope = { fn: statement, block: statement.block, variables: new Map(), globalNames: new Set() };
-                for (const argument of statement.args) {
-                    if (scope.variables.has(argument.name)) {
-                        this.fail(argument, `仮引数が重複しています: ${argument.name}`);
-                    }
-                    this.addVariable(scope, argument.name, argument);
-                }
-                this.functions.set(statement.name, scope);
-            }
-            else {
-                if (!(statement instanceof GlobalStatement)) {
-                    executable = true;
-                }
-                statements.push(statement);
-            }
-        }
-        this.scope.block = new BlockStatement(statements);
-    }
-
-    /** 関数内のif・whileにも同じスコープを使い、内側のdefには入らない。 */
-    private walkStatements(
-        block: BlockStatement,
-        visit: (statement: Statement, loopDepth: number) => void,
-        loopDepth = 0
-    ): void {
-        const walk = (statement: Statement): void => {
-            visit(statement, loopDepth);
-            if (statement instanceof IfStatement) {
-                this.walkStatements(statement.ifBlock, visit, loopDepth);
-                if (statement.elseIf !== undefined) {
-                    walk(statement.elseIf);
-                }
-                if (statement.elseBlock !== undefined) {
-                    this.walkStatements(statement.elseBlock, visit, loopDepth);
-                }
-            }
-            else if (statement instanceof WhileStatement) {
-                this.walkStatements(statement.block, visit, loopDepth + 1);
-            }
-        };
-        for (const statement of block.statements) {
-            walk(statement);
+        this.globalScope.block = new BlockStatement(this.module.block.statements.filter(statement => !(statement instanceof Fn)));
+        for (const fn of this.analysis.functions.values()) {
+            this.functions.set(fn.node.name, { fn: fn.node, block: fn.node.block });
         }
     }
 
-    private addVariable(scope: Scope, name: string, node: AbstractSyntaxNode): void {
-        if (["True", "False", "None"].includes(name)) {
-            this.fail(node, `予約された名前には代入できません: ${name}`);
-        }
-        if (!scope.variables.has(name)) {
-            const slot = scope.variables.size + (scope.fn === undefined ? 0 : 2);
-            if (slot > 0xFFFF) {
-                this.fail(node, "変数の位置がuint16の範囲を超えています");
-            }
-            scope.variables.set(name, slot);
-        }
-    }
 
+
+    /**
+     * 文に含まれる単純代入・複合代入の式を取り出す。
+     *
+     * @param statement 代入かどうかを調べる呼出し文。
+     * @returns 代入式。代入でなければundefined。
+     */
     private assignment(statement: CallStatement): App | undefined {
         const app = statement.app;
         return app instanceof App && isAssignmentToken(app.fncName) ? app : undefined;
     }
 
+
+
     /**
-     * ## 変数領域と名前の解決
-     *
-     * 代入は`CallStatement.app`に入った`App("=", [左辺, 右辺])`で表される。左辺が`RefVar`なら、その名前を現在のスコープへ登録する。`+=`等も同じ束縛先として集め、四則の複合代入はLOAD・演算・STOREへ展開する。
-     *
-     * - モジュール直下の代入先は大域変数にする。直下のif・whileの内部も走査するが、関数本体には入らない。
-     * - 関数では仮引数を先に登録し、続いて本体全体の代入先を初出順に登録する。if・whileの内部も含め、同じ名前は1領域にまとめる。内側の関数本体は混ぜない。
-     * - Pythonではブロックごとの変数領域を作らない。条件付きの代入やreturnより後にある代入も事前走査に含め、呼出し時に必要な全領域を一度に確保する。
-     * - global-scope.tsが収集したglobal名は大域変数へ読み書きする。global文は命令を生成しない。
-     * - global未指定の関数内の代入先は局所変数となる。nonlocalは未対応。
-     * - 意味解析指定時はsemantic.tsが決めた束縛・スロットを使用する。未指定時も同じ宣言検査を行い、
-     *   関数内でglobal宣言した代入先を大域領域へ集める。既存のLOAD_G/STORE_Gを使い、形式は変えない。
-     *
-     * 仮引数と、それ以外の局所変数の個数を分けて関数情報へ記録する。未代入の領域には未初期化の印を置き、LOADでエラーにするVM契約が必要。0で初期化するとPythonの未束縛変数の挙動と変わる。
-     */
-    private collectVariables(scope: Scope): void {
-        this.walkStatements(scope.block, statement => {
-            if (statement instanceof CallStatement) {
-                const assignment = this.assignment(statement);
-                if (assignment !== undefined) {
-                    const target = assignment.args[0];
-                    if (assignment.args.length !== 2 || !(target instanceof RefVar)) {
-                        this.fail(assignment, "代入先は単一の変数に限ります");
-                    }
-                    this.addVariable(scope.globalNames.has(target.name) ? this.globalScope : scope, target.name, target);
-                }
-            }
-        });
-    }
-
-    private variableKind(reference: RefVar, scope: Scope): "L" | "G" {
-        if (scope.fn !== undefined && !scope.globalNames.has(reference.name) && scope.variables.has(reference.name)) {
-            return "L";
-        }
-        if (this.globalScope.variables.has(reference.name)) {
-            return "G";
-        }
-        this.fail(reference, `変数が定義されていません: ${reference.name}`);
-    }
-
-    /** -2147483648は正の子リテラルを先に検査せず、符号を含めて判定する。
+     * -2147483648は正の子リテラルを先に検査せず、符号を含めて判定する。
      *
      * @remarks
      * `ConstNum.text`に小数点・指数表記がある場合は`PUSH_FLOAT`、整数表記なら`PUSH_INT`を選ぶ。int32の範囲と有限のfloat32への変換可否を検査する。`True`／`False`はそれぞれ整数1／0とする数値中心のサブセットとし、単項負号は0と対象の減算、単項正号は0との加算に展開する。直接数値に付いた負号は符号付きリテラルとして生成し、負の整数も符号込みで範囲を判定する。float32への丸めとアンダーフローは許可する。
+     *
+     * @param term 数値リテラル、または数値に直接付いた単項負号の式。
+     * @returns PUSH命令と符号を含むオペランド。該当する数値でなければundefined。
+     * @throws SyntaxError int32または有限float32の範囲を超える場合。
      */
-    private numberLiteral(term: Term): { opcode: Opcode; operand: string } | undefined {
+    private numberLiteral(term: Term): { /** 内部命令列で扱う命令名。 */ opcode: Opcode; /** 命令に付くオペランドの文字列表現。オペランドなしではundefined。 */ operand: string } | undefined {
         let number: ConstNum;
         let negative = false;
         if (term instanceof ConstNum) {
@@ -514,7 +362,21 @@ class BytecodeGenerator {
         return { opcode: "PUSH_INT", operand };
     }
 
-    /** 原文を1回だけ値へ変換する。エスケープの対応範囲はファイル先頭を参照する。 */
+    /**
+     * 原文を1回だけ値へ変換し、結果をキャッシュする。構文木とStr.textは変更しない。
+     *
+     * Str.textは原文なので、生成時にエスケープを解釈して値へ変換する。対応するのは
+     * バックスラッシュ・両引用符、a/b/f/n/r/t/v、xの2桁・uの4桁・Uの8桁の16進表記、
+     * 1〜3桁で値が0〜255の8進表記、バックスラッシュ直後のLF/CRLF/CRによる行継続。
+     * 未知のエスケープ・桁数不足・Unicodeスカラー値でない文字はcharPos付きで拒否する。
+     * 変換済み値をキャッシュし、構文木・Str.text・toString()のキャッシュは変更しない。
+     * .stringの値は二重引用符・バックスラッシュ・制御文字・行区切りをエスケープして
+     * 1行に出力する。空文字列・日本語・BMP外文字・埋め込みNULも値として保持する。
+     *
+     * @param term 引用符を除いた原文を保持する文字列ノード。
+     * @returns エスケープを解釈した文字列値。
+     * @throws SyntaxError 不正なエスケープやUnicode文字を含む場合。
+     */
     private stringLiteral(term: Str): string {
         const cached = this.stringValues.get(term);
         if (cached !== undefined) {
@@ -583,7 +445,20 @@ class BytecodeGenerator {
         return value;
     }
 
-    /** 値を共有して文字列定数IDを割り当てる。登録順は命令生成の初出順。 */
+    /**
+     * 値を共有して文字列定数IDを割り当てる。登録順は命令生成の初出順。
+     *
+     * ## 文字列定数の生成（2026-11-04）
+     *
+     * generateAssembly()はsyntax.tsのStrを定数として登録し、`.string ID "値"`と
+     * `PUSH_STRING ID`を出力する。同じ実行時の値は関数をまたいで共有する。
+     * IDは0始まりで、モジュール本体、次いで関数の定義順に命令生成した初出順。
+     * 定数は最大65535個。疑似指示は.globalsの直後にID順で置き、命令PCを進めない。
+     *
+     * @param term 実行時の値へ変換して登録する文字列ノード。
+     * @returns 同じ値では共有する、0始まりの文字列定数ID。
+     * @throws SyntaxError 文字列値が不正、または定数数が65535を超える場合。
+     */
     private stringId(term: Str): number {
         const value = this.stringLiteral(term);
         const existing = this.stringIds.get(value);
@@ -598,8 +473,14 @@ class BytecodeGenerator {
         return id;
     }
 
-    /** 対応する演算命令か、静的に解決した関数呼出しを返す。 */
-    private operation(app: App, scope: Scope): Opcode {
+    /**
+     * 数値の四則・単独比較に対応する演算命令を返す。呼出しはtypedCallが担当する。
+     *
+     * @param app 四則・単独比較の式。
+     * @returns 対応する演算命令。
+     * @throws SyntaxError 未対応の演算。
+     */
+    private operation(app: App): Opcode {
         const name = app.fncName;
         if (name === 'f"' || name === "@format") {
             this.fail(app, "f文字列と書式指定のアセンブリ生成には対応していません");
@@ -615,191 +496,109 @@ class BytecodeGenerator {
             && Object.hasOwn(comparisons, app.comparisonOperators[0])) {
             return comparisons[app.comparisonOperators[0]];
         }
-        const fn = this.functions.get(name)?.fn;
-        if (fn === undefined) {
-            this.fail(app, `未対応の演算または未定義の関数です: ${name}`);
-        }
-        if (scope.variables.has(name)) {
-            this.fail(app, `変数を関数として呼び出せません: ${name}`);
-        }
-        if (fn.args.length !== app.args.length) {
-            this.fail(app, `関数${name}の引数は${fn.args.length}個必要です`);
-        }
-        return "CALL";
+        this.fail(app, `未対応の演算です: ${name}`);
     }
 
-    private validateExpression(term: Term, scope: Scope): void {
-        if (term instanceof Str) {
-            this.stringLiteral(term);
-            return;
-        }
-        if (this.numberLiteral(term) !== undefined) {
-            return;
-        }
-        if (term instanceof RefVar) {
-            if (!["True", "False", "None"].includes(term.name)) {
-                this.variableKind(term, scope);
-            }
-            return;
-        }
-        if (term instanceof App) {
-            this.operation(term, scope);
-            for (const argument of term.args) {
-                this.validateExpression(argument, scope);
-            }
-            return;
-        }
-        this.fail(term, "この式のアセンブリ生成には対応していません");
-    }
 
-    private validateScope(scope: Scope): void {
-        // 全関数・全変数を集めた後で、相互再帰や前方の大域参照も解決する。
-        this.walkStatements(scope.block, (statement, loopDepth) => {
-            if (statement instanceof GlobalStatement) {
-                return;
-            }
-            if (statement instanceof CallStatement) {
-                const assignment = this.assignment(statement);
-                if (assignment === undefined) {
-                    this.validateExpression(statement.app, scope);
-                }
-                else {
-                    if (assignment.fncName !== "="
-                        && !["+=", "-=", "*=", "/="].includes(assignment.fncName)) {
-                        this.fail(assignment, `未対応の複合代入です: ${assignment.fncName}`);
-                    }
-                    this.validateExpression(assignment.args[1], scope);
-                }
-            }
-            else if (statement instanceof IfStatement || statement instanceof WhileStatement) {
-                this.validateExpression(statement.condition, scope);
-            }
-            else if (statement instanceof ReturnStatement) {
-                if (scope.fn === undefined) {
-                    this.fail(statement, "returnは関数内でのみ使えます");
-                }
-                if (statement.value !== undefined) {
-                    this.validateExpression(statement.value, scope);
-                }
-            }
-            else if (statement.keyword === "break" || statement.keyword === "continue") {
-                if (loopDepth === 0) {
-                    this.fail(statement, `${statement.keyword}はwhile内でのみ使えます`);
-                }
-            }
-            else if (statement.keyword !== "pass") {
-                this.fail(statement, "この文のアセンブリ生成には対応していません");
-            }
-        });
-    }
 
+    /**
+     * 実行命令に元ソースの位置と所属関数を付け、内部命令列へ追加する。
+     *
+     * @param opcode 生成する命令名。
+     * @param node 対応ノード。自動生成命令では省略する。
+     * @param operand オペランドの文字列表現。オペランドなしの命令では省略する。
+     */
     private emit(opcode: Opcode, node?: AbstractSyntaxNode, operand?: string): void {
         this.entries.push({ kind: "instruction", opcode, operand, ...this.location(node) });
     }
 
+    /**
+     * PC解決用のラベルを追加する。ラベル自体は命令列のバイト数を増やさない。
+     *
+     * @param name 生成器内で一意なラベル名。
+     * @param node 元ソースの位置を対応付けるノード。
+     */
     private label(name: string, node: AbstractSyntaxNode): void {
         this.entries.push({ kind: "label", name, ...this.location(node) });
     }
 
+    /**
+     * ユーザーの関数名と衝突しない一意のラベル名を作る。
+     *
+     * @param prefix if・while等の用途を識別する接頭辞。
+     * @returns $と連番を含む生成ラベル名。
+     */
     private newLabel(prefix: string): string {
         // $はPythonの識別子に使えないので、ユーザーの関数名と衝突しない。
         return `$${prefix}_${this.labelCount++}`;
     }
 
     /**
-     * ## 式と文の生成
-     *
-     * 従来経路では式は評価結果を必ず1個スタックに残し、文は一時的な値を残さない。意味解析を指定した経路ではrecordの結果はvalueWidth個になる。二項演算は左、右の順に生成し、演算命令を置く。VMは右辺を先にpopし、次に左辺をpopして`左辺 op 右辺`を計算する。
-     *
-     * 関数内の`a * (b + c)`は次のようになる。
-     *
-     * ```asm
-     * LOAD_L a
-     * LOAD_L b
-     * LOAD_L c
-     * ADD
-     * MUL
-     * ```
-     *
-     * ## 関数呼出しとスタックフレーム
-     *
-     * 初期仕様のCALLは戻り先PCのpush、RETはPCのpopだけを行うため、旧ベースポインタの復元、局所変数の解放、戻り値をトップへ残す処理が不足していた。**CALL／RETに以下のフレーム管理を含める契約**をバイトコード仕様へ反映した。実際のスタック操作はESP32のVMが行い、今回の生成器はそのための命令と関数情報を出力する。
-     *
-     * CALL前に引数を左から右へ評価して積む。CALLは関数情報を使い、次のフレームを作る。各位置は値スタックのスロット単位とする。
-     *
-     * | BPからの位置 | 内容 |
-     * |---|---|
-     * | 0 | CALLの次の命令を指す戻り先PC |
-     * | 1 | 呼出し元のBP |
-     * | 2以降 | 仮引数、続いて追加の局所変数 |
-     * | 固定領域の後 | 式評価用の一時スタック |
-     *
-     * CALLは積まれた引数の前に管理領域2個を挿入し、BPをその先頭へ設定する。局所変数表のスロット番号は、この管理領域も含めて割り当てる。呼出しより前の式の一時値はフレームの下に保存されるため、`a + f(b)`や再帰呼出しにも対応できる。
+     * 型・束縛が確定した式を生成する。
+     * @param term 対象の式。
      */
     private expression(term: Term): void {
-        if (this.analysis !== undefined) {
-            this.typedExpression(term);
-            return;
-        }
-        const literal = this.numberLiteral(term);
-        if (literal !== undefined) {
-            this.emit(literal.opcode, term, literal.operand);
-        }
-        else if (term instanceof Str) {
-            this.emit("PUSH_STRING", term, String(this.stringId(term)));
-        }
-        else if (term instanceof RefVar) {
-            if (term.name === "None") {
-                this.emit("PUSH_NONE", term);
-            }
-            else if (term.name === "True" || term.name === "False") {
-                this.emit("PUSH_INT", term, term.name === "True" ? "1" : "0");
-            }
-            else {
-                this.emit(`LOAD_${this.variableKind(term, this.scope)}`, term, term.name);
-            }
-        }
-        else if (term instanceof App) {
-            const opcode = this.operation(term, this.scope);
-            const unary = term.args.length === 1 && (term.fncName === "+" || term.fncName === "-");
-            if (unary) {
-                this.emit("PUSH_INT", term, "0");
-            }
-            for (const argument of term.args) {
-                this.expression(argument);
-            }
-            this.emit(opcode, term, opcode === "CALL" ? term.fncName : undefined);
-        }
-        else {
-            this.fail(term, "この式のアセンブリ生成には対応していません");
-        }
+        this.typedExpression(term);
     }
 
+    /**
+     * 意味解析の式と型の対応表から、生成対象の型を取得する。
+     *
+     * @param term 型を取得する式。
+     * @returns 解決済みの型。
+     * @throws SyntaxError 式の型が意味解析結果にない場合。
+     */
     private valueType(term: Term): PythonType {
-        const type = this.analysis!.types.get(term);
+        const type = this.analysis.types.get(term);
         if (type === undefined) {
             this.fail(term, "式の型がありません。アセンブリ生成前に意味解析してください");
         }
         return type;
     }
 
+    /**
+     * semantic.tsと共通の配置規則で値のスロット幅を求める。
+     *
+     * @param type 幅を求める型。recordは宣言順に末端フィールドへ展開する。
+     * @returns 値が占有するスロット数。
+     */
     private valueWidth(type: PythonType): number {
-        return valueSlotTypes(type, this.analysis!.api).length;
+        return valueSlotTypes(type, this.analysis.api).length;
     }
 
-    /** すべてをpushしてから逆順にpopするため、コピー元と先が重なっても値を壊さない。 */
+    /**
+     * すべてをpushしてから逆順にpopするため、コピー元と先が重なっても値を壊さない。
+     *
+     * @param address 読み出す値の先頭スロットと型。先頭から順に全スロットを積む。
+     * @param node LOAD命令へ対応付ける元ソースのノード。
+     */
     private loadValue(address: ValueAddress, node: AbstractSyntaxNode): void {
         for (let index = 0; index < this.valueWidth(address.type); index++) {
             this.emit(`LOAD_${address.kind}`, node, String(address.slot + index));
         }
     }
 
+    /**
+     * スタック上の値を末尾スロットから逆順に格納する。
+     * loadValueで全体を積んだ後に格納するため、コピー元と先が重なっても値を壊さない。
+     *
+     * @param address 格納先の先頭スロットと型。
+     * @param node STORE命令へ対応付ける元ソースのノード。
+     */
     private storeValue(address: ValueAddress, node: AbstractSyntaxNode): void {
         for (let index = this.valueWidth(address.type) - 1; index >= 0; index--) {
             this.emit(`STORE_${address.kind}`, node, String(address.slot + index));
         }
     }
 
+    /**
+     * 型の幅に応じた一時領域を確保し、現在のスコープに必要な最大幅を更新する。
+     * カーソルはstatementで文ごとに変数領域の末尾へ戻し、領域を再利用する。
+     *
+     * @param type 保存する値の型。
+     * @param node スロット数が65535を超える場合の診断位置。
+     * @returns 確保した大域または局所の固定スロット位置。
+     */
     private temporary(type: PythonType, node: AbstractSyntaxNode): ValueAddress {
         const allocation = this.allocations.get(this.scope)!;
         const slot = allocation.cursor;
@@ -811,10 +610,18 @@ class BytecodeGenerator {
         return { kind: this.scope.fn === undefined ? "G" : "L", slot, type };
     }
 
-    /** 動的な値は一度だけ一時領域へ保存し、以降は同じ固定スロットを参照する。 */
+    /**
+     * 動的な値は一度だけ一時領域へ保存し、以降は同じ固定スロットを参照する。
+     *
+     * 属性のオフセットは宣言順のフィールド幅から求める。
+     *
+     * @param term 変数・属性、または一度評価して保存する値の式。
+     * @param checkRoot 根の変数をLOAD/POPし、属性書込み前に未初期化値をVMで検査するか。
+     * @returns 値の先頭スロットと型。
+     */
     private address(term: Term, checkRoot = false): ValueAddress {
         if (term instanceof RefVar) {
-            const binding = this.analysis!.references.get(term);
+            const binding = this.analysis.references.get(term);
             if (binding?.kind !== "variable") {
                 this.fail(term, "この名前の格納位置を取得できません");
             }
@@ -830,7 +637,7 @@ class BytecodeGenerator {
             return address;
         }
         if (term instanceof App && term.fncName === ".") {
-            const field = this.analysis!.fields.get(term);
+            const field = this.analysis.fields.get(term);
             if (field === undefined) {
                 this.fail(term, "フィールドの解決結果がありません");
             }
@@ -850,7 +657,12 @@ class BytecodeGenerator {
         return temporary;
     }
 
-    /** 型がfloatへ統合された変数・仮引数・戻り値にも、整数値をそのまま格納しない。 */
+    /**
+     * 型がfloatへ統合された変数・仮引数・戻り値にも、整数値をそのまま格納しない。
+     *
+     * @param term 評価する式。
+     * @param expected 代入先・仮引数・戻り値の要求型。intからfloatの場合だけTO_FLOATを追加する。
+     */
     private expressionAs(term: Term, expected: PythonType): void {
         this.expression(term);
         if (this.valueType(term).kind === "int" && expected.kind === "float") {
@@ -858,8 +670,24 @@ class BytecodeGenerator {
         }
     }
 
+    /**
+     * テキストのAPI表はformatAssembly、暗黙変換はexpressionAs、
+     * オブジェクト演算の制限はtypedExpressionとconditionで実装する。
+     *
+     * APIのコンストラクター・メソッド・関数は、device-api.jsonの共通nativeIdによる
+     * CALL_NATIVE 単一IDへ変換する。メソッドはselfを最初に、その後に明示引数を積む。
+     * コンストラクターの結果はresultType、その他はreturnTypeの幅を使う。
+     * .apiには呼出し規約版とABI指紋、.nativeには「ID 名前 引数スロット数 戻り値スロット数」
+     * を出力する。詳細な型・selfのクラス情報は指紋で結合したAPI表から取得する。
+     * int→floatの暗黙変換にはTO_FLOATを使う。floatなら変更せず、
+     * その他の型は実行時の型エラーにする契約。構造体・機器の比較や条件値への直接使用は
+     * この生成器では未対応として拒否し、複数スロットを単一値の演算命令へ渡さない。
+     *
+     * @param app 意味解析済みの呼出し式。メソッドはselfを先に、引数は左から順に積む。
+     * @returns 呼出し先の対応表にあり命令を生成した場合はtrue、対応がない場合はfalse。
+     */
     private typedCall(app: App): boolean {
-        const call = this.analysis!.calls.get(app);
+        const call = this.analysis.calls.get(app);
         if (call === undefined) {
             return false;
         }
@@ -882,6 +710,13 @@ class BytecodeGenerator {
         return true;
     }
 
+    /**
+     * 表示引数のf文字列はFORMAT_VALUE 書式定数IDとBUILD_STRING 断片数で生成する。
+     * 置換式は左から1回ずつ評価し、表示APIは結合後に1回だけ呼ぶ。通常文字列の解釈は
+     * 下記と共通で、f文字列の定数断片だけは原文の{{/}}を単一の括弧へ戻す。
+     *
+     * @param app 意味解析済みのf文字列。空の断片列もBUILD_STRINGで空文字列を1個積む。
+     */
     private formattedString(app: App): void {
         for (const part of app.args) {
             if (part instanceof Str) {
@@ -901,6 +736,12 @@ class BytecodeGenerator {
         this.emit("BUILD_STRING", app, String(this.uint16(app.args.length, this.location(app), "文字列の断片数")));
     }
 
+    /**
+     * 意味解析結果を使い、数値・文字列・変数・属性・呼出し・f文字列の評価命令を生成する。
+     * recordは値の幅だけ積む。構造体・機器オブジェクトを直接使う比較や数値演算は拒否する。
+     *
+     * @param term 型と束縛が解決済みの式。
+     */
     private typedExpression(term: Term): void {
         const literal = this.numberLiteral(term);
         if (literal !== undefined) {
@@ -932,10 +773,7 @@ class BytecodeGenerator {
                 this.formattedString(term);
                 return;
             }
-            const opcode = this.operation(term, this.scope);
-            if (opcode === "CALL") {
-                this.fail(term, "関数の意味解析結果がありません");
-            }
+            const opcode = this.operation(term);
             if (term.args.length === 1 && (term.fncName === "+" || term.fncName === "-")) {
                 this.emit("PUSH_INT", term, "0");
             }
@@ -952,6 +790,19 @@ class BytecodeGenerator {
         }
     }
 
+    /**
+     * 値の読出し・格納はloadValue/storeValue、属性と一時領域の解決はaddressが担当する。
+     *
+     * recordは値コピー。semantic.tsのvalueSlotTypesで宣言順の末端フィールドへ展開し、
+     * Vec3は3、IMUValueは6スロット、deviceハンドルは1スロットとする。フィールドは
+     * 大域領域・BPからの固定位置を使い、LOAD_G/LOAD_L、STORE_G/STORE_Lで操作する。
+     * 全体コピーは先頭から全スロットをLOADし、末尾からSTOREする。属性の対象が関数の
+     * 戻り値等なら一度だけ評価して一時領域へ保存する。属性代入では右辺→対象の順、
+     * 複合代入では対象・旧値→右辺の順を守る。未初期化recordへの属性代入を防ぐため、
+     * 書込み前に対象recordをLOAD/POPで検査する。参照共有・record用ヒープ・GET_FIELDは不要。
+     *
+     * @param app 意味解析済みの単純代入または四則の複合代入式。
+     */
     private typedAssignment(app: App): void {
         const target = app.args[0];
         const right = app.args[1];
@@ -976,14 +827,24 @@ class BytecodeGenerator {
         this.storeValue(address, app);
     }
 
+    /**
+     * 現在のスコープでブロック内の文を順に命令へ変換する。
+     *
+     * @param block 生成する文列。
+     */
     private block(block: BlockStatement): void {
         for (const statement of block.statements) {
             this.statement(statement);
         }
     }
 
+    /**
+     * 分岐条件を評価し、スタックへ結果を積む。
+     *
+     * @param term 条件式。意味解析済みの構造体・機器オブジェクトの直接使用は拒否する。
+     */
     private condition(term: Term): void {
-        if (this.analysis !== undefined && this.valueType(term).kind === "object") {
+        if (this.valueType(term).kind === "object") {
             this.fail(term, "条件には構造体・機器オブジェクトのフィールドやメソッドの数値結果を使ってください");
         }
         this.expression(term);
@@ -1014,6 +875,11 @@ class BytecodeGenerator {
      * | `POP` | 式文の結果を1個捨てる |
      * | `PUSH_NONE` | Noneを1個積む。値のないreturn・関数末尾・Noneリテラルに使う |
      * | `HALT` | モジュール本体の終了。後ろに置いた関数本体への流入を防ぐ |
+     *
+     * 意味解析済みのrecordの戻り値は、1個ではなく関数情報に記録した幅で扱う。
+     * 式文も型の幅だけPOPし、文ごとに一時領域のカーソルを戻す。
+     *
+     * @param statement 命令生成する文。globalとpassは実行命令を生成しない。
      */
     private statement(statement: Statement): void {
         if (statement instanceof GlobalStatement) {
@@ -1025,33 +891,19 @@ class BytecodeGenerator {
             || statement instanceof ReturnStatement || statement.keyword === "break" || statement.keyword === "continue") {
             this.statementStarts.push({ index: this.entries.length, ...this.location(statement) });
         }
-        if (this.analysis !== undefined) {
-            const allocation = this.allocations.get(this.scope)!;
-            allocation.cursor = allocation.variablesEnd;
-        }
+        const allocation = this.allocations.get(this.scope)!;
+        allocation.cursor = allocation.variablesEnd;
         if (statement instanceof CallStatement) {
             const assignment = this.assignment(statement);
             if (assignment === undefined) {
                 this.expression(statement.app);
-                const count = this.analysis === undefined ? 1 : this.valueWidth(this.valueType(statement.app));
+                const count = this.valueWidth(this.valueType(statement.app));
                 for (let index = 0; index < count; index++) {
                     this.emit("POP", statement);
                 }
             }
-            else if (this.analysis !== undefined) {
-                this.typedAssignment(assignment);
-            }
             else {
-                const target = assignment.args[0] as RefVar;
-                const kind = this.variableKind(target, this.scope);
-                if (assignment.fncName !== "=") {
-                    this.emit(`LOAD_${kind}`, target, target.name);
-                }
-                this.expression(assignment.args[1]);
-                if (assignment.fncName !== "=") {
-                    this.emit(arithmetic[assignment.fncName[0]], assignment);
-                }
-                this.emit(`STORE_${kind}`, target, target.name);
+                this.typedAssignment(assignment);
             }
         }
         else if (statement instanceof IfStatement) {
@@ -1087,13 +939,8 @@ class BytecodeGenerator {
                 this.emit("PUSH_NONE", statement);
             }
             else {
-                if (this.analysis === undefined) {
-                    this.expression(statement.value);
-                }
-                else {
-                    const fn = this.analysis.functions.get(this.scope.fn!.name)!;
-                    this.expressionAs(statement.value, fn.type!);
-                }
+                const fn = this.analysis.functions.get(this.scope.fn!.name)!;
+                this.expressionAs(statement.value, fn.type!);
             }
             this.emit("RET", statement);
         }
@@ -1109,7 +956,14 @@ class BytecodeGenerator {
         }
     }
 
-    private format(entry: AssemblyEntry): string {
+    /**
+     * 内部の命令・ラベル・大域領域を1行へ整形する。
+     * 関数情報・数値PCはformatAssemblyで整形する。
+     *
+     * @param entry 整形する内部要素。
+     * @returns 改行を含まないアセンブリの1行。
+     */
+    private format(entry: Exclude<AssemblyEntry, FunctionEntry>): string {
         switch (entry.kind) {
             case "instruction":
                 return entry.operand === undefined ? entry.opcode : `${entry.opcode} ${entry.operand}`;
@@ -1117,12 +971,15 @@ class BytecodeGenerator {
                 return `${entry.name}:`;
             case "globals":
                 return `.globals ${entry.count}`;
-            case "function":
-                return `.function ${entry.name} ${entry.args} ${entry.locals}`;
         }
     }
 
-    /** charPosを元ソースの行番号（0始まり）へ変換する。自動生成は-1。 */
+    /**
+     * charPosを元ソースの行番号（0始まり）へ変換する。自動生成は-1。
+     *
+     * @param charPos 元ソースのUTF-16位置。負数は自動生成を表す。
+     * @returns 0始まりの行番号。自動生成の場合は-1。
+     */
     private sourceLine(charPos: number): number {
         if (charPos < 0) {
             return -1;
@@ -1141,47 +998,52 @@ class BytecodeGenerator {
         return low - 1;
     }
 
-    /** 同じPython行に対応する連続した命令には、先頭にだけコメントを付ける。
+    /**
+     * 同じPython行に対応する連続した命令には、先頭にだけコメントを付ける。
+     *
+     * 意味解析済みは.apiとnativeId順の.native表を出し、呼出し・分岐先を数値PCへ解決する。
+     * .functionは「名前 入口PC 引数スロット数 追加局所スロット数 戻り値スロット数」とする。
+     * 文字列定数は.globalsの直後にID順で置き、制御文字等をエスケープして1行に出力する。
      *
      * @remarks
      * `parsePython()`は元のソースを`Module.source`に保持する。アセンブリ出力では命令・ラベルの`charPos`を使い、対応するPythonの行番号と原文を`;`コメントで出す。同じ行の連続命令には1つのコメントを付け、元の行を持たないHALT・暗黙returnは自動生成と表示する。元ソースがないModuleはコメントなしで生成する。
+     *
+     * @returns 疑似指示・ラベル・命令と元ソースのコメントを含む、末尾改行付きのアセンブリ。
      */
     private formatAssembly(): string {
         const lines: string[] = [];
         const labels = new Map<string, LabelAddress>();
-        if (this.analysis !== undefined) {
-            let pc = 0;
-            for (const entry of this.entries) {
-                if (entry.kind === "label") {
-                    labels.set(entry.name, { pc, owner: entry.owner });
-                }
-                else if (entry.kind === "instruction") {
-                    pc += this.instructionLength(entry);
-                }
+        let pc = 0;
+        for (const entry of this.entries) {
+            if (entry.kind === "label") {
+                labels.set(entry.name, { pc, owner: entry.owner });
             }
-            if (pc > 65536) {
-                this.binaryError(this.location(this.module), "アセンブリの命令列長が65536バイトを超えています");
+            else if (entry.kind === "instruction") {
+                pc += this.instructionLength(entry);
             }
-            lines.push(`.api ${this.analysis.api.callingConventionVersion} ${this.analysis.api.abiHash}`);
-            const natives: { definition: DeviceCallable; name: string; self: number }[] = [];
-            for (const owner of this.analysis.api.classes) {
-                if (owner.constructor !== null) {
-                    natives.push({ definition: owner.constructor, name: `${owner.name}.__init__`, self: 0 });
-                }
-                for (const definition of owner.methods) {
-                    natives.push({ definition, name: `${owner.name}.${definition.name}`,
-                        self: this.valueWidth({ kind: "object", classId: owner.id }) });
-                }
+        }
+        if (pc > 65536) {
+            this.binaryError(this.location(this.module), "アセンブリの命令列長が65536バイトを超えています");
+        }
+        lines.push(`.api ${this.analysis.api.callingConventionVersion} ${this.analysis.api.abiHash}`);
+        const natives: { /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: DeviceCallable; /** 表示・保存・名前解決に使用する名前。 */ name: string; /** メソッド呼出しで先頭に積む対象オブジェクトのスロット幅。 */ self: number }[] = [];
+        for (const owner of this.analysis.api.classes) {
+            if (owner.constructor !== null) {
+                natives.push({ definition: owner.constructor, name: `${owner.name}.__init__`, self: 0 });
             }
-            for (const definition of this.analysis.api.functions) {
-                natives.push({ definition, name: definition.name, self: 0 });
+            for (const definition of owner.methods) {
+                natives.push({ definition, name: `${owner.name}.${definition.name}`,
+                    self: this.valueWidth({ kind: "object", classId: owner.id }) });
             }
-            for (const native of natives.sort((left, right) => left.definition.nativeId - right.definition.nativeId)) {
-                const args = native.self + native.definition.parameters.reduce((count, parameter) => count + this.valueWidth(parameter.type), 0);
-                const result = this.valueWidth(native.definition.resultType ?? native.definition.returnType);
-                this.uint16(args, this.location(), "ネイティブ関数の引数スロット数");
-                lines.push(`.native ${native.definition.nativeId} ${native.name} ${args} ${result}`);
-            }
+        }
+        for (const definition of this.analysis.api.functions) {
+            natives.push({ definition, name: definition.name, self: 0 });
+        }
+        for (const native of natives.sort((left, right) => left.definition.nativeId - right.definition.nativeId)) {
+            const args = native.self + native.definition.parameters.reduce((count, parameter) => count + this.valueWidth(parameter.type), 0);
+            const result = this.valueWidth(native.definition.resultType ?? native.definition.returnType);
+            this.uint16(args, this.location(), "ネイティブ関数の引数スロット数");
+            lines.push(`.native ${native.definition.nativeId} ${native.name} ${args} ${result}`);
         }
         let previousLine = -2;
         for (const entry of this.entries) {
@@ -1192,11 +1054,11 @@ class BytecodeGenerator {
                     previousLine = line;
                 }
             }
-            if (this.analysis !== undefined && entry.kind === "function") {
+            if (entry.kind === "function") {
                 const pc = this.uint16(this.labelAddress(entry.name, labels, entry).pc, entry, "関数入口PC");
                 lines.push(`.function ${entry.name} ${pc} ${entry.args} ${entry.locals} ${entry.returns}`);
             }
-            else if (this.analysis !== undefined && entry.kind === "instruction"
+            else if (entry.kind === "instruction"
                 && ["CALL", "JUMP", "JUMP_IF_FALSE", "JUMP_IF_TRUE"].includes(entry.opcode)) {
                 const target = this.labelAddress(entry.operand, labels, entry);
                 const base = entry.opcode === "CALL" || entry.owner === undefined ? 0
@@ -1219,19 +1081,30 @@ class BytecodeGenerator {
         return `${lines.join("\n")}\n`;
     }
 
-    /** 意味解析で確定した幅と配置を使用し、追加の一時領域だけを生成器が管理する。 */
+    /**
+     * 意味解析で確定した幅と配置を使用し、追加の一時領域だけを生成器が管理する。
+     *
+     * スロット配置はsemantic.tsの解析結果を使い、一時領域の最大幅だけを追加する。
+     * 関数本体はモジュールのHALTの後へ定義順に配置する。
+     *
+     * ## 構造体・ネイティブ呼出しのコード生成（2026-11-04）
+     *
+     * 引数も戻り値もrecordの全スロットを渡す。関数内はBP+0/1を管理用とし、BP+2から
+     * 平坦化した引数、局所変数、コンパイラーの一時領域を配置する。一時領域は文ごとに
+     * 再利用し、同時に必要な最大数を確保する。.functionは「名前 入口PC 引数スロット数
+     * 追加局所スロット数 戻り値スロット数」。RETはこの戻り値数を保ってフレームを破棄
+     * する契約。非None関数の末尾RETは解析上到達不能で、到達時は戻り値不足で停止する。
+     * Noneも1スロット。式文は結果のスロット数だけPOPする。
+     */
     private compileTyped(): void {
         this.collectFunctions();
         const globalScope = this.scope;
         const scopes = [globalScope, ...this.functions.values()];
         for (const scope of scopes) {
-            const fn = scope.fn === undefined ? undefined : this.analysis!.functions.get(scope.fn.name)!;
-            const variables = fn === undefined ? this.analysis!.globals : fn.variables;
-            scope.globalNames = fn?.globalNames ?? new Set();
-            scope.variables.clear();
+            const fn = scope.fn === undefined ? undefined : this.analysis.functions.get(scope.fn.name)!;
+            const variables = fn === undefined ? this.analysis.globals : fn.variables;
             let end = scope.fn === undefined ? 0 : 2;
             for (const variable of variables.values()) {
-                scope.variables.set(variable.name, variable.slot);
                 end = Math.max(end, variable.slot + this.valueWidth(variable.type!));
             }
             if (end > 65535) {
@@ -1239,13 +1112,13 @@ class BytecodeGenerator {
             }
             this.allocations.set(scope, { variablesEnd: end, cursor: end, end });
         }
-        const globals: Extract<AssemblyEntry, { kind: "globals" }> = {
+        const globals: Extract<AssemblyEntry, { /** この共用型の要素を区別する種別。 */ kind: "globals" }> = {
             kind: "globals", count: 0, ...this.location()
         };
         this.entries.push(globals);
         const records = new Map<Scope, FunctionEntry>();
         for (const scope of this.functions.values()) {
-            const fn = this.analysis!.functions.get(scope.fn!.name)!;
+            const fn = this.analysis.functions.get(scope.fn!.name)!;
             const args = fn.parameters.reduce((count, parameter) => count + this.valueWidth(parameter.type!), 0);
             const entry: FunctionEntry = { kind: "function", name: fn.node.name, args, locals: 0,
                 returns: this.valueWidth(fn.type!), charPos: fn.node.charPos, owner: fn.node.name };
@@ -1256,7 +1129,7 @@ class BytecodeGenerator {
         this.emit("HALT");
         for (const scope of this.functions.values()) {
             this.scope = scope;
-            const fn = this.analysis!.functions.get(scope.fn!.name)!;
+            const fn = this.analysis.functions.get(scope.fn!.name)!;
             this.label(fn.node.name, fn.node);
             this.block(scope.block);
             // 暗黙returnはステップ専用。def行や末尾の別行へ行ブレークポイントを作らない。
@@ -1272,52 +1145,13 @@ class BytecodeGenerator {
         globals.count = this.allocations.get(globalScope)!.end;
     }
 
-    /** 意味解析を指定しない従来経路で、アセンブリとバイナリ共通の命令列・変数表・関数表を作る。
+
+    /**
+     * opcodeとオペランドの符号化形式から、命令長をバイト単位で求める。
      *
-     * @remarks
-     * 関数情報に「入口ラベル・仮引数個数・追加の局所変数個数」を持たせる。アセンブリでは疑似指示`.function f 2 1`のように出力する。この例は引数2個・追加の局所変数1個を示し、VMの実行命令ではない。大域変数の個数も`.globals 個数`で記録する。
-     *
-     * 関数定義は最初の実装ではモジュール先頭にまとめた無条件のdefに限定し、そこから関数表を作る。重複定義、変数と関数の同名使用、入れ子・条件内・実行文の後のdefは生成エラーにする。この制約により、実行中の関数名の束縛変更を扱わずに、再帰・関数間の呼出しを静的に解決できる。関数本体はモジュール本体とHALTの後へ配置する。
+     * @param entry 長さを求める実行命令。
+     * @returns オペランドなしは1、uint16は3、int32/float32は5バイト。
      */
-    private compile(): void {
-        this.collectFunctions();
-        const globalScope = this.scope;
-        const scopes = [globalScope, ...this.functions.values()];
-        for (const scope of scopes) {
-            scope.globalNames = collectScopeGlobals(scope.fn === undefined ? this.module.block : scope.block,
-                scope.fn?.args ?? [], (node, message) => this.fail(node, message));
-            this.collectVariables(scope);
-        }
-        for (const scope of scopes) {
-            for (const name of scope.variables.keys()) {
-                if (this.functions.has(name)) {
-                    this.fail(scope.fn ?? this.module, `変数と関数に同じ名前は使えません: ${name}`);
-                }
-            }
-            this.validateScope(scope);
-        }
-
-        this.entries.push({ kind: "globals", count: globalScope.variables.size, ...this.location() });
-        for (const scope of this.functions.values()) {
-            const fn = scope.fn!;
-            this.entries.push({
-                kind: "function", name: fn.name, args: fn.args.length,
-                locals: scope.variables.size - fn.args.length, charPos: fn.charPos, owner: fn.name
-            });
-        }
-        this.block(globalScope.block);
-        this.emit("HALT");
-        for (const scope of this.functions.values()) {
-            const fn = scope.fn!;
-            this.scope = scope;
-            this.label(fn.name, fn);
-            this.block(scope.block);
-            // 末尾まで到達したときも必ず戻り値を1個返す。
-            this.emit("PUSH_NONE");
-            this.emit("RET");
-        }
-    }
-
     private instructionLength(entry: InstructionEntry): number {
         const encoding = operandEncoding[entry.opcode];
         if (encoding === undefined) {
@@ -1326,10 +1160,26 @@ class BytecodeGenerator {
         return encoding === "u16" ? 3 : 5;
     }
 
+    /**
+     * バイナリ形式の範囲・アドレス解決エラーを元ソースの位置付きで報告する。
+     *
+     * @param location 問題の命令または生成処理の位置。
+     * @param message エラーの説明。
+     * @throws RangeError charPosを含む形式エラー。
+     */
     private binaryError(location: SourceLocation, message: string): never {
         throw new RangeError(`${message} (charPos=${location.charPos})`);
     }
 
+    /**
+     * 数値がuint16へ切り詰めず格納できる整数か検査する。
+     *
+     * @param value 検査する値。
+     * @param location 範囲違反の場合の診断位置。
+     * @param description エラーへ付ける項目名。
+     * @returns 検証した0〜65535の整数。
+     * @throws RangeError 整数でない場合、または範囲外の場合。
+     */
     private uint16(value: number, location: SourceLocation, description: string): number {
         if (!Number.isInteger(value) || value < 0 || value > 0xFFFF) {
             this.binaryError(location, `${description}がuint16の範囲を超えています: ${value}`);
@@ -1337,6 +1187,15 @@ class BytecodeGenerator {
         return value;
     }
 
+    /**
+     * ラベル名を命令列内のPCと所属関数へ解決する。
+     *
+     * @param name 解決するラベル名。
+     * @param labels 命令長から作成したラベルの対応表。
+     * @param location 解決に失敗した場合の診断位置。
+     * @returns ラベルのPCと所属関数。
+     * @throws RangeError 名前が未指定、またはラベルが存在しない場合。
+     */
     private labelAddress(
         name: string | undefined,
         labels: ReadonlyMap<string, LabelAddress>,
@@ -1349,11 +1208,22 @@ class BytecodeGenerator {
         return address;
     }
 
-    /** 変数名・関数名・分岐ラベル・文字列定数IDをuint16オペランドへ解決する。
+    /**
+     * 変数名・関数名・分岐ラベル・文字列定数IDをuint16オペランドへ解決する。
+     *
+     * ユーザー関数はCALL 入口PC。PCは命令列先頭=0のバイト位置で、CALL/分岐等の
+     * uint16オペランド命令とCALL_NATIVE/FORMAT_VALUE/BUILD_STRINGは3バイト、
+     * PUSH_INT/PUSH_FLOATは5バイト、TO_FLOATを含むオペランドなし命令は1バイトとして
+     * PCを計算する。分岐は所属関数先頭からの相対位置。ラベルはテキストの表示にも残す。
      *
      * @remarks
-     * 従来経路では`LOAD_L a`等の名前をスロット番号へ解決する。意味解析付きでは既に
+     * LOAD/STOREのオペランドは意味解析で確定したスロット番号を使用し、
      * 固定位置になっているので、一時領域を含む領域の範囲を検査する。
+     *
+     * @param entry 固定スロット・呼出し先・分岐先・定数ID等を持つ命令。
+     * @param labels 命令列先頭を0とするラベルのPC対応表。
+     * @returns 範囲検査済みのuint16オペランド。
+     * @throws RangeError 未解決・範囲外、APIにないnativeId、別関数への分岐の場合。
      */
     private addressOperand(entry: InstructionEntry, labels: ReadonlyMap<string, LabelAddress>): number {
         const name = entry.operand;
@@ -1368,24 +1238,17 @@ class BytecodeGenerator {
                 break;
             case "LOAD_G":
             case "STORE_G":
-                value = this.analysis === undefined
-                    ? name === undefined ? undefined : this.globalScope.variables.get(name)
-                    : Number(name);
-                if (this.analysis !== undefined && (value === undefined || value >= this.allocations.get(this.globalScope)!.end)) {
+                value = Number(name);
+                if (value >= this.allocations.get(this.globalScope)!.end) {
                     this.binaryError(entry, "大域スロットが領域の範囲外です");
                 }
                 break;
             case "LOAD_L":
             case "STORE_L": {
                 const scope = entry.owner === undefined ? undefined : this.functions.get(entry.owner);
-                if (this.analysis === undefined) {
-                    value = name === undefined ? undefined : scope?.variables.get(name);
-                }
-                else {
-                    value = Number(name);
-                    if (scope === undefined || value < 2 || value >= this.allocations.get(scope)!.end) {
-                        this.binaryError(entry, "局所スロットが管理領域または領域の範囲外です");
-                    }
+                value = Number(name);
+                if (scope === undefined || value < 2 || value >= this.allocations.get(scope)!.end) {
+                    this.binaryError(entry, "局所スロットが管理領域または領域の範囲外です");
                 }
                 break;
             }
@@ -1422,21 +1285,26 @@ class BytecodeGenerator {
         return this.uint16(value, entry, "オペランド");
     }
 
-    /** PCを解決し、固定長ヘッダー・関数表・実行命令・UTF-8文字列定数を書き込む。
-     *
-     * @remarks
-     * 初期仕様の「関数内ラベルはBPからの相対位置」はデータスタックのBPと命令アドレスが混在するため、分岐先を「関数先頭PCからのオフセット」、CALL先を「命令列先頭からの絶対PC」として区別した。バイナリ化では、1回目に命令長から全ラベルのPCを求め、2回目に変数スロット・分岐先・CALL先を数値化して書き込む。命令アドレスはバイト単位とし、ヘッダー・関数表を除いた命令列の先頭を0とする。
-     *
-     * 意味解析の有無によりversion=2/3のヘッダーと関数表を選ぶ。形式はファイル先頭参照。
-     * 命令列は最大65536バイト、全体は128KiB以内とし、範囲超過で切り詰めない。
-     * 変数名・関数名・ラベル名・原文・コメントは書き込まない。
+    /**
+     * version=3だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
+     * ヘッダー56バイト: magic:u16@0=0xB1C0、version:u16@2=3、大域数:u16@4、関数数:u16@6、
+     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=2、文字列数:u16@16、
+     * schema:u16@18=2、UTF-8長:u32@20、ABI SHA-256の生32バイト@24。
+     * 関数表は12バイト/件: 入口PC・命令長・引数幅・追加局所幅・戻り値幅・予約0を各u16。
+     * 戻り値はNoneも1スロット以上。管理領域2個は追加局所幅に含めず、一時領域は含める。
+     * 関数表→命令列→文字列表→UTF-8の順でパディングなし。文字列レコードはoffset:u32と
+     * byteLength:u32の8バイトで、ID順に隙間なく連結する。NUL終端・正規化は行わない。
+     * 命令PCは命令列先頭=0。CALLは絶対PC、分岐は所属関数先頭からの相対PC。
+     * nativeIdはAPI表に存在するものだけ許可し、指紋で同じC++登録表へ結合する。
+     * @returns 現行形式のバイナリ。版1/2は生成しない。
+     * @throws RangeError 不正な型情報・幅・アドレス・上限超過。
      */
     private encodeBinary(): Uint8Array {
-        const api = this.analysis?.api;
-        const headerLength = api === undefined ? bytecodeHeaderLength : bytecodeApiHeaderLength;
-        const functionRecordLength = api === undefined ? bytecodeFunctionRecordLength : bytecodeApiFunctionRecordLength;
-        if (api !== undefined && (api.schemaVersion !== 2 || api.callingConventionVersion !== 2
-            || api.stringPolicyVersion !== 1 || !/^[0-9a-f]{64}$/.test(api.abiHash))) {
+        const api = this.analysis.api;
+        const headerLength = bytecodeHeaderLength;
+        const functionRecordLength = bytecodeFunctionRecordLength;
+        if (api.schemaVersion !== 2 || api.callingConventionVersion !== 2
+            || api.stringPolicyVersion !== 1 || !/^[0-9a-f]{64}$/.test(api.abiHash)) {
             this.binaryError(this.location(this.module), "バイナリversion=3に対応するAPI定義・ABI指紋ではありません");
         }
         const labels = new Map<string, LabelAddress>();
@@ -1485,19 +1353,17 @@ class BytecodeGenerator {
         const bytes = new Uint8Array(stringDataOffset + stringDataLength);
         const view = new DataView(bytes.buffer);
         view.setUint16(0, bytecodeSignature, true);
-        view.setUint16(2, api === undefined ? bytecodeVersion : bytecodeApiVersion, true);
+        view.setUint16(2, bytecodeVersion, true);
         view.setUint16(4, globals, true);
         view.setUint16(6, functionCount, true);
         view.setUint32(8, codeLength, true);
         view.setUint16(12, 0, true);
-        view.setUint16(14, api === undefined ? 0 : api.callingConventionVersion, true);
+        view.setUint16(14, api.callingConventionVersion, true);
         view.setUint16(16, stringCount, true);
-        view.setUint16(18, api === undefined ? 0 : api.schemaVersion, true);
+        view.setUint16(18, api.schemaVersion, true);
         view.setUint32(20, stringDataLength, true);
-        if (api !== undefined) {
-            for (let index = 0; index < 32; index++) {
-                view.setUint8(24 + index, Number.parseInt(api.abiHash.slice(index * 2, index * 2 + 2), 16));
-            }
+        for (let index = 0; index < 32; index++) {
+            view.setUint8(24 + index, Number.parseInt(api.abiHash.slice(index * 2, index * 2 + 2), 16));
         }
 
         for (const [index, fn] of functions.entries()) {
@@ -1509,14 +1375,12 @@ class BytecodeGenerator {
             view.setUint16(offset + 2, this.uint16(end - start, fn, "関数の命令列の長さ"), true);
             view.setUint16(offset + 4, this.uint16(fn.args, fn, "引数スロット数"), true);
             view.setUint16(offset + 6, this.uint16(fn.locals, fn, "追加の局所スロット数"), true);
-            if (api !== undefined) {
-                const returns = this.uint16(fn.returns ?? 0, fn, "戻り値スロット数");
-                if (returns === 0) {
-                    this.binaryError(fn, "戻り値にはNoneを含めて1スロット以上が必要です");
-                }
-                view.setUint16(offset + 8, returns, true);
-                view.setUint16(offset + 10, 0, true);
+            const returns = this.uint16(fn.returns, fn, "戻り値スロット数");
+            if (returns === 0) {
+                this.binaryError(fn, "戻り値にはNoneを含めて1スロット以上が必要です");
             }
+            view.setUint16(offset + 8, returns, true);
+            view.setUint16(offset + 10, 0, true);
         }
 
         let offset = codeOffset;
@@ -1524,8 +1388,7 @@ class BytecodeGenerator {
             if (entry.kind !== "instruction") {
                 continue;
             }
-            if (!Object.hasOwn(BytecodeOpcode, entry.opcode)
-                || api === undefined && BytecodeOpcode[entry.opcode] > BytecodeOpcode.PUSH_STRING) {
+            if (!Object.hasOwn(BytecodeOpcode, entry.opcode)) {
                 this.binaryError(entry, `このバイナリversionでは使用できない命令です: ${entry.opcode}`);
             }
             const opcode = entry.opcode;
@@ -1554,32 +1417,41 @@ class BytecodeGenerator {
         return bytes;
     }
 
-    /** テキスト・バイナリ両方で同じ生成経路を選び、PC・一時領域の計算を一致させる。 */
-    private compileProgram(): void {
-        if (this.analysis === undefined) {
-            this.compile();
-        }
-        else {
-            this.compileTyped();
-        }
-    }
 
+    /**
+     * この生成器で内部命令列を1回生成し、テキストへ整形する。
+     *
+     * @returns 元ソースのコメントと疑似指示を含むアセンブリ。
+     */
     generateAssembly(): string {
-        this.compileProgram();
+        this.compileTyped();
         return this.formatAssembly();
     }
 
+    /**
+     * この生成器で内部命令列を1回生成し、共通の命令・定数表からバイナリへ符号化する。
+     *
+     * @returns 意味解析済みのversion=3バイナリ。
+     */
     generateBytecode(): Uint8Array {
-        this.compileProgram();
+        this.compileTyped();
         return this.encodeBinary();
     }
 
-    /** 同じ1回のコンパイルからバイナリと最終PC・変数配置を返す。名前・型はdiagramだけに保持する。 */
+    /**
+     * 同じ1回のコンパイルからバイナリと最終PC・変数配置を返す。名前・型はdiagramだけに保持する。
+     *
+     * 文の先頭・関数入口・暗黙returnの最終PCを停止候補へ対応付ける。
+     * 複数スロットのSTOREの途中やCALLからの継続には行ブレークポイントを作らない。
+     *
+     * @returns 同じ命令列から作ったversion=3のbytesと、元ソース・変数配置・停止位置のinfo。
+     * @throws Error 元ソースまたは意味解析結果がない場合。
+     */
     generateDebugBytecode(): PythonDebugBuild {
-        if (this.analysis === undefined || this.module.source === undefined) {
+        if (this.module.source === undefined) {
             throw new Error("デバッグ情報には元ソースと意味解析結果が必要です。");
         }
-        this.compileProgram();
+        this.compileTyped();
         const bytes = this.encodeBinary();
         const positions: number[] = [];
         const instructions: PythonDebugInfo["instructions"] = new Map();
@@ -1600,7 +1472,7 @@ class BytecodeGenerator {
             const name = scope.fn!.name;
             const record = this.entries.find((entry): entry is FunctionEntry => entry.kind === "function" && entry.name === name)!;
             return { name, entryPc: labels.get(name)!, endPc: pc, slots: 2 + record.args + record.locals,
-                variables: [...this.analysis!.functions.get(name)!.variables.values()] };
+                variables: [...this.analysis.functions.get(name)!.variables.values()] };
         });
         for (let index = 0; index + 1 < functions.length; index++) {
             functions[index].endPc = functions[index + 1].entryPc;
@@ -1621,32 +1493,30 @@ class BytecodeGenerator {
 }
 
 /**
- * Python構文木を検査し、アセンブラソースを生成する。
- * @param module parsePythonが返すModule。元の木とtoStringのキャッシュは変更しない。
- * @param analysis 同じ木の意味解析結果。指定時は構造体・API・f文字列にも対応する。
- * @returns 疑似指示と命令を改行で区切った文字列（末尾改行付き）。Module.sourceが
- * 設定されている場合は、対応するPythonの行番号と原文をコメントで付ける。
- * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲の不一致。
+ * 意味解析済みの構文木からアセンブリを生成する。意味診断があれば拒否する。
+ * @param analysis 型・配置を確定した解析結果。構文木は変更しない。
+ * @returns 疑似指示・命令と元ソースの行コメント。末尾LF付き。
  */
-export function generateAssembly(module: Module, analysis?: PythonAnalysis): string {
-    return new BytecodeGenerator(module, analysis).generateAssembly();
+export function generateAssembly(analysis: PythonAnalysis): string {
+    return new BytecodeGenerator(analysis).generateAssembly();
 }
 
 /**
- * Python構文木から、UTF-8文字列定数を含むバイナリを生成する。
- * @param module parsePythonが返すModule。元の木とtoStringのキャッシュは変更しない。
- * @param analysis 同じ木の意味解析結果。指定時は構造体・API・f文字列を含むversion=3。
- * 省略時は従来の数値・通常文字列用version=2。BLEへの接続とVM実行は別の機能。
- * @returns ヘッダー・関数情報・命令列・文字列表・UTF-8データを持つUint8Array。
- * 複数バイトの数値はlittle endian。形式の詳細はファイル先頭を参照する。
- * @throws SyntaxError 未対応の構文、不明な名前、引数個数・数値範囲・文字列エスケープの不一致。
- * @throws RangeError 命令列長、全体長、アドレス、変数数・関数数等の形式上限の超過。
+ * version=3のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
+ * bytecode-transfer.tsとESP32受信器は形式を検証し、VMが実行する。
+ * 転送成功・開始ACKは正常終了や実機動作の確認を意味しない。
+ * @param analysis 型・配置を確定した解析結果。
+ * @returns ヘッダー・関数表・命令列・文字列表・UTF-8データ。
  */
-export function generateBytecode(module: Module, analysis?: PythonAnalysis): Uint8Array {
-    return new BytecodeGenerator(module, analysis).generateBytecode();
+export function generateBytecode(analysis: PythonAnalysis): Uint8Array {
+    return new BytecodeGenerator(analysis).generateBytecode();
 }
 
-/** version=3のバイナリと同一生成のデバッグ情報を返す。既存generateBytecode()の形式は変えない。 */
+/**
+ * 同じコンパイルからversion=3のバイナリとデバッグ情報を返す。
+ * @param analysis 元ソースを持つ意味解析結果。
+ * @returns 転送バイナリ・最終PC・名前と型・停止点。
+ */
 export function generateDebugBytecode(analysis: PythonAnalysis): PythonDebugBuild {
-    return new BytecodeGenerator(analysis.module, analysis).generateDebugBytecode();
+    return new BytecodeGenerator(analysis).generateDebugBytecode();
 }

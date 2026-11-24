@@ -1,21 +1,9 @@
 /**
- * Python字句解析のf文字列仕様（構文解析・実行側との受け渡しを含む）。
- *
- * fまたはF接頭辞と、二重引用符または単一引用符の文字列を扱う。
- * 開始（f"等）・終了引用符と置換フィールドの {・}・: はsymbol、
- * 文字列部分はString、置換式は通常の式トークン、コロン後の書式はformatに分ける。
- * 例: f"a + b={a + b:.2f}" は次の順に出力する。
- * symbol f" / String a + b= / symbol { / identifier a / symbol + /
- * identifier b / symbol : / format .2f / symbol } / symbol "
- * 論理行末には通常どおりnewLineを付ける。
- *
- * 書式は [width][.precision][type] のみ。width・precisionは1桁以上の10進数字、
- * typeは b c d e E f F g G n o s x X % のいずれか1文字とし、各要素は省略可能。
- * 配置・符号・桁区切り・書式内の置換フィールドは未対応として拒否する。
- * 文字列中の {{・}} とエスケープは原文のまま保持し、空の文字列部分は出力しない。
- * 通常文字列も引用符を除いた原文を保持し、値への変換は後段で行う。
- * 三重引用符、raw・bytes等の接頭辞付き文字列は未対応として拒否する。
- * f文字列の構文木への変換仕様と後段の対応範囲はparser.ts先頭のコメントを参照する。
+ * Pythonサブセットのソースを、位置・インデント・論理改行を持つトークン列へ変換する。f文字列の分割はlexicalAnalysis()、構文木化はparser.tsが担当する。
+ */
+/**
+ * Pythonソースの字句解析と、構文解析へ渡す位置付きトークンを定義する。
+ * 構文木化はparser.ts、リテラルの値への変換は後段の生成器が担当する。
  */
 export enum TokenType{
     unknown,
@@ -66,6 +54,9 @@ export enum TokenType{
     illegal
 }
     
+/**
+ * 数値トークンの整数・単精度・倍精度等の補助分類。
+ */
 export enum TokenSubType {
     unknown,
     integer,
@@ -73,12 +64,33 @@ export enum TokenSubType {
     double
 }
 
+/**
+ * 元ソースの位置と原文を保持する字句。
+ */
 export class Token{
+    /**
+     * 識別子・記号・改行・文字列等のトークン種別。
+     */
     typeTkn:TokenType;
+    /**
+     * 数値等の補助的なトークン分類。
+     */
     subType:TokenSubType;
+    /**
+     * 部品に表示する文字列。
+     */
     text:string;
+    /**
+     * 元のPythonソース内のUTF-16位置。自動生成命令では-1を使う。
+     */
     charPos:number;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param type 検証または配置するデータ型。
+     * @param text 処理する文字列。
+     */
     public constructor(type : TokenType, sub_type : TokenSubType, text : string, char_pos : number){
         //console.log("" + TokenType[type] + " " + TokenSubType[sub_type] + " " + text + " " + char_pos);
         this.typeTkn = type;
@@ -88,6 +100,9 @@ export class Token{
     }
 }    
 
+/**
+ * Pythonの予約語として識別する字句の集合。
+ */
 const keywords = new Set([
     "False", "None", "True", "and", "as", "assert", "async", "await",
     "break", "class", "continue", "def", "del", "elif", "else", "except",
@@ -110,26 +125,59 @@ const symbols = [
  * Stringのtextは引用符を除いた原文で、エスケープの解釈は後段で行う。
  * f文字列は開始・終了引用符と置換フィールドを分離し、書式は桁・精度・型のみ扱う。
  * charPosは入力string内のUTF-16位置。字句エラーは位置付きSyntaxErrorにする。
+ *
+ * fまたはF接頭辞と、二重引用符または単一引用符の文字列を扱う。
+ * 開始（f"等）・終了引用符と置換フィールドの {・}・: はsymbol、
+ * 文字列部分はString、置換式は通常の式トークン、コロン後の書式はformatに分ける。
+ * 例: f"a + b={a + b:.2f}" は次の順に出力する。
+ * symbol f" / String a + b= / symbol { / identifier a / symbol + /
+ * identifier b / symbol : / format .2f / symbol } / symbol "
+ * 論理行末には通常どおりnewLineを付ける。
+ *
+ * 書式は [width][.precision][type] のみ。width・precisionは1桁以上の10進数字、
+ * typeは b c d e E f F g G n o s x X % のいずれか1文字とし、各要素は省略可能。
+ * 配置・符号・桁区切り・書式内の置換フィールドは未対応として拒否する。
+ * 文字列中の {{・}} とエスケープは原文のまま保持し、空の文字列部分は出力しない。
+ * 通常文字列も引用符を除いた原文を保持し、値への変換は後段で行う。
+ * 三重引用符、raw・bytes等の接頭辞付き文字列は未対応として拒否する。
+ * f文字列の構文木への変換仕様と後段の対応範囲はparser.tsのreadFString()のコメントを参照する。
  */
 export function lexicalAnalysis(text: string): Token[] {
     const tokens: Token[] = [];
     const indents: number[] = [0];
     const brackets: string[] = [];
-    const fStrings: { quote: string; start: number; bracketDepth: number; inExpression: boolean }[] = [];
+    const fStrings: { /** 解析中のf文字列を閉じる引用符。 */ quote: string; /** 解析中のf文字列が元ソースで始まったUTF-16位置。 */ start: number; /** 置換式を開始した時点の括弧の深さ。 */ bracketDepth: number; /** f文字列の本文ではなく置換式を読み取っている状態。 */ inExpression: boolean }[] = [];
     const identifierPattern = /[A-Za-z_][A-Za-z0-9_]*/y;
     const numberPattern = /(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/y;
     let pos = 0;
     let atLineStart = true;
     let hasCode = false;
 
+    /**
+     * 元のUTF-16位置を含む字句エラーを投げ、解析を終了する。
+     *
+     * @param message 画面または診断に表示する説明。
+     * @param position 基準となる座標またはソース内の位置。
+     */
     function fail(message: string, position: number): never {
         throw new SyntaxError(`${message} (charPos=${position})`);
     }
 
+    /**
+     * 指定した原文と位置を持つトークンを解析結果の末尾へ追加する。
+     *
+     * @param type 検証または配置するデータ型。
+     * @param position 基準となる座標またはソース内の位置。
+     */
     function add(type: TokenType, word: string, position: number, subType = TokenSubType.unknown): void {
         tokens.push(new Token(type, subType, word, position));
     }
 
+    /**
+     * 指定位置のLF・CRLF・CRの長さを返す。改行でなければ0。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     function newlineLength(position: number): number {
         if (text[position] === "\r") {
             return text[position + 1] === "\n" ? 2 : 1;

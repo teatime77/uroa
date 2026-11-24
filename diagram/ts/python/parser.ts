@@ -1,28 +1,11 @@
 /**
- * f文字列の構文解析と構文木の仕様。
+ * lex.tsのトークン列をsyntax.tsの構文木へ変換する再帰下降解析器。名前・型の意味解析はsemantic.ts、生成はbytecode.tsが担当する。
+ */
+/**
  * lex.tsが文字列部分・置換式・書式に分けたトークンを、このファイルで解析し、
- * syntax.tsのApp・Str・Termで保持する。bytecode.tsは意味解析結果を指定した場合の
+ * syntax.tsのApp・Str・Termで保持する。bytecode.tsは意味解析結果を必須とする
  * アセンブリ・バイナリ生成まで対応する。ESP32のbytecode_vm.cppが新形式を実行し、
  * 機器APIはdevice_api.generated.cppの生成スタブを通して呼び出す。
- *
- * 開始記号は f"・f'・F"・F' を受け付け、対応する終了引用符までを読む。
- * いずれも関数名を f" に統一したAppとし、argsに各部分を出現順で格納する。
- * 文字列部分は原文を保持したStr、書式のない置換式は解析したTermをそのまま格納する。
- * 書式のある置換式はApp(RefVar("@format"), [式のTerm, 書式指定文字列のStr])とする。
- * 例: f"a + b={a + b:.2f}" は次の構文木になる。
- * App(RefVar('f"'), [Str("a + b="),
- *     App(RefVar("@format"), [App(RefVar("+"), [RefVar("a"), RefVar("b")]), Str(".2f")])])
- *
- * 空のf文字列は引数なしのApp。複数の置換フィールドとf文字列の入れ子に対応する。
- * 置換式の対応範囲はLogicalExpressionと同じで、空の式や不正な区切りはSyntaxError。
- * コロン後はformat型トークンを必須とし、空の書式もStr("")として保持する。
- * 書式の桁・精度・型の制約とエスケープの原文保持はlex.ts先頭の仕様に従う。
- * 各ノードに元のcharPosを設定し、parseSource完了時に通常どおりparentを設定する。
- * この解析は構文木の生成のみを行い、f文字列専用のtoStringによる再生成は未対応。
- * 構文解析後の名前解決・型推論とimportなしのdevice API利用はsemantic.tsが担当する。
- * parsePythonは同期APIのまま保ち、利用側がawait analyzePython(module)を続けて呼ぶ。
- * global文はGlobalStatementに識別子ごとの元位置を保持する。宣言の適用範囲・順序検査は
- * global-scope.tsをsemantic.tsとbytecode.tsから使用する。global文自体に実行時命令はない。
  */
 import { fetchText, msg } from "@i18n";
 import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
@@ -36,37 +19,72 @@ import { analyzePython } from "./semantic.js";
 
 /** 改行を保持し、Pythonサブセットを再帰下降で解析する。 */
 export class Parser {
+    /**
+     * break/continueを許可する繰返し本体の入れ子の深さ。
+     */
     private loopDepth = 0;
+    /**
+     * returnを許可する関数本体の入れ子の深さ。
+     */
     private functionDepth = 0;
+    /**
+     * 入力トークンの末尾で使用する安全なeotトークン。
+     */
     private readonly endToken: Token;
 
-    constructor(public tokens: Token[], public tokenPos = 0) {
+    /**
+     * この型の状態と依存先を初期化する。
+     */
+    constructor(/** 字句解析で得た元位置付きのトークン列。 */ public tokens: Token[], /** 次に解析するトークンの添字。next()が更新する。 */ public tokenPos = 0) {
         const position = tokens.length === 0 ? 0 : tokens[tokens.length - 1].charPos;
         this.endToken = new Token(TokenType.eot, TokenSubType.unknown, "", position);
     }
 
+    /**
+     * 現在位置のトークンを返す。入力末尾ではeotを返す。
+     */
     get token(): Token {
         return this.tokens[this.tokenPos] ?? this.endToken;
     }
 
+    /**
+     * 現在位置のトークンの原文を返す。
+     */
     current(): string {
         return this.token.text;
     }
 
+    /**
+     * eotを越えない範囲でトークン位置を一つ進める。
+     */
     next(): void {
         if (!this.isEoT()) {
             this.tokenPos++;
         }
     }
 
+    /**
+     * 現在位置が入力トークン列の終端かを調べる。
+     */
     isEoT(): boolean {
         return this.token.typeTkn === TokenType.eot;
     }
 
+    /**
+     * 現在トークンの元位置を含むSyntaxErrorを投げる。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private fail(message: string): never {
         throw new SyntaxError(`${message} (charPos=${this.token.charPos})`);
     }
 
+    /**
+     * 作成したノードに元ソースのUTF-16位置を設定して返す。
+     *
+     * @param node 対応する構文木のノード。
+     * @param position 基準となる座標またはソース内の位置。
+     */
     private at<T extends AbstractSyntaxNode>(node: T, position: number): T {
         node.charPos = position;
         return node;
@@ -79,10 +97,16 @@ export class Parser {
             && token.text === word;
     }
 
+    /**
+     * 現在の記号・予約語トークンが指定した綴りと一致するかを調べる。
+     */
     private isToken(word: string): boolean {
         return this.tokenIs(this.token, word);
     }
 
+    /**
+     * 現在トークンが指定した記号・予約語なら消費してtrueを返す。
+     */
     private match(word: string): boolean {
         if (!this.isToken(word)) {
             return false;
@@ -91,18 +115,27 @@ export class Parser {
         return true;
     }
 
+    /**
+     * 指定した記号・予約語を要求して消費する。不一致なら構文エラーにする。
+     */
     nextToken(word: string): void {
         if (!this.match(word)) {
             this.fail(`${word}が必要です`);
         }
     }
 
+    /**
+     * 現在のトークン原文を返し、解析位置を一つ進める。
+     */
     readText(): string {
         const text = this.current();
         this.next();
         return text;
     }
 
+    /**
+     * 識別子トークンを要求し、その名前を読んで先へ進める。
+     */
     readName(): string {
         if (this.token.typeTkn !== TokenType.identifier) {
             this.fail("識別子が必要です");
@@ -110,21 +143,36 @@ export class Parser {
         return this.readText();
     }
 
+    /**
+     * 連続する論理改行トークンを消費する。
+     */
     private skipNewLine(): void {
         while (this.token.typeTkn === TokenType.newLine) {
             this.next();
         }
     }
 
+    /**
+     * 現在位置が論理改行または入力終端かを調べる。
+     */
     private isLineEnd(): boolean {
         return this.token.typeTkn === TokenType.newLine || this.isEoT();
     }
 
+    /**
+     * 演算子参照と引数から、元位置を持つAppノードを作る。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     private application(operator: string, args: Term[], position: number): App {
         return this.at(new App(this.at(new RefVar(operator), position), args), position);
     }
 
-    /** モジュール直下の文を順に読み、完成した木のparentを設定する。 */
+    /**
+     * モジュール直下の文を順に読み、完成した木のparentを設定する。
+     *
+     * 各ノードに元のcharPosを設定し、parseSource完了時に通常どおりparentを設定する。
+     */
     parseSource(): Module {
         const statements: Statement[] = [];
         this.skipNewLine();
@@ -137,6 +185,9 @@ export class Parser {
         return module;
     }
 
+    /**
+     * if・while・for・defまたは単純文を読み、文末の改行も検査する。
+     */
     parseStatement(): Statement {
         if (this.isToken("if")) {
             return this.parseIf();
@@ -158,6 +209,12 @@ export class Parser {
         return statement;
     }
 
+    /**
+     * global・return・制御キーワード・importまたは式文を読む。
+     *
+     * global文はGlobalStatementに識別子ごとの元位置を保持する。宣言の適用範囲・順序検査は
+     * global-scope.tsでsemantic.tsが検査し、bytecode.tsはその解析結果を使う。global文自体に実行時命令はない。
+     */
     private readSimpleStatement(): Statement {
         const position = this.token.charPos;
         if (this.match("global")) {
@@ -216,6 +273,9 @@ export class Parser {
         return this.at(new BlockStatement(statements), position);
     }
 
+    /**
+     * 条件とif本体を読み、続くelif・elseを同じ分岐ノードへまとめる。
+     */
     parseIf(): IfStatement {
         const position = this.token.charPos;
         if (!this.match("if")) {
@@ -234,6 +294,9 @@ export class Parser {
         return this.at(new IfStatement(condition, block, elseIf, elseBlock), position);
     }
 
+    /**
+     * 繰返し深さを一時的に増やして本体を読み、終了時に深さを戻す。
+     */
     private readLoopBlock(): BlockStatement {
         this.loopDepth++;
         try {
@@ -244,6 +307,9 @@ export class Parser {
         }
     }
 
+    /**
+     * whileの条件と本体を解析して位置付きの文ノードを返す。
+     */
     parseWhile(): WhileStatement {
         const position = this.token.charPos;
         this.nextToken("while");
@@ -251,6 +317,9 @@ export class Parser {
         return this.at(new WhileStatement(condition, this.readLoopBlock()), position);
     }
 
+    /**
+     * forの変数名・反復対象式・本体を構文木として読む。生成対応の判定は後段で行う。
+     */
     parseFor(): ForStatement {
         const position = this.token.charPos;
         this.nextToken("for");
@@ -261,6 +330,9 @@ export class Parser {
         return this.at(new ForStatement(target, list, this.readLoopBlock()), position);
     }
 
+    /**
+     * 関数名・重複のない仮引数・本体を読み、関数内の制御文の配置を検査する。
+     */
     readFn(): Fn {
         const position = this.token.charPos;
         this.nextToken("def");
@@ -291,6 +363,9 @@ export class Parser {
         }
     }
 
+    /**
+     * ドットで連なるimport用のモジュール名を読む。
+     */
     private readModuleName(): string {
         let name = this.readName();
         while (this.match(".")) {
@@ -299,6 +374,9 @@ export class Parser {
         return name;
     }
 
+    /**
+     * import/fromの対象名と別名を構文木に保持する。実際のモジュールは読み込まない。
+     */
     private readImport(): Statement {
         const statement = this.at(new Statement("import"), this.token.charPos);
         if (this.match("from")) {
@@ -323,6 +401,9 @@ export class Parser {
         return statement;
     }
 
+    /**
+     * 左辺の変数・属性・添字を検査し、単純代入または複合代入の式を読む。
+     */
     parseAssignment(): Term {
         const left = this.LogicalExpression();
         if (this.token.typeTkn !== TokenType.symbol || !isAssignmentToken(this.current())) {
@@ -351,7 +432,22 @@ export class Parser {
         return terms;
     }
 
-    /** f文字列を、文字列部分・置換式・@format呼出しを引数とするAppへ変換する。 */
+    /**
+     * f文字列を、文字列部分・置換式・@format呼出しを引数とするAppへ変換する。
+     *
+     * 開始記号は f"・f'・F"・F' を受け付け、対応する終了引用符までを読む。
+     * いずれも関数名を f" に統一したAppとし、argsに各部分を出現順で格納する。
+     * 文字列部分は原文を保持したStr、書式のない置換式は解析したTermをそのまま格納する。
+     * 書式のある置換式はApp(RefVar("@format"), [式のTerm, 書式指定文字列のStr])とする。
+     * 例: f"a + b={a + b:.2f}" は次の構文木になる。
+     * App(RefVar('f"'), [Str("a + b="),
+     *     App(RefVar("@format"), [App(RefVar("+"), [RefVar("a"), RefVar("b")]), Str(".2f")])])
+     * 空のf文字列は引数なしのApp。複数の置換フィールドとf文字列の入れ子に対応する。
+     * 置換式の対応範囲はLogicalExpressionと同じで、空の式や不正な区切りはSyntaxError。
+     * コロン後はformat型トークンを必須とし、空の書式もStr("")として保持する。
+     * 書式の桁・精度・型の制約とエスケープの原文保持はlex.tsのlexicalAnalysis()の仕様に従う。
+     * この解析は構文木の生成のみを行い、f文字列専用のtoStringによる再生成は未対応。
+     */
     private readFString(): App {
         const position = this.token.charPos;
         const quote = this.readText().slice(-1);
@@ -382,6 +478,9 @@ export class Parser {
         return this.application('f"', args, position);
     }
 
+    /**
+     * リテラル・名前・括弧式を読み、呼出し・属性・添字の後置式を連結する。
+     */
     PrimaryExpression(): Term {
         const position = this.token.charPos;
         let term: Term;
@@ -450,6 +549,9 @@ export class Parser {
         }
     }
 
+    /**
+     * 単項式との結合順を保ちながら、累乗の右結合を解析する。
+     */
     PowerExpression(): Term {
         const left = this.PrimaryExpression();
         if (this.match("**")) {
@@ -458,6 +560,9 @@ export class Parser {
         return left;
     }
 
+    /**
+     * 単項の正負・ビット反転を再帰的に読み取る。
+     */
     UnaryExpression(): Term {
         if (["+", "-", "~"].some(word => this.isToken(word))) {
             const position = this.token.charPos;
@@ -467,6 +572,9 @@ export class Parser {
         return this.PowerExpression();
     }
 
+    /**
+     * 一段強い式を順に読み、指定した二項演算子を左結合でまとめる。
+     */
     private readBinary(operand: () => Term, operators: string[]): Term {
         let left = operand();
         while (operators.some(word => this.isToken(word))) {
@@ -476,24 +584,39 @@ export class Parser {
         return left;
     }
 
+    /**
+     * 乗算・除算・整数除算・剰余の優先順位の式を読む。
+     */
     MultiplicativeExpression(): Term {
         return this.readBinary(() => this.UnaryExpression(), ["*", "/", "//", "%"]);
     }
 
+    /**
+     * 加算・減算の優先順位の式を読む。
+     */
     AdditiveExpression(): Term {
         return this.readBinary(() => this.MultiplicativeExpression(), ["+", "-"]);
     }
 
+    /**
+     * 左右ビットシフトの優先順位の式を読む。
+     */
     ShiftExpression(): Term {
         return this.readBinary(() => this.AdditiveExpression(), ["<<", ">>"]);
     }
 
+    /**
+     * ビットAND・XOR・ORを含む比較より強い式を読む。
+     */
     ArithmeticExpression(): Term {
         const bitAnd = (): Term => this.readBinary(() => this.ShiftExpression(), ["&"]);
         const bitXor = (): Term => this.readBinary(bitAnd, ["^"]);
         return this.readBinary(bitXor, ["|"]);
     }
 
+    /**
+     * 比較演算子と連鎖する左右の式を比較ノードへまとめる。
+     */
     RelationalExpression(): Term {
         const terms = [this.ArithmeticExpression()];
         const operators: string[] = [];
@@ -525,6 +648,9 @@ export class Parser {
         return app;
     }
 
+    /**
+     * 比較より弱く結合するnotの単項式を読む。
+     */
     private NotExpression(): Term {
         const position = this.token.charPos;
         if (this.match("not")) {
@@ -533,20 +659,34 @@ export class Parser {
         return this.RelationalExpression();
     }
 
+    /**
+     * not式をandで連ねた論理式を読む。
+     */
     AndExpression(): Term {
         return this.readBinary(() => this.NotExpression(), ["and"]);
     }
 
+    /**
+     * and式をorで連ねた論理式を読む。
+     */
     OrExpression(): Term {
         return this.readBinary(() => this.AndExpression(), ["or"]);
     }
 
+    /**
+     * この構文解析器が対応する最も外側の論理式を読む。
+     */
     LogicalExpression(): Term {
         return this.OrExpression();
     }
 }
 
-/** ソース文字列からPython用Moduleを作る入口。 */
+/**
+ * ソース文字列からPython用Moduleを作る入口。
+ *
+ * 構文解析後の名前解決・型推論とimportなしのdevice API利用はsemantic.tsが担当する。
+ * parsePythonは同期APIのまま保ち、利用側がawait analyzePython(module)を続けて呼ぶ。
+ */
 export function parsePython(text: string): Module {
     const module = new Parser(lexicalAnalysis(text)).parseSource();
     module.source = text;
@@ -572,10 +712,10 @@ export async function testPython(){
         msg(`  type ${name}: ${JSON.stringify(variable.type)}`);
     }
 
-    const asm = generateAssembly(mod, analysis);
+    const asm = generateAssembly(analysis);
     msg(`  asm:\n${asm}`);
 
-    const bytecode = generateBytecode(mod, analysis);
+    const bytecode = generateBytecode(analysis);
     const hex = Array.from(bytecode, value => value.toString(16).padStart(2, "0")).join(" ");
     msg(`  bytecode (${bytecode.byteLength} bytes):\n${hex}`);
 }

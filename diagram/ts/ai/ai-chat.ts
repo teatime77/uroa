@@ -1,3 +1,6 @@
+/**
+ * 明示的なStartで質問を送り、回答を文字列ポートへ渡すAIチャットブロック。通信はai-client.ts、停止と依存順実行はruntime.tsへ委譲する。
+ */
 import { Vec2 } from "@i18n";
 import { FunctionBlock, registerFunctionBlock } from "../block";
 import { PortType, theCanvas } from "../diagram_util";
@@ -8,24 +11,80 @@ import { AIRequestError, askAI, checkAIConnection, waitAIRequest } from "./ai-cl
 
 /** Application-held credentials live in private memory; optional persistence is browser-managed. */
 export class AIChatBlock extends FunctionBlock {
+    /**
+     * Start時の依存順実行の対象に含める指定。
+     */
     override readonly runOnStart = true;
+    /**
+     * ブロックの処理に渡す値の入力ポート。
+     */
     readonly inputPort = new TextPort(this, PortType.inputPort);
+    /**
+     * 完了した結果を後続ブロックへ渡す出力ポート。中断・再実行時は消去する。
+     */
     readonly outputPort = new TextPort(this, PortType.outputPort);
+    /**
+     * 回答またはエラーの全文を表示する読取り専用テキスト欄。
+     */
     readonly answerView: HTMLTextAreaElement;
+    /**
+     * キーとモデルの接続確認を開始するボタン。
+     */
     readonly connectButton: Button;
+    /**
+     * キーの保持と進行中の要求を終了するボタン。
+     */
     readonly disconnectButton: Button;
+    /**
+     * 接続確認と明示的なAI要求で使用するモデル名。図の保存対象。
+     */
     model = "gemini-3.5-flash-lite";
+    /**
+     * 接続・処理中・完了・エラーを画面へ示す状態メッセージ。
+     */
     message = "待機中";
+    /**
+     * このブロックだけが一時保持するAPIキー。図の保存・コピーへ含めない。
+     */
     #apiKey = "";
+    /**
+     * キーとモデルの接続確認中であることを示す状態。
+     */
     private connecting = false;
+    /**
+     * 現在開いているキー・モデルの入力ダイアログ。閉じると入力値も消去する。
+     */
     private dialog?: HTMLDialogElement;
+    /**
+     * 現在の接続確認または解析要求を取り消す制御元。
+     */
     private request?: AbortController;
+    /**
+     * 削除・取消・新しい要求の後に古い非同期結果を反映しないための世代。
+     */
     private version = 0;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
+    /**
+     * 入力ポートの接続変更通知を解除する関数。
+     */
     private releaseConnection: () => void;
+    /**
+     * diagram停止通知の購読を解除する関数。
+     */
     private releaseStop: () => void;
+    /**
+     * この部品で登録したDOMイベントをまとめて解除するための取消元。
+     */
     private events = new AbortController();
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data: Attr) {
         super(data);
         this.ports = [this.inputPort, this.outputPort];
@@ -53,9 +112,23 @@ export class AIChatBlock extends FunctionBlock {
         this.refreshButtons();
     }
 
+    /**
+     * このブロックが接続確認済みのAPIキーを保持しているかを返す。
+     */
     get connected(): boolean { return !!this.#apiKey; }
+    /**
+     * この部品が所有する、描画や操作の対象となる子UIを返す。
+     */
     children(): UI[] { return [this.connectButton, this.disconnectButton]; }
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize(): void { this.boxSize = new Vec2(320, this.inToolbox ? 60 : 310); }
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position: Vec2): void {
         super.setPosition(position);
         this.answerView.style.left = `${position.x + 16}px`;
@@ -63,8 +136,14 @@ export class AIChatBlock extends FunctionBlock {
         this.positionButtons();
     }
 
+    /**
+     * ブロックの現在位置と大きさに合わせてポートを配置する。
+     */
     setPortPositions(): void { super.setPortPositions(); this.positionButtons(); }
 
+    /**
+     * ブロックの位置と表示幅に合わせて接続・切断ボタンを配置する。
+     */
     private positionButtons(): void {
         if (!this.connectButton) return;
         this.connectButton.setPosition(this.position.add(new Vec2(16, 80)));
@@ -72,6 +151,9 @@ export class AIChatBlock extends FunctionBlock {
         for (const button of this.children() as Button[]) button.boxSize = new Vec2(138, 44);
     }
 
+    /**
+     * 接続・要求中・削除状態から操作ボタンの表示と有効性を更新する。
+     */
     private refreshButtons(): void {
         if (!this.connectButton) return;
         this.connectButton.text = this.connected ? "キー変更" : "接続";
@@ -81,18 +163,32 @@ export class AIChatBlock extends FunctionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj(): any { return { ...super.makeObj(), model: this.model }; }
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj: any): void {
         this.disconnect();
         if (typeof obj.model === "string" && /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(obj.model)) this.model = obj.model;
     }
 
+    /**
+     * 入力値を消去し、接続ダイアログを閉じてDOMから除く。
+     */
     private closeDialog(): void {
         if (!this.dialog) return;
         this.dialog.querySelectorAll("input").forEach(input => { input.value = ""; });
         this.dialog.close(); this.dialog.remove(); this.dialog = undefined;
     }
 
+    /**
+     * キーとモデルを入力するダイアログを開く。表示だけでは画像や質問を送信しない。
+     */
     openConnectionDialog(): void {
         if (this.removed || this.inToolbox || this.request || this.dialog) return;
         const dialog = this.dialog = document.createElement("dialog");
@@ -138,10 +234,16 @@ export class AIChatBlock extends FunctionBlock {
         dialog.showModal(); username.focus();
     }
 
+    /**
+     * 接続成功後に、対応ブラウザーの資格情報保存UIへキーの保存候補を渡す。
+     */
     private requestPasswordSave(username: string): void {
         // PasswordCredential is not included in TypeScript's DOM declarations.
         const PasswordCredential = (window as Window & {
-            PasswordCredential?: new (data: { id: string; password: string }) => Credential;
+            /**
+             * 対応ブラウザーだけが提供するパスワード保存用コンストラクター。
+             */
+            PasswordCredential?: new (data: { /** ブラウザーの保存候補を識別するユーザー名。Googleへは送信しない。 */ id: string; /** ブラウザーのパスワード保存APIへ渡す一時的なキー文字列。 */ password: string }) => Credential;
         }).PasswordCredential;
         if (!username || !window.isSecureContext || typeof PasswordCredential !== "function" ||
             typeof navigator.credentials?.store !== "function") return;
@@ -152,6 +254,12 @@ export class AIChatBlock extends FunctionBlock {
         } catch { /* Unsupported or blocked password storage; manual input still works. */ }
     }
 
+    /**
+     * 指定キーとモデルの利用可否を期限付きで確認し、現世代で成功した場合だけ保持する。
+     *
+     * @param apiKey 要求中だけ使用するAPIキー。
+     * @param model 利用するモデル名。
+     */
     async connect(apiKey: string, model = this.model, credentialId = ""): Promise<void> {
         if (this.removed || this.inToolbox || this.request) return;
         this.disconnect();
@@ -179,6 +287,9 @@ export class AIChatBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * 進行中の実行を停止し、要求・キー・出力と入力ダイアログを消去する。
+     */
     disconnect(): void {
         if (isRunning) stopDiagram();
         this.version++; this.#apiKey = ""; this.connecting = false;
@@ -187,6 +298,9 @@ export class AIChatBlock extends FunctionBlock {
         this.show("未接続"); this.refreshButtons();
     }
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     copy(): AIChatBlock {
         const block = new AIChatBlock({});
         block.model = this.model;
@@ -196,6 +310,12 @@ export class AIChatBlock extends FunctionBlock {
         return block;
     }
 
+    /**
+     * 状態メッセージと結果欄を更新し、操作状態とキャンバスを再描画する。
+     *
+     * @param message 画面または診断に表示する説明。
+     * @param text 処理する文字列。
+     */
     private show(message: string, text = ""): void {
         this.message = message;
         this.answerView.value = text;
@@ -203,6 +323,9 @@ export class AIChatBlock extends FunctionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
+    /**
+     * 前回の要求を取り消して出力を消去し、次の明示実行を待つ。
+     */
     resetForRun(): void {
         this.version++;
         this.request?.abort();
@@ -213,8 +336,14 @@ export class AIChatBlock extends FunctionBlock {
 
     // Editing or connecting input never sends a question automatically.
     async valueChanged(): Promise<void> {}
+    /**
+     * 入力の変更だけでは外部要求を開始しないため、計算時には処理を行わない。
+     */
     calc(): void {}
 
+    /**
+     * 接続された質問を一度送信し、完了した回答だけを出力する。失敗時はStart処理も拒否する。
+     */
     async run(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.resetForRun();
@@ -260,6 +389,9 @@ export class AIChatBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(): void {
         super.draw();
         const ctx = this.ctx, { x, y } = this.position;
@@ -275,6 +407,9 @@ export class AIChatBlock extends FunctionBlock {
         ctx.restore();
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         if (this.removed) return;
         if (isRunning) stopDiagram();

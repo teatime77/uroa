@@ -5,9 +5,23 @@ import type { DebugChannel } from "./debug-protocol";
 
 /** Web Bluetoothの通常通信に使う構造型。GATT参照は保存データへ含めない。 */
 export interface ControlCharacteristic extends EventTarget {
+    /**
+     * 直前にReadまたはNotifyで得たGATT特性の値。
+     */
     value?: DataView;
+    /**
+     * GATT特性の変更通知を開始し、通知元の特性を返す。
+     */
     startNotifications(): Promise<ControlCharacteristic>;
+    /**
+     * 現在のGATT特性値を読み取る。
+     */
     readValue(): Promise<DataView>;
+    /**
+     * GATTの受付応答を待ってバイト列を書き込む。
+     *
+     * @param value 検証または反映する値。
+     */
     writeValueWithResponse(value: Uint8Array): Promise<void>;
 }
 
@@ -16,11 +30,26 @@ export interface ControlCharacteristic extends EventTarget {
  * 接続・通知開始・初期Read・切断はdevice-connection.tsが担当する。ここではパケットを解釈しない。
  */
 export class BLEControlTransport implements ControlTransport {
+    /**
+     * 共通通信層でBLEとWi-Fiの経路を区別する識別子。
+     */
     readonly kind = "ble";
 
-    constructor(private command: ControlCharacteristic, private status: ControlCharacteristic,
-        private telemetry: ControlCharacteristic, private deviceInfo: ControlCharacteristic,
-        private isConnected: () => boolean, private loadBytecode: () => Promise<BytecodeChannel>,
+    /**
+     * この型の状態と依存先を初期化する。
+     */
+    constructor(/** 通常のCommandを書き込むGATT特性。 */ private command: ControlCharacteristic, /** 通常指令の受付結果をRead/Notifyで受け取るGATT特性。 */ private status: ControlCharacteristic,
+        /**
+         * センサー通知を受け取るGATT特性。
+         */
+        private telemetry: ControlCharacteristic, /** 機器一覧を書き込むGATT特性。 */ private deviceInfo: ControlCharacteristic,
+        /**
+         * 所有元のGATT接続が現時点で有効かを照合する処理。
+         */
+        private isConnected: () => boolean, /** 専用のプログラム転送窓口を遅延取得する処理。 */ private loadBytecode: () => Promise<BytecodeChannel>,
+        /**
+         * 専用のデバッグ窓口を遅延取得する処理。
+         */
         private loadDebug: () => Promise<DebugChannel>) {
     }
 

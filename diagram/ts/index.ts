@@ -1,3 +1,6 @@
+/**
+ * diagramの初期化・破棄、ツール番号とブロックの対応、Start操作と保存図の復元を担当する。実行状態はruntime.ts、キャンバスはcanvas.tsが管理する。
+ */
 import { msg, assert, $, sleep, MyError } from "@i18n";
 import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, CameraBlock, FaceDetectionBlock, CalcBlock, ConditionGate, InputBlock } from "./block";
 import { Canvas, Editor, getTopActions } from "./canvas";
@@ -22,6 +25,9 @@ export { Variable, Field, Struct, DataType } from "./data_type";
 import { isRunning, runBlockChain, runProcedures, runStartFunctions, stopDiagram as stopProcedures, stopFlag } from "./runtime";
 import { testPython } from "./python/parser";
 
+/**
+ * diagramの実行停止を通知し、接続中の機器へサーボ停止も要求する。
+ */
 export function stopDiagram(): void {
     stopProcedures();
     if (diagramDevice.state.phase === "connected") {
@@ -29,12 +35,21 @@ export function stopDiagram(): void {
     }
 }
 
+/**
+ * 初期化で登録した画面イベントを破棄時に解除する取消元。
+ */
 const listeners = new AbortController();
+/**
+ * 旧HTTPセンサーの定期取得を止めるために保持するタイマー。
+ */
 let periodicTimer: ReturnType<typeof setTimeout> | undefined;
 
 // 既存の型番号を維持し、PythonBlockは末尾へ追加する。
 export const BlockClassCount = 27;
 
+/**
+ * 保存・ツール表示で使う固定番号から対応するブロックを作る。
+ */
 export function makeBlock(idx : number) : Block {
     switch(idx){
     case  0: return new DeviceConnectionBlock({});
@@ -70,6 +85,9 @@ export function makeBlock(idx : number) : Block {
     }
 }
 
+/**
+ * 固定ツール番号に対応するブロックの型名を返す。
+ */
 export function geBlockName(idx : number) : string {
     switch(idx){
     case  0: return "DeviceConnectionBlock";
@@ -105,10 +123,22 @@ export function geBlockName(idx : number) : string {
     }
 }
 
+/**
+ * diagramの編集器とキャンバスを作り、画面イベントを接続する初期化単位。
+ */
 export class Main {
+    /**
+     * 現在のdiagram画面を管理するMainの共有インスタンス。
+     */
     static one : Main;
+    /**
+     * この画面が所有するdiagramキャンバス。
+     */
     canvas : Canvas;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     */
     constructor(){
         Main.one = this;
 
@@ -126,6 +156,9 @@ export class Main {
 
 }
 
+/**
+ * 旧HTTPセンサー通知の画像名から共有カメラ画像の取得を要求する。
+ */
 function updateCameraImage(image_file_name : string){
     const blocks = theEditor.blocks;
     const cameras = blocks.filter(x => x instanceof CameraBlock);
@@ -135,6 +168,9 @@ function updateCameraImage(image_file_name : string){
     }
 }
 
+/**
+ * 旧HTTPの顔矩形を対応ブロックへ設定して後続の計算を更新する。
+ */
 function updateFaceDetection(face : number[]){
     const face_detection = theEditor.blocks.find(x => x instanceof FaceDetectionBlock) as FaceDetectionBlock;
     if(face_detection != undefined){
@@ -144,6 +180,9 @@ function updateFaceDetection(face : number[]){
     }
 }
 
+/**
+ * 旧HTTPの距離値を距離センサーブロックへ設定して後続へ反映する。
+ */
 function updateDistanceSensor(distance : number){
     const distance_sensor = theEditor.blocks.find(x => x instanceof UltrasonicDistanceSensorBlock) as UltrasonicDistanceSensorBlock;
     if(distance_sensor != undefined){
@@ -153,6 +192,9 @@ function updateDistanceSensor(distance : number){
     }
 }
 
+/**
+ * 旧HTTP窓口の残留通知を、空になるまで読み捨てる。
+ */
 async function clearQueue() {
     for(let idx = 0; ; idx++){
         const result = await sendData({
@@ -168,6 +210,9 @@ async function clearQueue() {
     }
 }
 
+/**
+ * 旧HTTPセンサー通知を一件処理し、終了要求がなければ次の取得を予約する。
+ */
 async function periodicTask() {
     const result = await sendData({
         command : "status"
@@ -202,6 +247,9 @@ async function periodicTask() {
     if (!listeners.signal.aborted) periodicTimer = setTimeout(periodicTask, 100);
 }
 
+/**
+ * 入力値を更新して開始対象の完了を待ち、先頭アクションから実行する。
+ */
 async function startProcedures() {
     startButton.innerText = "Stop";
 
@@ -230,6 +278,9 @@ async function startProcedures() {
     }
 }
 
+/**
+ * URL・UI・接続・保存図の読込みを初期化し、diagram画面を構築する。
+ */
 export async function initDiagram(_signal?: AbortSignal){
     await testPython()
     initUI();
@@ -269,6 +320,9 @@ export async function initDiagram(_signal?: AbortSignal){
     }
 }
 
+/**
+ * 保存されたブロックとポートのIDを使って図と接続を復元する。
+ */
 function loadJson(objs:any[]){
     theEditor.clearBlock();
     
@@ -320,6 +374,9 @@ function loadJson(objs:any[]){
     theEditor.layoutRoot();
 }
 
+/**
+ * 保存図を復元し、配置とキャンバス表示を更新する。
+ */
 async function loadJsonAndDraw(objs: any[]): Promise<void> {
     loadJson(objs);
     const repaint_count = repaintCount;
@@ -331,11 +388,19 @@ async function loadJsonAndDraw(objs: any[]): Promise<void> {
     theCanvas.requestUpdateCanvas();
 }
 
+/**
+ * ファイルのドラッグ操作に伴うブラウザー既定動作を抑止する。
+ *
+ * @param ev 操作を開始したブラウザーイベント。
+ */
 function preventDefaults(ev:DragEvent) {
     ev.preventDefault(); 
     ev.stopPropagation();
 }
 
+/**
+ * キャンバスへ図のJSONファイルをドロップするイベントを登録する。
+ */
 function setDragDrop(canvas : HTMLCanvasElement){
     canvas.addEventListener("dragenter", (ev : DragEvent)=>{
         preventDefaults(ev);
@@ -394,6 +459,9 @@ function setDragDrop(canvas : HTMLCanvasElement){
     }, { signal: listeners.signal });
 }
 
+/**
+ * 実行・通信・タイマー・イベントと画面の所有資源を終了する。
+ */
 export function disposeDiagram(): void {
     stopDiagram();
     diagramDevice.disconnect();

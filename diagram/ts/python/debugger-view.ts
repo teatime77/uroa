@@ -1,19 +1,30 @@
 /**
  * PythonBlockの停止時専用表示。通信はせず、同一ビルドのDebugInfoと検証済みSnapshotだけを使う。
- * 全Call Stackを復元・検証してから公開する。関数名の選択は閲覧だけでVMのPC/BPを変更しない。
- * 局所欄は仮引数を含み、global宣言・一時領域・管理値は除外する。構造体は宣言順の幅で再帰展開する。
- * python-block.tsが本表示をエディタ右側へ配置する。操作、大域、局所、Call Stack、全スロットを縦に並べ、
- * 欄全体を必要時に縦スクロールする。clear()でも操作と各欄の見出しを残し、古い停止値だけを破棄する。
  * DOMはtextContentで構築し、値をHTMLとして解釈しない。
  */
 import type { DebugSnapshot, DebugValue, DebugAction } from "../ble-wifi/debug-protocol";
 import type { PythonDebugFunction, PythonDebugInfo } from "./debug-info";
 import { valueSlotTypes, type PythonType, type PythonVariable } from "./semantic";
 
+/**
+ * BPチェーンから復元した一つの表示用フレーム。VMの実行対象は変更しない。
+ */
 interface DebugFrame {
+    /**
+     * この表示フレームに対応する同一ビルドの関数配置情報。
+     */
     fn: PythonDebugFunction;
+    /**
+     * このフレームの管理領域先頭を指すスタックの添字。
+     */
     bp: number;
+    /**
+     * 命令列の先頭を0とする命令のバイト位置。
+     */
     pc: number;
+    /**
+     * このフレームで参照できるスタック領域の末尾直後。
+     */
     limit: number;
 }
 
@@ -27,7 +38,11 @@ export function debugLine(info: PythonDebugInfo, pc: number): number | undefined
     return position === undefined || position < 0 ? undefined : info.source.slice(0, position).split("\n").length;
 }
 
-/** BP=0のモジュールと最初の関数を関数範囲・CALL対応で区別し、再帰も全件復元する。 */
+/**
+ * BP=0のモジュールと最初の関数を関数範囲・CALL対応で区別し、再帰も全件復元する。
+ *
+ * 全Call Stackを復元・検証してから公開する。関数名の選択は閲覧だけでVMのPC/BPを変更しない。
+ */
 function restoreFrames(info: PythonDebugInfo, snapshot: DebugSnapshot): DebugFrame[] {
     const frames: DebugFrame[] = [];
     let pc = snapshot.pc;
@@ -64,6 +79,11 @@ function restoreFrames(info: PythonDebugInfo, snapshot: DebugSnapshot): DebugFra
     throw new Error("Call Stackの深さが上限を超えています。");
 }
 
+/**
+ * 文字列をHTMLとして解釈せず、textContentへ設定したDOM要素を作る。
+ *
+ * @param text 処理する文字列。
+ */
 function textElement(tag: string, text: string): HTMLElement {
     const element = document.createElement(tag);
     element.textContent = text;
@@ -81,7 +101,7 @@ function debugControls(execute: (action: DebugAction) => void, buttons: Map<Debu
     panel.setAttribute("role", "toolbar");
     panel.setAttribute("aria-label", "デバッグ操作");
     Object.assign(panel.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
-    const icons: { action: DebugAction; label: string; path: string }[] = [
+    const icons: { /** 操作アイコンが通知する再開またはステップの種別。 */ action: DebugAction; /** 操作アイコンのツールチップと読み上げ用の名前。 */ label: string; /** 操作アイコンを描くSVGパスのデータ。 */ path: string }[] = [
         { action: "continue", label: "再開", path: "M8 5 L19 12 L8 19 Z" },
         { action: "over", label: "Step Over", path: "M4 11 C4 2 20 2 20 11 V14 M16 10 L20 14 L24 10 M8 20 H16" },
         { action: "in", label: "Step In", path: "M12 3 V15 M7 10 L12 15 L17 10 M5 21 H19" },
@@ -120,16 +140,49 @@ function debugControls(execute: (action: DebugAction) => void, buttons: Map<Debu
 
 /** DOM・イベントはこの表示が所有し、clear()で停止値とフレーム選択を全破棄する。 */
 export class PythonDebuggerView {
+    /**
+     * 停止情報の操作欄と各値欄をまとめる所有DOM。
+     */
     readonly element = document.createElement("section");
+    /**
+     * PC・BP・SP等の停止状態を表示する欄。
+     */
     private readonly registers = document.createElement("div");
+    /**
+     * 停止時の大域変数を型と名前で表示する欄。
+     */
     private readonly globals = document.createElement("div");
+    /**
+     * 現在閲覧している関数名を示す局所変数欄の見出し。
+     */
     private readonly localTitle = textElement("h3", "局所変数");
+    /**
+     * 選択したフレームの仮引数・局所変数を表示する欄。
+     */
     private readonly locals = document.createElement("div");
+    /**
+     * 検証済みCall Stackの選択UIを表示する欄。
+     */
     private readonly calls = document.createElement("div");
+    /**
+     * 管理値・一時値を含む全スロットを診断表示する欄。
+     */
     private readonly raw = document.createElement("pre");
+    /**
+     * 再開・3種のステップ操作とDOMボタンの対応。
+     */
     private readonly controlButtons = new Map<DebugAction, HTMLButtonElement>();
+    /**
+     * 現在の停止がモジュール外の関数フレーム内にあるか。
+     */
     private canStepOut = false;
 
+    /**
+     * 停止情報の操作欄・値欄と、フレーム選択の表示を構築する。
+     *
+     * python-block.tsが本表示をエディタ右側へ配置する。操作、大域、局所、Call Stack、全スロットを縦に並べ、
+     * 欄全体を必要時に縦スクロールする。
+     */
     constructor(execute: (action: DebugAction) => void) {
         this.element.setAttribute("aria-label", "Pythonデバッグ情報");
         Object.assign(this.element.style, { flex: "0 0 auto", width: "clamp(240px, 32%, 380px)", maxWidth: "50%",
@@ -155,13 +208,22 @@ export class PythonDebuggerView {
         this.clear();
     }
 
+    /**
+     * 指定した文字列を持つデバッグ欄の見出しを作る。
+     *
+     * @param text 処理する文字列。
+     */
     private heading(text: string): HTMLElement {
         const heading = textElement("h3", text);
         Object.assign(heading.style, { fontSize: "14px", margin: "12px 0 6px" });
         return heading;
     }
 
-    /** 停止データの失効後もパネルを残す。関数選択のイベントは旧ボタンと一緒に破棄する。 */
+    /**
+     * 停止データの失効後もパネルを残す。関数選択のイベントは旧ボタンと一緒に破棄する。
+     *
+     * clear()でも操作と各欄の見出しを残し、古い停止値だけを破棄する。
+     */
     clear(): void {
         this.canStepOut = false;
         this.setControlsEnabled(false);
@@ -238,7 +300,7 @@ export class PythonDebuggerView {
                 return `保存BP ${value.value}`;
             case 6: {
                 const text = snapshot.strings.get(Number(value.value));
-                return text === undefined ? `文字列本体取得不可 (ID=${value.value})` : JSON.stringify(text);
+                return JSON.stringify(text!); // 現行Snapshotは全String IDの本体をdecodeSnapshotで検証済み。
             }
             case 7:
                 return `handle=${value.value} (classId=${value.classId})`;
@@ -247,6 +309,11 @@ export class PythonDebuggerView {
         }
     }
 
+    /**
+     * 指定フレームの変数を名前と型に合わせて表示する。
+     *
+     * 局所欄は仮引数を含み、global宣言・一時領域・管理値は除外する。構造体は宣言順の幅で再帰展開する。
+     */
     private variables(variables: readonly PythonVariable[], slots: readonly DebugValue[], base: number, limit: number,
         info: PythonDebugInfo, snapshot: DebugSnapshot): HTMLElement {
         const result = document.createElement("div");

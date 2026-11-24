@@ -1,3 +1,6 @@
+/**
+ * diagramの機器接続UI・機器登録・サーボ状態とPythonプログラムの通信窓口をまとめる。経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
+ */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { Button, type Attr, type UI } from "../ui";
@@ -46,19 +49,55 @@ export const BLE_UUID = {
 
 // Structural types keep this browser-only module independent of the robot build.
 type BLECharacteristic = ControlCharacteristic;
-interface BLEService { getCharacteristic(uuid: string): Promise<BLECharacteristic>; }
+/**
+ * 制御に必要なGATT特性を取得する最小サービス型。
+ */
+interface BLEService { /** 指定UUIDのGATT特性を取得する。 */ getCharacteristic(uuid: string): Promise<BLECharacteristic>; }
+/**
+ * GATT接続・切断・サービス取得に使うブラウザーAPIの構造型。
+ */
 interface BLEServer {
+    /**
+     * 通信経路が現在利用できる接続状態。
+     */
     connected: boolean;
+    /**
+     * GATTサーバーへ接続し、利用可能になったサーバーを返す。
+     */
     connect(): Promise<BLEServer>;
+    /**
+     * 現在のGATT接続を切断する。
+     */
     disconnect(): void;
+    /**
+     * 指定UUIDの主GATTサービスを取得する。
+     */
     getPrimaryService(uuid: string): Promise<BLEService>;
 }
-interface BLEDevice extends EventTarget { name?: string; gatt?: BLEServer; }
+/**
+ * 接続名とGATTサーバーを持つ選択済みBLE機器の構造型。
+ */
+interface BLEDevice extends EventTarget { /** 表示・保存・名前解決に使用する名前。 */ name?: string; /** Web Bluetoothが提供する、この機器のGATTサーバー参照。 */ gatt?: BLEServer; }
+/**
+ * ブラウザーのBLE機器選択に必要な最小API。
+ */
 interface BLEAdapter {
-    requestDevice(options: { acceptAllDevices: true; optionalServices: string[] }): Promise<BLEDevice>;
+    /**
+     * 利用者の選択操作でBLE機器へのアクセス許可を要求する。
+     */
+    requestDevice(options: { /** 利用者が選ぶBLE機器を名前で限定しない選択条件。 */ acceptAllDevices: true; /** 選択後にアクセスを許可してもらうGATTサービスのUUID一覧。 */ optionalServices: string[] }): Promise<BLEDevice>;
 }
+/**
+ * 機器選択・接続中・接続済み・失敗等のUI上の接続段階。
+ */
 export type DeviceConnectionPhase = "idle" | "selecting" | "connecting" | "connected" | "error" | "unavailable";
-export interface DeviceConnectionState { phase: DeviceConnectionPhase; deviceName: string; message: string; pcaAvailable: boolean; imuAvailable: boolean; streaming: boolean; transport?: "ble" | "wifi"; }
+/**
+ * ブロックが参照する接続名・表示メッセージと機器の利用状態。
+ */
+export interface DeviceConnectionState { /** 接続または転送の進行段階。 */ phase: DeviceConnectionPhase; /** 現在の接続先を画面に表示する名前。 */ deviceName: string; /** 接続・操作・失敗の状態を利用者へ伝える文字列。 */ message: string; /** 機器側StatusでPCA9685が利用可能と報告された状態。 */ pcaAvailable: boolean; /** 機器側StatusでIMUが利用可能と報告された状態。 */ imuAvailable: boolean; /** 機器側Statusでセンサー通知が有効と報告された状態。 */ streaming: boolean; /** 現在採用しているBLEまたはWi-Fiの経路名。 */ transport?: "ble" | "wifi"; }
+/**
+ * CHを有効化するときに固定する角度または連続回転速度の操作モード。
+ */
 export type ServoMode = "angle" | "speed";
 
 /**
@@ -71,20 +110,65 @@ export type ServoMode = "angle" | "speed";
  * BLE/Wi-Fiの切替・プログラム・デバッグ窓口とブロックへの反映を担当する。
  */
 export class DeviceConnection {
+    /**
+     * 機器またはVMが報告した状態番号・状態値。
+     */
     state: DeviceConnectionState = { phase: "idle", deviceName: "", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
+    /**
+     * 接続と機器状態の変更を購読するブロック等の集合。
+     */
     private listeners = new Set<(state: DeviceConnectionState) => void>();
+    /**
+     * 共有センサーSTREAMを必要とする配置済みブロックの集合。
+     */
     private sensorStreamUsers = new Set<FunctionBlock>();
+    /**
+     * 直前に要求した共有STREAMの通知周波数（Hz）。
+     */
     private requestedRate = 0;
+    /**
+     * 現在選択・接続しているWeb Bluetooth機器。
+     */
     private device?: BLEDevice;
+    /**
+     * 切断や経路変更の前に開始した非同期処理を失効させる接続世代。
+     */
     private generation = 0;
+    /**
+     * 接続準備に設けた期限のタイマー。
+     */
     private connectTimer?: ReturnType<typeof setTimeout>;
+    /**
+     * 有効化のACKが得られたCHと角度・速度モードの対応。
+     */
     private armedChannels = new Map<number, ServoMode>();
+    /**
+     * CHごとの操作世代。無効化や切断後の古い操作結果を拒否する。
+     */
     private servoVersions = Array<number>(16).fill(0);
+    /**
+     * 現在のGATT制御サービス。切断時に参照を失効させる。
+     */
     private service?: BLEService;
+    /**
+     * 現在のWi-Fi制御経路の所有インスタンス。
+     */
     private wifi?: RobotWifi;
+    /**
+     * 現在開いているWi-Fi設定・接続の入力ダイアログ。
+     */
     private wifiDialog?: RobotWifiDialog;
+    /**
+     * BLE経由のWi-Fi設定または接続準備を行っている状態。
+     */
     private provisioning = false;
+    /**
+     * 切断処理の再入を防ぐ状態。
+     */
     private closing = false;
+    /**
+     * 通常指令・ACK・PING・センサー通知と共通待ち列を管理する所有窓口。
+     */
     private control = new ControlConnection({
         status: data => this.hardwareStatus(data),
         telemetry: (data, telemetry) => this.sampleChanged(data, telemetry),
@@ -96,37 +180,85 @@ export class DeviceConnection {
     bytecodeReceipt?: BytecodeReceipt;
     /** 現接続の転送進捗。計測・表示の共通契約はbytecode-transfer.tsのuploadBytecode()を参照する。 */
     bytecodeProgress?: BytecodeProgress;
+    /**
+     * 現在の接続とプログラムの停止監視・デバッグ要求を担当する通信単位。
+     */
     private debugger?: PythonDebugTransport;
+    /**
+     * デバッグ一覧の送信等で別操作の開始を抑止する状態。
+     */
     private debuggerSending = false;
+    /**
+     * 接続内で再利用しないデバッグ要求IDの採番状態。
+     */
     private debugRequestId = 0;
+    /**
+     * 停止値・取得エラー・VM状態を購読する処理の集合。
+     */
     private debugListeners = new Set<(snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void>();
     /** 最新の検証済み停止値。更新はデバッグ受信とStart/Stop/切断だけが行い、呼出元は参照する。 */
     debugSnapshot?: DebugSnapshot;
+    /**
+     * 最後に受け取った停止値取得またはデバッグ通信のエラー。
+     */
     debugError?: Error;
+    /**
+     * 停止値とは独立して保持する、最新の検証済みVM状態。
+     */
     debugEvent?: DebugEvent;
+    /**
+     * DeviceInfoへ登録したセンサーブロックを受信レコード順に並べた一覧。
+     */
     private sensors   : FunctionBlock[] = [];
+    /**
+     * DeviceInfoへ登録したアクチュエーターブロックの一覧。
+     */
     private actuators : FunctionBlock[] = [];
 
+    /**
+     * 指定CHの有効化ACKがあり、指定時はモードも一致するかを調べる。
+     *
+     * @param channel 操作対象のサーボCH番号。
+     */
     isServoArmed(channel: number, mode?: ServoMode): boolean {
         return this.armedChannels.has(channel) && (mode === undefined || this.armedChannels.get(channel) === mode);
     }
 
+    /**
+     * 現在の接続状態を登録済み購読者へ通知する。
+     */
     private notify(): void { this.listeners.forEach(listener => listener(this.state)); }
 
+    /**
+     * 全CHの有効化状態を消し、進行中のCH操作の世代を失効させる。
+     */
     private resetServos(): void {
         this.armedChannels.clear();
         this.servoVersions = this.servoVersions.map(version => version + 1);
     }
 
+    /**
+     * CHが0〜15の整数かを検査する。
+     *
+     * @param channel 操作対象のサーボCH番号。
+     */
     private checkChannel(channel: number): void {
         if (!Number.isInteger(channel) || channel < 0 || channel > 15) throw new Error("チャンネルは0～15の整数で指定してください。");
     }
 
+    /**
+     * 現在の機器接続とPCA9685の利用可否を検査する。
+     */
     private checkServoConnection(): void {
         if (this.state.phase !== "connected") throw new Error("機器接続ブロックでESP32へ接続してください。");
         if (!this.state.pcaAvailable) throw new Error("PCA9685が見つかりません。");
     }
 
+    /**
+     * 指定CHを角度90度または速度0%で有効化し、現世代のACKだけを記録する。
+     *
+     * @param channel 操作対象のサーボCH番号。
+     */
     async armServo(channel: number, isCurrent = () => true, mode: ServoMode = "angle"): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
@@ -174,6 +306,11 @@ export class DeviceConnection {
             () => version === this.servoVersions[channel] && this.isServoArmed(channel, "speed") && isCurrent());
     }
 
+    /**
+     * 指定CHの有効化状態を失効させ、PWM無効化を要求する。
+     *
+     * @param channel 操作対象のサーボCH番号。
+     */
     async disableServo(channel: number): Promise<void> {
         this.checkChannel(channel);
         // Cancel queued ARM/MOVE before placing DISABLE behind any in-flight write.
@@ -191,6 +328,9 @@ export class DeviceConnection {
         }
     }
 
+    /**
+     * 全CHの操作世代を失効させ、通常経路で全サーボ停止を要求する。
+     */
     async stopServos(): Promise<void> {
         this.debugger?.invalidateSnapshot();
         this.resetServos();
@@ -206,12 +346,20 @@ export class DeviceConnection {
         }
     }
 
+    /**
+     * Web Bluetoothや動作環境の利用可否を案内するメッセージを返す。
+     */
     availabilityMessage(): string {
         if (!window.isSecureContext) return "HTTPS、またはこのPCのlocalhostで開いてください。";
-        if (!(navigator as Navigator & { bluetooth?: BLEAdapter }).bluetooth) return "このブラウザーではBLEを利用できません。";
+        if (!(navigator as Navigator & { /** ブラウザーが公開するWeb Bluetoothの機器選択入口。 */ bluetooth?: BLEAdapter }).bluetooth) return "このブラウザーではBLEを利用できません。";
         return "";
     }
 
+    /**
+     * 接続状態の購読を登録し、現在値を通知して解除関数を返す。
+     *
+     * @param listener 変更通知を受け取る処理。
+     */
     subscribe(listener: (state: DeviceConnectionState) => void): () => void {
         this.listeners.add(listener);
         listener(this.state);
@@ -241,6 +389,9 @@ export class DeviceConnection {
         return this.sensors.includes(sensor);
     }
 
+    /**
+     * 登録済みセンサーブロックの需要に合わせて共有STREAMを開始・停止する。
+     */
     private updateStream(): void {
         if (this.state.phase !== "connected" || this.provisioning) return;
         const available = this.sensors.some(sensor => this.sensorStreamUsers.has(sensor) &&
@@ -255,6 +406,11 @@ export class DeviceConnection {
         });
     }
 
+    /**
+     * 現在の接続状態を更新し、UI等の購読者へ通知する。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private publish(phase: DeviceConnectionPhase, deviceName = "", message = ""): void {
         const active = phase === "connected" || phase === "connecting";
         this.state = { phase, deviceName, message, pcaAvailable: active && this.state.pcaAvailable, imuAvailable: active && this.state.imuAvailable, streaming: active && this.state.streaming,
@@ -262,6 +418,11 @@ export class DeviceConnection {
         this.notify();
     }
 
+    /**
+     * 検証済みStatusからPCA・IMU・STREAMの状態を反映する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     private hardwareStatus(data: DataView): void {
         const flags = data.getUint8(4);
         const pcaAvailable = !!(flags & 1), imuAvailable = !!(flags & 2), streaming = !!(flags & 8);
@@ -302,10 +463,18 @@ export class DeviceConnection {
         }
     }
 
+    /**
+     * GATT切断時に現在の通信・機器状態を失効させるイベントハンドラー。
+     */
     private lost = (): void => {
         if (this.wifi?.connected) return;
         this.close("idle", "BLE接続が切れました。");
     };
+    /**
+     * 接続世代・通信・有効CH・停止監視・機器一覧を失効させ、終了状態を公開する。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private close(phase: DeviceConnectionPhase, message = ""): void {
         if (this.state.phase !== "idle" || this.device || this.wifi) {
             console.info("[Device connection] close", {
@@ -343,8 +512,14 @@ export class DeviceConnection {
     disconnect(reason = "切断要求"): void {
         this.close("idle", reason);
     }
+    /**
+     * 現在のWi-Fi設定ダイアログと進行中の設定を終了する。
+     */
     cancelWifiSetup(): void { this.wifiDialog?.close(); }
 
+    /**
+     * 利用者の機器選択からGATT接続・通知・機器登録を進め、現世代の接続を公開する。
+     */
     async connect(): Promise<void> {
         if (["selecting", "connecting", "connected"].includes(this.state.phase)) return;
         const unavailable = this.availabilityMessage();
@@ -364,7 +539,7 @@ export class DeviceConnection {
         };
         this.publish("selecting");
         try {
-            const bluetooth = (navigator as Navigator & { bluetooth: BLEAdapter }).bluetooth;
+            const bluetooth = (navigator as Navigator & { /** ブラウザーが公開するWeb Bluetoothの機器選択入口。 */ bluetooth: BLEAdapter }).bluetooth;
             // Called synchronously from the canvas button's pointerup user gesture.
             selected = await bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [BLE_UUID.service] });
             check();
@@ -476,6 +651,9 @@ export class DeviceConnection {
         }
     }
 
+    /**
+     * 現在のBLE機器から設定窓口を取得し、Wi-Fi設定・接続のダイアログを開く。
+     */
     async openWifi(): Promise<void> {
         if (this.bytecodeSending || this.debuggerSending) {
             return;
@@ -496,7 +674,7 @@ export class DeviceConnection {
             const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
             const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
             if (generation !== this.generation) return;
-            const setup = new BLEWifiSetup(tx as BLECharacteristic & { readValue(): Promise<DataView> }, rx as BLECharacteristic & { readValue(): Promise<DataView> });
+            const setup = new BLEWifiSetup(tx as BLECharacteristic & { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView> }, rx as BLECharacteristic & { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView> });
             const dialog = this.wifiDialog = new RobotWifiDialog(
                 (target, signal) => this.connectWifi(target, signal),
                 () => {
@@ -518,6 +696,11 @@ export class DeviceConnection {
         }
     }
 
+    /**
+     * 対象機器の認証を確認して共通通信の経路をWi-Fiへ切り替える。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     private async connectWifi(target: RobotEndpoint, signal: AbortSignal): Promise<void> {
         const oldGeneration = this.generation, wifi = new RobotWifi();
         const originalMessage = this.state.message;
@@ -581,7 +764,7 @@ export class DeviceConnection {
      *
      * const module = parsePython(source);
      * const analysis = await analyzePython(module, signal);
-     * const bytes = generateBytecode(module, analysis);
+     * const bytes = generateBytecode(analysis);
      * const receipt = await diagramDevice.sendBytecode(bytes, signal);
      * // receipt.byteLengthとreceipt.crc32はESP32が保持完了を返した内容。
      * ```
@@ -589,7 +772,7 @@ export class DeviceConnection {
      * 接続済みでWi-Fi設定・切替中でない場合に利用できる。送信元はコピーし、同時に複数の転送は行わない。
      * 切断・ページ離脱・非表示・ブロック削除・APIのAbortSignalで取り消す。期限超過・取消・送受信エラーでは接続を閉じる。
      *
-     * deployment指定時はPC一覧も送り、ESP32の検証・開始結果を待つ。通信契約はbytecode-transfer.ts先頭。
+     * deployment指定時はPC一覧も送り、ESP32の検証・開始結果を待つ。通信契約はbytecode-transfer.tsのuploadBytecode()を参照する。
      * BLEの専用Characteristicは送信時に取得する。両経路の形式・Result照合・制約はbytecode-transfer.tsを参照する。
      */
     async sendBytecode(bytes: Uint8Array, signal?: AbortSignal, deployment?: BytecodeDeployment): Promise<BytecodeReceipt> {
@@ -642,6 +825,12 @@ export class DeviceConnection {
         return () => this.debugListeners.delete(listener);
     }
 
+    /**
+     * 最新の停止値・取得エラー・VM状態を保持し、デバッグ購読者へ通知する。
+     *
+     * @param snapshot 検証済みの同一停止の値。
+     * @param event ブラウザーまたは通信元のイベント。
+     */
     private publishDebug(snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent): void {
         this.debugSnapshot = snapshot;
         this.debugError = error;
@@ -659,6 +848,9 @@ export class DeviceConnection {
         }
     }
 
+    /**
+     * 旧接続・旧プログラムの監視と停止情報を破棄する。
+     */
     private resetDebugger(): void {
         this.debugger?.dispose();
         this.debugger = undefined;
@@ -814,6 +1006,9 @@ export class DeviceConnection {
     }
 }
 
+/**
+ * diagram全体で共有する機器接続とプログラム通信の窓口。
+ */
 export const diagramDevice = new DeviceConnection();
 
 /** 非表示・ページ離脱では従来どおり切断し、原因を機器接続ブロックとコンソールへ示す。 */
@@ -833,11 +1028,28 @@ export function initDeviceConnection(signal: AbortSignal): void {
  * 計測・通知・消去の共通契約はbytecode-transfer.tsのuploadBytecode()を参照する。
  */
 export class DeviceConnectionBlock extends FunctionBlock {
+    /**
+     * BLEの機器選択・接続・切断を行うボタン。
+     */
     readonly button: Button;
+    /**
+     * 現在のBLE機器のWi-Fi設定ダイアログを開くボタン。
+     */
     readonly wifiButton: Button;
+    /**
+     * 現在の通信状態またはパケット通知の購読を解除する関数。
+     */
     private unsubscribe?: () => void;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data: Attr) {
         super(data);
         this.button = new Button({ text: "接続", click: () => {
@@ -856,14 +1068,23 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.updateButton();
     }
 
+    /**
+     * この部品が所有する、描画や操作の対象となる子UIを返す。
+     */
     children(): UI[] {
         return [this.button, this.wifiButton];
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize(): void {
         this.boxSize = new Vec2(280, this.inToolbox ? 60 : 318);
     }
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     copy(): DeviceConnectionBlock {
         const block = new DeviceConnectionBlock({});
         this.copyUI(block);
@@ -872,16 +1093,27 @@ export class DeviceConnectionBlock extends FunctionBlock {
         return block;
     }
 
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position: Vec2): void {
         super.setPosition(position);
         this.positionButton();
     }
 
+    /**
+     * ブロックの現在位置と大きさに合わせてポートを配置する。
+     */
     setPortPositions(): void {
         super.setPortPositions();
         this.positionButton();
     }
 
+    /**
+     * 接続とWi-Fi設定のボタンをブロック内へ配置する。
+     */
     private positionButton(): void {
         this.button.setPosition(this.position.add(new Vec2(16, 126)));
         this.button.boxSize = new Vec2(248, 48);
@@ -889,6 +1121,9 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.wifiButton.boxSize = new Vec2(248, 48);
     }
 
+    /**
+     * 接続処理・転送・切断状態に合わせてボタンの表示と操作可否を更新する。
+     */
     private updateButton(): void {
         const phase = diagramDevice.state.phase;
         this.button.text = phase === "connected" ? "切断" : phase === "error" ? "再接続" : "接続";
@@ -897,6 +1132,9 @@ export class DeviceConnectionBlock extends FunctionBlock {
         this.wifiButton.disabled ||= diagramDevice.bytecodeSending;
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(): void {
         super.draw();
         const ctx = this.ctx;
@@ -951,6 +1189,9 @@ export class DeviceConnectionBlock extends FunctionBlock {
         ctx.restore();
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         this.removed = true;
         diagramDevice.cancelWifiSetup();

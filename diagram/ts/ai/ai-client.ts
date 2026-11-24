@@ -1,3 +1,9 @@
+/**
+ * GeminiへのREST要求と、資格情報を含まない固定エラーへの変換を担当する。キーは要求のヘッダーだけへ渡し、このモジュールでは保存しない。
+ */
+/**
+ * モデル照会とInteractions要求で共有するGoogleのREST API基点。
+ */
 const apiRoot = "https://generativelanguage.googleapis.com/v1beta";
 
 /** Only fixed, credential-free messages may leave the transport layer. */
@@ -17,6 +23,9 @@ export async function waitAIRequest<T>(controller: AbortController, ms: number, 
     finally { clearTimeout(timer); signal.removeEventListener("abort", rejectAbort); }
 }
 
+/**
+ * HTTP失敗をキーや生の応答を含まない固定メッセージの例外へ変換する。
+ */
 export function checkAIResponse(response: Response): void {
     if (response.ok) return;
     const message = response.status === 401 || response.status === 403 ? "APIキーまたは利用権限を確認してください。"
@@ -34,13 +43,19 @@ export function interactionAnswer(body: unknown): string {
     }
     const output = [...body.steps].reverse().find(step => step && step.type === "model_output");
     const answer = output && Array.isArray(output.content) ? output.content
-        .filter((item: unknown): item is { type: "text"; text: string } => !!item && typeof item === "object" &&
+        .filter((item: unknown): item is { /** 返却されたコンテンツがテキストであることを示す種別。 */ type: "text"; /** 検証済みのモデル回答の文字列。 */ text: string } => !!item && typeof item === "object" &&
             "type" in item && item.type === "text" && "text" in item && typeof item.text === "string")
-        .map((item: { text: string }) => item.text).join("") : "";
+        .map((item: { /** 検証済みのモデル回答の文字列。 */ text: string }) => item.text).join("") : "";
     if (!answer.trim()) throw new AIRequestError("AIから有効な回答が返りませんでした。");
     return answer;
 }
 
+/**
+ * APIキーのヘッダーと取消、キャッシュ・資格情報・リダイレクトの制限を組み立てる。
+ *
+ * @param apiKey 要求中だけ使用するAPIキー。
+ * @param signal 処理を取り消すシグナル。
+ */
 function requestOptions(apiKey: string, signal: AbortSignal): RequestInit {
     return {
         headers: { "x-goog-api-key": apiKey }, signal,
@@ -48,6 +63,13 @@ function requestOptions(apiKey: string, signal: AbortSignal): RequestInit {
     };
 }
 
+/**
+ * 指定したモデルを照会し、成功応答のモデル名まで確認する。
+ *
+ * @param apiKey 要求中だけ使用するAPIキー。
+ * @param model 利用するモデル名。
+ * @param signal 処理を取り消すシグナル。
+ */
 export async function checkAIConnection(apiKey: string, model: string, signal: AbortSignal): Promise<void> {
     const response = await fetch(`${apiRoot}/models/${encodeURIComponent(model)}`, requestOptions(apiKey, signal));
     checkAIResponse(response);
@@ -57,6 +79,13 @@ export async function checkAIConnection(apiKey: string, model: string, signal: A
     }
 }
 
+/**
+ * 日本語の短い回答と保存無効を指定して、一つの質問を送る。
+ *
+ * @param apiKey 要求中だけ使用するAPIキー。
+ * @param model 利用するモデル名。
+ * @param signal 処理を取り消すシグナル。
+ */
 export async function askAI(apiKey: string, model: string, question: string, signal: AbortSignal): Promise<string> {
     return requestAIInteraction(apiKey, { model, input: question, store: false,
         system_instruction: "日本語で、優しく親しみやすく答えてください。原則1〜3文の短い返答にしてください。" }, signal);

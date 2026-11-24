@@ -1,3 +1,6 @@
+/**
+ * ESP32のIMU通知から時刻・角速度・加速度を構造体ポートへ出力する。登録と共有STREAMはdevice-connection.tsへ委譲する。
+ */
 import { assert, Vec2, Vec3 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramDevice, type DeviceConnectionState } from "../ble-wifi/device-connection";
@@ -8,11 +11,28 @@ import type { Attr } from "../ui";
 
 /** Like the distance sensor block, this block pushes one received measurement. */
 export class IMUBlock extends FunctionBlock {
+    /**
+     * 通知時刻・角速度・加速度をまとめて渡すIMU構造体出力。
+     */
     readonly outputPort = new StructPort(this, PortType.outputPort, imuStruct, "imu");
+    /**
+     * 機器接続状態の購読を解除する関数。
+     */
     private releaseState?: () => void;
+    /**
+     * 共有センサーSTREAMの保持要求を解放する関数。
+     */
     private releaseStream?: () => void;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data: Attr) {
         super(data);
         this.deviceType = DeviceType.IMU6Axis;
@@ -24,10 +44,19 @@ export class IMUBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * DeviceInfoへセンサーとして登録することを示す。
+     */
     isSensor() : boolean {
         return true;
     }
 
+    /**
+     * DeviceInfoへIMU6Axisの種別を書き込み、次の位置を返す。
+     *
+     * @param bytes 読み書きするバイト列。
+     * @param offset バイト列内の開始位置。
+     */
     writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
         bytes[offset] = this.deviceType!;
 
@@ -65,6 +94,9 @@ export class IMUBlock extends FunctionBlock {
         return offset + 13;
     }
 
+    /**
+     * 切断または通知停止時の古い出力を消去し、接続表示を更新する。
+     */
     private connectionChanged(state: DeviceConnectionState): void {
         if (state.phase !== "connected" || !state.imuAvailable || !state.streaming) {
             this.outputPort.setPortValue(undefined);
@@ -72,6 +104,11 @@ export class IMUBlock extends FunctionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
+    /**
+     * 時刻・3軸角速度・3軸加速度を型検証し、現在のサンプルとして出力する。
+     *
+     * @param value 検証または反映する値。
+     */
     setIMU(value: IMUValue): void {
         if (this.removed || this.inToolbox) return;
         this.outputPort.setPortValue(value);
@@ -79,8 +116,14 @@ export class IMUBlock extends FunctionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize(): void { this.boxSize = new Vec2(this.inToolbox ? 240 : 440, this.inToolbox ? 60 : 160); }
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     copy(): IMUBlock {
         const block = new IMUBlock({});
         this.copyUI(block);
@@ -88,6 +131,9 @@ export class IMUBlock extends FunctionBlock {
         return block;
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(): void {
         super.draw();
         const ctx = this.ctx;
@@ -119,6 +165,9 @@ export class IMUBlock extends FunctionBlock {
         ctx.restore();
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         this.removed = true;
         this.releaseStream?.();

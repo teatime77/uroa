@@ -3,37 +3,186 @@
  * device-connection.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
  * 本ファイルが一覧転送と停止値の復号を行う。PythonのStart時の一覧はbytecode-transfer.tsの一括転送に含める。
  * ESP32のbytecode_debugger.cppがloop()で要求を処理し、bytecode_vm.cppが停止値を作る。
+ */
+import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
+
+/**
+ * デバッグ通信の版・上限・結果名と状態番号を共有する定義。
+ */
+export const debugProtocol = {
+    version: 1, eventVersion: 2, snapshotVersion: 2, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
+    errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
+        "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
+} as const;
+
+/**
+ * 一時停止からの継続実行・Step Over・Step In・Step Outの操作名。
+ */
+export type DebugAction = "continue" | "over" | "in" | "out";
+/**
+ * 再開・3種のステップ操作をControlの操作番号10〜13へ対応付ける表。
+ */
+const debugActions: Record<DebugAction, number> = { continue: 10, over: 11, in: 12, out: 13 };
+
+/**
+ * 通信経路から独立した要求・ACK・停止Event・選択Dataの窓口。
+ * BLEは従来の4 Characteristic、Wi-FiはPOST /debug-controlまたはWS op=debug-controlと、
+ * GET /debug-result、/debug-event、/debug-dataを使う。各バイト形式は同じで20バイト以下。
+ * Wi-FiのReadはWS利用時もHTTPを使い、1秒周期で停止Eventを確認する。センサー通知へ混在させない。
+ * Readの応答と署名形式はbytecode-transfer.tsのuploadBytecode()に記したResultと同じで、署名のresourceだけを各窓口名にする。
+ * 要求はsession|counter|path|payload、応答はsession|resource|counter|dataをHMACで検証する。
+ * ACK・Event・DataはESP32で別々に保持し、同一接続内でも通知によってACKを上書きしない。
+ * BLE Notifyは読出しの契機に使い、どちらの経路もEvent Readで最新の停止状態を確定する。
+ * 切断・切替では接続の経路と世代を組で照合し、旧要求・Snapshot・要求番号を失効させる。
+ * プログラム世代・stopId・PC・CRC・Data選択とACK照合は共通のPythonDebugTransportが担当する。
+ * F9の行からPCへの変換はpython/debug-info.tsが担当する。
  *
  * 同じServiceのUUID末尾は既存と共通で、先頭はControl=f3641409(Write with response)、
  * Result=f364140a(Read)、Event=f364140b(Read/Notify)、Data=f364140c(Read)。全パケット20バイト以下。
  * ACKと非同期Eventは別Characteristicに保持し、通知でACKを上書きしない。
- *
- * 整数はlittle endian。Control共通8バイト: version:u8@0=1、op:u8@1、requestId:u16@2、
- * programRevision:u32@4。requestIdは接続内で1から単調増加し、周回前に再接続する。
- * 同じ直前要求の再送はACKを再公開する。GATT Write成功だけを処理完了とは扱わない。
- * op=1 BEGIN: 20バイト、個数:u32@8、一覧CRC32:u32@12、元イメージCRC32:u32@16。
- * op=2 DATA: 14〜20バイト、開始index:u32@8、PC:u16の昇順列@12（最大4個）。
- * op=3 COMMIT: 8バイト。全件・CRC・全PCの命令境界を検証してから全置換する。
- * op=4 STATUS: 8バイト、revision=0。保持イメージのrevision・元CRC・全体長を取得する。
- * op=5 CHUNK: 16バイト、stopId:u32@8、Snapshot内offset:u32@12。
- * op=6 ABORT: 8バイト。未完了一覧だけを破棄する。
- * op=7/8/9 POINTS_BEGIN/DATA/COMMIT: 1/2/3と同じ形式で、ステップ用PC表を別に全置換する。
- * ステップ用は最大65536点。Pythonの文開始・条件評価・関数入口・暗黙return前を同一生成から送る。
- * VMは1PC=1bitで保持する。CALL継続は表へ含めず、In/Overで文の途中に停止しない。
- * op=10 CONTINUE、11 OVER、12 IN、13 OUT: 12バイト、現在のstopId:u32@8。
- * PausedかつSnapshot/世代/stopId一致、一覧受信中でない場合だけ受け付け、Result.valueで消費したstopIdを返す。
- * 成功後は旧Snapshotを破棄する。同じ直前requestId・内容の再送は再実行せず同じACKを返す。
- * 古いstopIdの操作は再開後や別の停止へ適用しない。モジュールのOUTは拒否する。
- * 両一覧のBEGIN/DATA/COMMITはRunningでは拒否する。0個COMMITでその表を全解除。
- * ブレークポイントは最大4096個、ステップ用は最大65536個、受信無進捗期限5秒。
- * STATUS以外は現在revision一致を必須とし、同じ接続世代の要求だけを処理する。
- *
- * Resultは20バイト: version:u8@0、op:u8@1、requestId:u16@2、code:u8@4、VM state:u8@5、
- * 予約:u16@6=0、revision:u32@8、value:u32@12、extra:u32@16。
- * STATUSのvalue=元CRC、extra=全体長。DATA/COMMITのvalue=受信／確定個数。
- * CHUNKのvalue=選択offset、extra=Dataの長さ1〜20。Data設定後にACKを公開し、
- * ACK確認後にDataをReadする。論理要求は直列化し、別チャンク選択を途中へ挟まない。
- * code: 0成功、1形式、2順序、3範囲、4メモリ、5CRC、6不正PC等、7実行中／混雑、8世代／停止失効、9期限。
+ */
+export interface DebugChannel {
+    /**
+     * 20バイト以下のデバッグ要求を専用窓口へ送る。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
+    writeControl(data: Uint8Array): Promise<void>;
+    /**
+     * 専用の受付結果を読み取る。書込みの成功とは別に照合する。
+     */
+    readResult(): Promise<DataView>;
+    /**
+     * 最新のVM状態を専用Event窓口から読む。
+     */
+    readEvent(): Promise<DataView>;
+    /**
+     * 直前のCHUNK要求で選択した停止データを読む。
+     */
+    readData(): Promise<DataView>;
+    /**
+     * Event変更の契機を購読し、解除関数を返す。
+     *
+     * @param listener 変更通知を受け取る処理。
+     */
+    subscribeEvents?(listener: () => void): () => void;
+    /**
+     * 利用する経路でEvent通知の受信を開始する。
+     */
+    startEvents?(): Promise<unknown>;
+}
+
+/**
+ * 検証済みのVM状態イベント。停止時のSnapshot情報と非停止時の進捗を区別する。
+ */
+export interface DebugEvent {
+    /**
+     * 機器またはVMが報告した状態番号・状態値。
+     */
+    state: number;
+    /**
+     * 専用の受付結果または停止データ取得の結果コード。
+     */
+    code: number;
+    /**
+     * ESP32稼働中に再利用しない停止ID。同じ停止の要求とデータを照合する。
+     */
+    stopId: number;
+    /**
+     * ESP32が確定したプログラムを識別する世代番号。
+     */
+    revision: number;
+    /**
+     * 保持コードまたは停止データ全体のバイト数。
+     */
+    byteLength: number;
+    /**
+     * 対応するコードまたは停止データ全体のCRC-32。
+     */
+    crc32: number;
+    /**
+     * 非Paused時に受け取る実行命令数。native呼出しの再試行も含む。
+     */
+    instructions?: number;
+    /**
+     * 命令列先頭を0とする、VMの現在の命令位置。
+     */
+    pc?: number;
+    /**
+     * Error状態のVM実行エラー番号。取得側の結果コードとは区別する。
+     */
+    vmError?: number;
+    /**
+     * Error状態で失敗した命令の位置。
+     */
+    errorPc?: number;
+}
+
+/** 数値は復号済み、文字列はID、Objectは不透明ハンドル。管理値も通常の変数表示とは区別する。 */
+export interface DebugValue {
+    /**
+     * 停止スロットの値種別。管理値・String ID・機器ハンドルを区別する。
+     */
+    tag: number;
+    /**
+     * ObjectのAPIクラスID。Object以外では0。
+     */
+    classId: number;
+    /**
+     * 通信応答の操作別の値。
+     */
+    value: number | null | undefined;
+}
+
+/**
+ * 同一停止に属するPC・フレーム・全値スロットと文字列本体。
+ */
+export interface DebugSnapshot {
+    /**
+     * ESP32稼働中に再利用しない停止ID。同じ停止の要求とデータを照合する。
+     */
+    stopId: number;
+    /**
+     * ESP32が確定したプログラムを識別する世代番号。
+     */
+    revision: number;
+    /**
+     * 停止理由。1は行ブレークポイント、2はステップ。
+     */
+    reason: 1 | 2;
+    /**
+     * 命令列先頭を0とする、VMの現在の命令位置。
+     */
+    pc: number;
+    /**
+     * 停止時のフレーム先頭を指す値スタックの添字。
+     */
+    bp: number;
+    /**
+     * 停止時の値スタック使用末尾の直後。
+     */
+    sp: number;
+    /**
+     * 停止時の大域スロットを宣言配置の順で保持した値列。
+     */
+    globals: readonly DebugValue[];
+    /**
+     * 停止時の使用スタック全体。管理値と一時値も含む。
+     */
+    stack: readonly DebugValue[];
+    /**
+     * 停止スロットから参照されるString IDと検証済みUTF-8文字列の対応。
+     */
+    strings: ReadonlyMap<number, string>;
+}
+
+/**
+ * 共通待ち列・期限・接続照合を通して一つの通信操作を実行する入口。
+ */
+type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
+
+/**
+ * Event version=2の長さ・状態別フィールドを検証し、非Pausedの進捗をSnapshotと区別する。
  *
  * Eventは20バイト: version:u8@0=2、state:u8@1、code:u8@2、VM error:u8@3、stopId/errorPc:u32@4、
  * revision:u32@8、Snapshot長:u32@12、Snapshot CRC32:u32@16。stateは既存0〜4、Paused=5。
@@ -45,110 +194,17 @@
  * 非Error・非Pausedの@3/@4は0。SnapshotのcodeとVMエラー番号は別の名前空間。
  * RunningのPC・命令数は最大1秒に1回、状態・世代変更は即時公開する。実行中のSnapshot取得は行わない。
  * PythonBlockが実行状態とPC・命令数を表示し、DeviceConnectionが[Python VM]へ同じ情報を出力する。
- * 旧Event version=1の読出しも維持する。旧版の非PausedではstopId/長さ/CRCは0で、進捗は取得不可。
+ * Eventはversion=2だけを受理し、旧版は形式エラーとする。Control/Resultのversion=1は現行のまま。
  * stopIdはデバイス稼働中に再利用しない。開始成功Resultを実行状態・進捗として扱わない。
  * CRCは既存bytecode-transfer.tsのCRC-32/ISO-HDLCと同一。Snapshot上限は256KiB。
- *
- * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
- * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
- * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
- * classId:u16@2(Object以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
- * 4ReturnPc、5SavedBp、6String ID、7Object handle。未初期化/Noneのpayloadは0。
- * スロット列の後に文字列数:u32、続いて各文字列のID:u32、UTF-8バイト長:u32、本体（終端・パディングなし）。
- * 大域→スタック順で参照されるString IDの初出順に1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
- * 定数と動的文字列の両方を含む。メモリ不足では明示エラーとし、切り詰めない。
- * 旧Snapshot version=1の受信は維持し、文字列本体がない値は「取得不可」と表示する。
- * 専用フレーム表は送らず、BP+0(ReturnPc)、BP+1(SavedBp)と同一ビルドのCALL PC/関数範囲で復元する。
- * モジュールと最初の関数のBPがともに0でも、所属関数とCALL対応で区別する。
- * 名前・型・行・変数配置はpython/bytecode.tsが同一コンパイルで作り、python/debugger-view.tsが表示する。
- *
- * 一覧は命令列先頭=0のPCであり、ソース行番号ではない。検証済み命令のbit7だけをESP32で変更し、
- * 元イメージのCRC・programRevisionは維持する。切断・Wi-Fi切替でフラグを解除する。
- * SnapshotはPaused中だけ有効。Stop・Start・プログラム置換・接続世代変更で無効化し、
- * 全チャンク・CRC・構造を検証するまで公開しない。大域・スタック・PC/BP/SPは同じ停止の値。
- * ブレークポイント停止はVMだけを止め、機器出力・補間は維持する。StopとPINGは既存経路を維持する。
- * チャンクごとに共通待ち列を返し、長いSnapshotでPINGを塞がない。
- * 再開は現在の到達だけを消費し、ループの次周は同じPCでも停止する。NativePendingの再試行は到達に数えない。
- * Inは次の停止点または現在フレームの復帰直後、Overは同じフレームの次の停止点または復帰直後、
- * Outは現在フレームの復帰直後に止める。フレームIDと深さで再帰を区別し、閲覧中のフレームには依存しない。
- * 有効ブレークポイントを優先し、停止で保留ステップを完了とする。HALTは終了、ネイティブは内部へ入らず完了を待つ。
  */
-import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
-
-export const debugProtocol = {
-    version: 1, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
-    errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
-        "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
-} as const;
-
-export type DebugAction = "continue" | "over" | "in" | "out";
-const debugActions: Record<DebugAction, number> = { continue: 10, over: 11, in: 12, out: 13 };
-
-/**
- * 通信経路から独立した要求・ACK・停止Event・選択Dataの窓口。
- * BLEは従来の4 Characteristic、Wi-FiはPOST /debug-controlまたはWS op=debug-controlと、
- * GET /debug-result、/debug-event、/debug-dataを使う。各バイト形式は同じで20バイト以下。
- * Wi-FiのReadはWS利用時もHTTPを使い、1秒周期で停止Eventを確認する。センサー通知へ混在させない。
- * Readの応答と署名形式はbytecode-transfer.tsのResultと同じで、署名のresourceだけを各窓口名にする。
- * 要求はsession|counter|path|payload、応答はsession|resource|counter|dataをHMACで検証する。
- * ACK・Event・DataはESP32で別々に保持し、同一接続内でも通知によってACKを上書きしない。
- * BLE Notifyは読出しの契機に使い、どちらの経路もEvent Readで最新の停止状態を確定する。
- * 切断・切替では接続の経路と世代を組で照合し、旧要求・Snapshot・要求番号を失効させる。
- * プログラム世代・stopId・PC・CRC・Data選択とACK照合は共通のPythonDebugTransportが担当する。
- * F9の行からPCへの変換はpython/debug-info.tsが担当する。
- */
-export interface DebugChannel {
-    writeControl(data: Uint8Array): Promise<void>;
-    readResult(): Promise<DataView>;
-    readEvent(): Promise<DataView>;
-    readData(): Promise<DataView>;
-    subscribeEvents?(listener: () => void): () => void;
-    startEvents?(): Promise<unknown>;
-}
-
-export interface DebugEvent {
-    state: number;
-    code: number;
-    stopId: number;
-    revision: number;
-    byteLength: number;
-    crc32: number;
-    instructions?: number;
-    pc?: number;
-    vmError?: number;
-    errorPc?: number;
-}
-
-/** 数値は復号済み、文字列はID、Objectは不透明ハンドル。管理値も通常の変数表示とは区別する。 */
-export interface DebugValue {
-    tag: number;
-    classId: number;
-    value: number | null | undefined;
-}
-
-export interface DebugSnapshot {
-    stopId: number;
-    revision: number;
-    reason: 1 | 2;
-    pc: number;
-    bp: number;
-    sp: number;
-    globals: readonly DebugValue[];
-    stack: readonly DebugValue[];
-    strings: ReadonlyMap<number, string>;
-}
-
-type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
-
-/** Event v1/v2の長さ・状態別フィールドを検証し、非Pausedの進捗をSnapshotと区別する。 */
 function parseEvent(view: DataView): DebugEvent {
-    if (view.byteLength !== 20 || ![1, 2].includes(view.getUint8(0)) || view.getUint8(1) > 5 || view.getUint8(2) > 9) {
+    if (view.byteLength !== 20 || view.getUint8(0) !== debugProtocol.eventVersion || view.getUint8(1) > 5 || view.getUint8(2) > 9) {
         throw new Error("デバッグ停止通知の形式が不正です。");
     }
-    const version = view.getUint8(0);
     const state = view.getUint8(1);
     const paused = state === 5;
-    const progress = version === 2 && !paused;
+    const progress = !paused;
     const vmError = view.getUint8(3);
     if ((!progress && vmError !== 0) || (progress && (vmError > 19 || state !== 4 && vmError !== 0))
         || (progress && state !== 4 && view.getUint32(4, true) !== 0)) {
@@ -172,9 +228,24 @@ function parseEvent(view: DataView): DebugEvent {
     return event;
 }
 
-/** 全体CRCとスロットのタグ・範囲を検証してから利用者へ返す。 */
+/**
+ * 全体CRCとスロットのタグ・範囲を検証してから利用者へ返す。
+ *
+ * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
+ * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
+ * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
+ * classId:u16@2(Object以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
+ * 4ReturnPc、5SavedBp、6String ID、7Object handle。未初期化/Noneのpayloadは0。
+ * スロット列の後に文字列数:u32、続いて各文字列のID:u32、UTF-8バイト長:u32、本体（終端・パディングなし）。
+ * 大域→スタック順で参照されるString IDの初出順に1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
+ * 定数と動的文字列の両方を含む。メモリ不足では明示エラーとし、切り詰めない。
+ * Snapshotはversion=2だけを受理する。参照中の文字列本体は必須で、旧版の受信は行わない。
+ * 専用フレーム表は送らず、BP+0(ReturnPc)、BP+1(SavedBp)と同一ビルドのCALL PC/関数範囲で復元する。
+ * モジュールと最初の関数のBPがともに0でも、所属関数とCALL対応で区別する。
+ * 名前・型・行・変数配置はpython/bytecode.tsが同一コンパイルで作り、python/debugger-view.tsが表示する。
+ */
 function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
-    if (bytes.length !== event.byteLength || bytecodeCrc32(bytes) !== event.crc32) {
+    if (bytes.length < 28 || bytes.length !== event.byteLength || bytecodeCrc32(bytes) !== event.crc32) {
         throw new Error("デバッグ停止データのCRCが一致しません。");
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -183,12 +254,11 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
     const sp = view.getUint32(12, true);
     const globals = view.getUint32(16, true);
     const stack = view.getUint32(20, true);
-    const version = view.getUint8(0);
     const valuesEnd = 24 + 8 * (globals + stack);
     const reason = view.getUint8(1);
-    if ((version !== 1 && version !== 2) || (reason !== 1 && reason !== 2) || view.getUint16(2, true) !== 8
+    if (view.getUint8(0) !== debugProtocol.snapshotVersion || (reason !== 1 && reason !== 2) || view.getUint16(2, true) !== 8
         || pc > 65535 || globals > 1024 || sp > 1024 || stack !== sp || bp > sp
-        || (version === 1 ? bytes.length !== valuesEnd : bytes.length < valuesEnd + 4)) {
+        || bytes.length < valuesEnd + 4) {
         throw new Error("デバッグ停止データのヘッダーが不正です。");
     }
     const values: DebugValue[] = [];
@@ -210,55 +280,109 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         values.push({ tag, classId, value });
     }
     const strings = new Map<number, string>();
-    if (version === 2) {
-        const ids = [...new Set(values.filter(value => value.tag === 6).map(value => value.value as number))];
-        const count = view.getUint32(valuesEnd, true);
-        if (count !== ids.length) {
-            throw new Error("停止データの文字列数が不正です。");
-        }
-        let offset = valuesEnd + 4;
-        const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-        for (const id of ids) {
-            if (offset + 8 > bytes.length || view.getUint32(offset, true) !== id) {
-                throw new Error("停止データの文字列IDが不正です。");
-            }
-            const length = view.getUint32(offset + 4, true);
-            offset += 8;
-            if (length > bytes.length - offset) {
-                throw new Error("停止データの文字列長が不正です。");
-            }
-            strings.set(id, decoder.decode(bytes.subarray(offset, offset + length)));
-            offset += length;
-        }
-        if (offset !== bytes.length) {
-            throw new Error("停止データの末尾に余分なデータがあります。");
-        }
+    const ids = [...new Set(values.filter(value => value.tag === 6).map(value => value.value as number))];
+    const count = view.getUint32(valuesEnd, true);
+    if (count !== ids.length) {
+        throw new Error("停止データの文字列数が不正です。");
     }
+    let offset = valuesEnd + 4;
+    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+    for (const id of ids) {
+        if (offset + 8 > bytes.length || view.getUint32(offset, true) !== id) {
+            throw new Error("停止データの文字列IDが不正です。");
+        }
+        const length = view.getUint32(offset + 4, true);
+        offset += 8;
+        if (length > bytes.length - offset) {
+            throw new Error("停止データの文字列長が不正です。");
+        }
+        strings.set(id, decoder.decode(bytes.subarray(offset, offset + length)));
+        offset += length;
+    }
+    if (offset !== bytes.length) {
+        throw new Error("停止データの末尾に余分なデータがあります。");
+    }
+
     return { stopId: event.stopId, revision: event.revision, reason, pc, bp, sp,
         globals: values.slice(0, globals), stack: values.slice(globals), strings };
 }
 
 /** 接続単位の通信。GATTオブジェクト・Snapshotは保存せず、dispose()後の結果は破棄する。 */
 export class PythonDebugTransport {
+    /**
+     * ESP32が確定したプログラムを識別する世代番号。
+     */
     private revision = 0;
+    /**
+     * 切断・破棄後の要求や結果反映を拒否する状態。
+     */
     private disposed = false;
+    /**
+     * 停止情報を失効させる受信世代。古いReadや取得中の結果を破棄する。
+     */
     private epoch = 0;
+    /**
+     * 通信要求を直列化する待ち列の末尾Promise。
+     */
     private tail: Promise<unknown> = Promise.resolve();
+    /**
+     * 期限監視または定期監視に使うタイマーの予約。
+     */
     private timer?: ReturnType<typeof setInterval>;
+    /**
+     * 状態EventのReadが進行中かを示す重複取得防止フラグ。
+     */
     private polling = false;
+    /**
+     * 最後に受理した検証済みのVM状態イベント。
+     */
     private event?: DebugEvent;
+    /**
+     * 現在全チャンクを取得している停止ID。
+     */
     private downloading?: number;
+    /**
+     * 全件・CRC・構造を検証済みの停止ID。
+     */
     private completed?: number;
+    /**
+     * 再開操作等で失効させ、遅延通知で再取得しない停止ID。
+     */
     private ignored?: number;
+    /**
+     * BLE等のEvent変更通知の購読を解除する関数。
+     */
     private releaseEvents?: () => void;
+    /**
+     * 再開・ステップ操作のACKを待っている状態。
+     */
     private executing = false;
 
-    constructor(private readonly channel: DebugChannel,
-        private readonly run: RunTransport, private readonly current: () => void,
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param channel 操作対象のサーボCH番号。
+     */
+    constructor(/** 現在の経路別のデバッグ通信窓口。 */ private readonly channel: DebugChannel,
+        /**
+         * 通常指令と共有する待ち列で一つの通信処理を実行する関数。
+         */
+        private readonly run: RunTransport, /** 所有元の接続とプログラムの有効性を照合する処理。 */ private readonly current: () => void,
+        /**
+         * 現在の接続で非再利用の要求IDを割り当てる処理。
+         */
         private readonly nextRequestId: () => number,
+        /**
+         * 停止値・取得エラー・VM状態を所有元へ通知する処理。
+         */
         private readonly publish: (snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void) {
     }
 
+    /**
+     * 取消・破棄と所有元の世代を照合し、無効なら通信を続行しない。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     private check(signal?: AbortSignal): void {
         signal?.throwIfAborted();
         this.current();
@@ -267,9 +391,38 @@ export class PythonDebugTransport {
         }
     }
 
-    /** 同じControl/Result/Dataを使う要求を直列化する。PING用の共通待ち列は操作ごとに返す。 */
+    /**
+     * 同じControl/Result/Dataを使う要求を直列化する。PING用の共通待ち列は操作ごとに返す。
+     *
+     * 整数はlittle endian。Control共通8バイト: version:u8@0=1、op:u8@1、requestId:u16@2、
+     * programRevision:u32@4。requestIdは接続内で1から単調増加し、周回前に再接続する。
+     * 同じ直前要求の再送はACKを再公開する。GATT Write成功だけを処理完了とは扱わない。
+     * op=1 BEGIN: 20バイト、個数:u32@8、一覧CRC32:u32@12、元イメージCRC32:u32@16。
+     * op=2 DATA: 14〜20バイト、開始index:u32@8、PC:u16の昇順列@12（最大4個）。
+     * op=3 COMMIT: 8バイト。全件・CRC・全PCの命令境界を検証してから全置換する。
+     * op=4 STATUS: 8バイト、revision=0。保持イメージのrevision・元CRC・全体長を取得する。
+     * op=5 CHUNK: 16バイト、stopId:u32@8、Snapshot内offset:u32@12。
+     * op=6 ABORT: 8バイト。未完了一覧だけを破棄する。
+     * op=7/8/9 POINTS_BEGIN/DATA/COMMIT: 1/2/3と同じ形式で、ステップ用PC表を別に全置換する。
+     * ステップ用は最大65536点。Pythonの文開始・条件評価・関数入口・暗黙return前を同一生成から送る。
+     * VMは1PC=1bitで保持する。CALL継続は表へ含めず、In/Overで文の途中に停止しない。
+     * op=10 CONTINUE、11 OVER、12 IN、13 OUT: 12バイト、現在のstopId:u32@8。
+     * PausedかつSnapshot/世代/stopId一致、一覧受信中でない場合だけ受け付け、Result.valueで消費したstopIdを返す。
+     * 成功後は旧Snapshotを破棄する。同じ直前requestId・内容の再送は再実行せず同じACKを返す。
+     * 古いstopIdの操作は再開後や別の停止へ適用しない。モジュールのOUTは拒否する。
+     * 両一覧のBEGIN/DATA/COMMITはRunningでは拒否する。0個COMMITでその表を全解除。
+     * ブレークポイントは最大4096個、ステップ用は最大65536個、受信無進捗期限5秒。
+     * STATUS以外は現在revision一致を必須とし、同じ接続世代の要求だけを処理する。
+     *
+     * Resultは20バイト: version:u8@0、op:u8@1、requestId:u16@2、code:u8@4、VM state:u8@5、
+     * 予約:u16@6=0、revision:u32@8、value:u32@12、extra:u32@16。
+     * STATUSのvalue=元CRC、extra=全体長。DATA/COMMITのvalue=受信／確定個数。
+     * CHUNKのvalue=選択offset、extra=Dataの長さ1〜20。Data設定後にACKを公開し、
+     * ACK確認後にDataをReadする。論理要求は直列化し、別チャンク選択を途中へ挟まない。
+     * code: 0成功、1形式、2順序、3範囲、4メモリ、5CRC、6不正PC等、7実行中／混雑、8世代／停止失効、9期限。
+     */
     private request(op: number, revision: number, body = new Uint8Array(), signal?: AbortSignal,
-        readData = false): Promise<{ revision: number; value: number; extra: number; data?: Uint8Array }> {
+        readData = false): Promise<{ /** ESP32が確定したプログラムを識別する世代番号。 */ revision: number; /** 通信応答の操作別の値。 */ value: number; /** 通信応答の操作別の補助値。 */ extra: number; /** コピー済みの通信データ。 */ data?: Uint8Array }> {
         const task = this.tail.catch(() => {}).then(async () => {
             this.check(signal);
             const id = this.nextRequestId();
@@ -325,7 +478,12 @@ export class PythonDebugTransport {
         return task;
     }
 
-    /** 1/2/3と7/8/9の共通段階転送。どちらも確定まで部分一覧を実行へ使わない。 */
+    /**
+     * 1/2/3と7/8/9の共通段階転送。どちらも確定まで部分一覧を実行へ使わない。
+     *
+     * 一覧は命令列先頭=0のPCであり、ソース行番号ではない。検証済み命令のbit7だけをESP32で変更し、
+     * 元イメージのCRC・programRevisionは維持する。切断・Wi-Fi切替でフラグを解除する。
+     */
     private async sendPcList(receipt: BytecodeReceipt, pcs: readonly number[], points: boolean, signal?: AbortSignal): Promise<void> {
         const sorted = [...new Set(pcs)].sort((a, b) => a - b);
         if (sorted.length > (points ? 65536 : debugProtocol.maxBreakpoints)
@@ -407,7 +565,14 @@ export class PythonDebugTransport {
         await this.poll();
     }
 
-    /** 全受信済みの現在停止だけを操作する。送信開始時に旧値を失効させ、ACK後も新しいEventを取得する。 */
+    /**
+     * 全受信済みの現在停止だけを操作する。送信開始時に旧値を失効させ、ACK後も新しいEventを取得する。
+     *
+     * チャンクごとに共通待ち列を返し、長いSnapshotでPINGを塞がない。
+     * Inは次の停止点または現在フレームの復帰直後、Overは同じフレームの次の停止点または復帰直後、
+     * Outは現在フレームの復帰直後に止める。フレームIDと深さで再帰を区別し、閲覧中のフレームには依存しない。
+     * 有効ブレークポイントを優先し、停止で保留ステップを完了とする。HALTは終了、ネイティブは内部へ入らず完了を待つ。
+     */
     async execute(action: DebugAction, snapshot: DebugSnapshot, signal?: AbortSignal): Promise<void> {
         this.check(signal);
         if (this.executing || snapshot.revision !== this.revision || snapshot.stopId !== this.completed
@@ -438,6 +603,9 @@ export class PythonDebugTransport {
         }
     }
 
+    /**
+     * 有効な接続の取得エラーを通知し、次回の成功で停止値を再取得できるようにする。
+     */
     private fail(error: unknown): void {
         if (!this.disposed && !(error instanceof DOMException && error.name === "AbortError")) {
             // 取得済み停止のEvent Read失敗でも、次回の成功時に全データを再取得して表示を復旧する。
@@ -446,11 +614,17 @@ export class PythonDebugTransport {
         }
     }
 
+    /**
+     * 通知内容を直接採用せず、最新EventのReadを要求するイベントハンドラー。
+     */
     private changed = (): void => {
         // 遅延Notifyは読取りの契機にだけ使い、古いRunning通知で新しい停止値を消さない。
         void this.poll().catch(error => this.fail(error));
     };
 
+    /**
+     * 重複と再開操作中のReadを避け、現世代のEventだけを受理する。
+     */
     private async poll(): Promise<void> {
         if (this.polling || this.disposed || this.executing) {
             return;
@@ -470,6 +644,11 @@ export class PythonDebugTransport {
         }
     }
 
+    /**
+     * Eventの状態・世代・停止IDから表示と停止値取得の開始・失効を決める。
+     *
+     * @param event ブラウザーまたは通信元のイベント。
+     */
     private accept(event: DebugEvent): void {
         if (event.revision !== this.revision || event.state !== debugProtocol.paused) {
             const changed = this.event?.state !== event.state || this.event?.revision !== event.revision
@@ -507,6 +686,12 @@ export class PythonDebugTransport {
         });
     }
 
+    /**
+     * SnapshotはPaused中だけ有効。Stop・Start・プログラム置換・接続世代変更で無効化し、
+     * 全チャンク・CRC・構造を検証するまで公開しない。大域・スタック・PC/BP/SPは同じ停止の値。
+     * ブレークポイント停止はVMだけを止め、機器出力・補間は維持する。StopとPINGは既存経路を維持する。
+     * 再開は現在の到達だけを消費し、ループの次周は同じPCでも停止する。NativePendingの再試行は到達に数えない。
+     */
     private async download(event: DebugEvent, epoch: number): Promise<void> {
         const bytes = new Uint8Array(event.byteLength);
         for (let offset = 0; offset < bytes.length;) {

@@ -1,12 +1,24 @@
+/**
+ * 編集器の共有参照とdiagramのJSON保存・読込みダイアログを接続する。復元処理はindex.tsから渡される。
+ */
 import { downloadJson } from "@i18n";
 import type { Editor } from "./canvas";
 
+/**
+ * 保存・復元・描画とブロック探索で共有する編集器の参照。
+ */
 export let theEditor : Editor;
 
+/**
+ * diagram全体で使用する編集器を登録する。
+ */
 export function setEditor(editor : Editor){
     theEditor = editor;
 }
 
+/**
+ * 配置済みの図を保存オブジェクトへ変換し、JSONファイルとしてダウンロードする。
+ */
 export function saveJson(){
     let port_idx = 0;
 

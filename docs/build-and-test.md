@@ -1,5 +1,13 @@
 # ビルドと回帰テスト
 
+## Python VMの旧形式削除・形式解釈の共通化（2026-11-24）
+
+意味解析済みの生成入口へ統一し、バイトコード版1・2と旧Event／Snapshotの受信を削除した。現行の参照先は[バイトコード案内](diagram/python/bytecode.md)、今後のオブジェクト・NumPy対応の変更先は[変更箇所一覧](diagram/python/object-array-change-map.md)を参照する。新しいオブジェクト・配列機能そのものは今回追加していない。
+
+`npm.cmd run verify`でTypeScript・公開ビルド・成果物の静的確認が成功した。既存のgameに関する動的／静的import混在の警告2件は残る。文書リンクと両リポジトリーの差分も確認した。ESP32は[別リポジトリーの確認記録](../../esp32/docs/build-and-test.md)のとおり、`default_envs = supermini_esp32s3`だけでビルドした。
+
+ユーザー指定によりテストは作成・実行していない。Upload、ブラウザー操作、BLE／Wi-Fiでの転送、VM実行、実機の確認は行っていない。
+
 ## Pythonのabs追加（2026-11-19）
 
 宣言は[device.pyi](../diagram/python/device.pyi)、仕様は[生成スタブのinvokeFloatUnary](../../esp32/app/diagram-control/src/device_api.generated.cpp)、生成元は[device_api_cpp.py](../diagram/python/device_api_cpp.py)を参照する。`C:\Users\hamad\.platformio\penv\Scripts\python.exe diagram/python/generate-device-api.py`でJSONとC++を再生成し、`--check`による一致確認は成功した。既存IDを維持してabsを33に登録し、ABIハッシュを更新した。

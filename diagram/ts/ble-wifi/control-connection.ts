@@ -5,7 +5,6 @@
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
- * バイトコード転送の通信・キュー時間の計測とコンソール出力はsendBytecode()が担当する。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
@@ -16,12 +15,39 @@ export type ControlPacketKind = "status" | "telemetry";
 
 /** 接続済み通信経路。writeの完了は通信APIの受付であり、機器のACKや動作完了ではない。 */
 export interface ControlTransport {
+    /**
+     * 共通通信層でBLEとWi-Fiの経路を区別する識別子。
+     */
     readonly kind: "ble" | "wifi";
+    /**
+     * 通信経路が現在利用できる接続状態。
+     */
     readonly connected: boolean;
+    /**
+     * 通常指令または転送フレームを、現在の通信経路へ書き込む。
+     *
+     * @param bytes 読み書きするバイト列。
+     */
     write(bytes: Uint8Array): Promise<void>;
+    /**
+     * 機器一覧のバイト列を専用窓口へ渡す。機器側の内容検証完了は示さない。
+     *
+     * @param bytes 読み書きするバイト列。
+     */
     writeDeviceInfo(bytes: Uint8Array): Promise<void>;
+    /**
+     * 現在の経路でコード転送と専用Result読出しの窓口を取得する。
+     */
     openBytecode(): Promise<BytecodeChannel>;
+    /**
+     * 現在の経路でデバッグ要求・ACK・状態・停止値の窓口を取得する。
+     */
     openDebug(): Promise<DebugChannel>;
+    /**
+     * 通信パケットの通知を購読し、解除関数を返す。
+     *
+     * @param listener 変更通知を受け取る処理。
+     */
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void;
 }
 
@@ -56,8 +82,14 @@ export const ControlCommand = {
     },
 } as const;
 
+/**
+ * 通常指令の結果番号を利用者向けメッセージへ対応付ける一覧。
+ */
 const errors = ["成功", "指令形式が不正（速度制御には対応ファームウェアが必要です）", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー", "角度／速度モードが異なります。無効化してから有効化してください。"];
 
+/**
+ * サーボ指令の操作番号を診断用の操作名へ対応付ける表。
+ */
 const servoOperations: Partial<Record<ControlOpcode, string>> = {
     [ControlOpcode.ARM]: "ARM",
     [ControlOpcode.MOVE]: "MOVE",
@@ -69,15 +101,37 @@ const servoOperations: Partial<Record<ControlOpcode, string>> = {
 
 /** 通知は形式検証後に渡す。telemetryの登録件数・順序の照合とブロック反映は呼出元が行う。 */
 interface ControlCallbacks {
+    /**
+     * 検証済みの通常指令受付結果を所有元へ通知する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     status(data: DataView): void;
+    /**
+     * 全件検証済みのセンサー通知を所有元へ渡す。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     telemetry(data: DataView, telemetry: DeviceTelemetry): void;
+    /**
+     * 現在の通信経路の失敗を所有元へ通知する。
+     */
     failed(error: Error): void;
 }
 
 /** 応答期限と取消に使う、現在の通常指令のACK待機。 */
 interface PendingCommand {
+    /**
+     * 対応する指令の受付結果待ちを成功として完了する。
+     */
     resolve(): void;
+    /**
+     * 対応する指令の受付結果待ちを失敗として完了する。
+     */
     reject(error: Error): void;
+    /**
+     * 期限監視または定期監視に使うタイマーの予約。
+     */
     timer: ReturnType<typeof setTimeout>;
 }
 
@@ -88,16 +142,43 @@ interface PendingCommand {
  * 転送全体ではなく各フレームを並べ、PING・STOPを間に処理できるようにする。
  */
 export class ControlConnection {
+    /**
+     * 現在採用している経路別の通信窓口。
+     */
     private transport?: ControlTransport;
+    /**
+     * 現在の通信状態またはパケット通知の購読を解除する関数。
+     */
     private unsubscribe?: () => void;
+    /**
+     * 切断や経路変更の前に開始した非同期処理を失効させる接続世代。
+     */
     private generation = 0;
+    /**
+     * 通常指令とACKを対応付ける連番。
+     */
     private sequence = 0;
+    /**
+     * 通信要求を直列化する待ち列の末尾Promise。
+     */
     private tail: Promise<unknown> = Promise.resolve();
+    /**
+     * 受付結果を待つ指令をsequenceで管理する対応表。
+     */
     private pending = new Map<number, PendingCommand>();
+    /**
+     * 接続を維持するPINGの周期タイマー。
+     */
     private heartbeat?: ReturnType<typeof setInterval>;
+    /**
+     * 同じ接続内で再利用しないPython転送IDの採番状態。
+     */
     private bytecodeTransferId = 0;
 
-    constructor(private callbacks: ControlCallbacks) {
+    /**
+     * この型の状態と依存先を初期化する。
+     */
+    constructor(/** 検証済みStatus・Telemetryと通信失敗を所有元へ通知する処理群。 */ private callbacks: ControlCallbacks) {
     }
 
     /** 旧経路を解除してACKを失効させ、新しい経路の通知を購読する。機器操作は行わない。 */
@@ -197,6 +278,8 @@ export class ControlConnection {
      * 総所要時間との差には再読出し前の待機・照合・進捗通知等が含まれる。毎フレームのログは出さず、
      * キー・パケット本体・Resultの内容は出力しない。計測のために転送順序・待機・期限を変更しない。
      * 切断の診断用に転送段階・最後の送信op/sequence・サイズ・例外メッセージも出力する。
+     *
+     * バイトコード転送の通信・キュー時間の計測とコンソール出力はsendBytecode()が担当する。
      */
     async sendBytecode(input: Uint8Array, signal?: AbortSignal,
         onProgress?: (progress: BytecodeProgress) => void, deployment?: BytecodeDeployment): Promise<BytecodeReceipt> {

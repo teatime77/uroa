@@ -1,7 +1,6 @@
 /**
- * global文の宣言収集・宣言順検査を、意味解析と意味解析なしの生成経路で共有する。
- * parser.tsがGlobalStatementを作り、semantic.tsは診断を蓄積、bytecode.tsの従来経路は
- * 最初の違反で生成を拒否する。名前の型・スロット割当てはそれぞれの呼出し元が担当する。
+ * global文の宣言収集・宣言順を検査する。parser.tsがGlobalStatementを作り、
+ * semantic.tsが本処理の診断を蓄積して型・スロットを決定する。bytecode.tsはその解析結果を使用する。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, Fn, ForStatement, GlobalStatement,

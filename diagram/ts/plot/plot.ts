@@ -9,6 +9,9 @@ import { Port } from "../port";
 import { PlotHistory, type PlotScale } from "./plot_data";
 import type { Attr } from "../ui";
 
+/**
+ * グラフの生成・更新・破棄に使うPlotlyのAPI型。
+ */
 type PlotlyAPI = typeof import("plotly.js");
 
 /** 複数のPlotBlockで共有するPlotlyの読み込み結果。 */
@@ -34,11 +37,17 @@ export class PlotBlock extends FunctionBlock {
     private scales: PlotScale[] = [];
     /** 入力ポートの接続変更の購読を解除する関数。 */
     private releaseConnection?: () => void;
+    /**
+     * グラフのDOM領域のサイズ変更を監視するResizeObserver。
+     */
     private observer?: ResizeObserver;
     /** 縦軸の統計を1秒間隔で更新するタイマー。 */
     private statisticsTimer?: ReturnType<typeof setInterval>;
     /** 次の描画フレームの予約ID。 */
     private frame?: number;
+    /**
+     * 遅延読込みが完了したPlotly API。破棄後は描画に使わない。
+     */
     private plotly?: PlotlyAPI;
     /** Plotlyの非同期描画中かどうか。重複した描画を防ぐ。 */
     private rendering = false;
@@ -46,6 +55,9 @@ export class PlotBlock extends FunctionBlock {
     private dirty = false;
     /** 削除後の遅延コールバックによる更新を抑止するフラグ。 */
     private removed = false;
+    /**
+     * 入力待ちや型不整合など、グラフの現在状態を表す表示文字列。
+     */
     private status = "入力を接続してください";
 
     /**

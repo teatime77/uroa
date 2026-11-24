@@ -1,3 +1,6 @@
+/**
+ * ESP32の距離通知をmmの数値へ変換する。未測定・失敗・切断時の出力はundefinedにする。
+ */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramDevice, type DeviceConnectionState } from "../ble-wifi/device-connection";
@@ -8,9 +11,21 @@ import type { Attr } from "../ui";
 
 /** HC-SR04の距離をmm単位の数値として出力する。測定値や接続状態は保存しない。 */
 export class UltrasonicDistanceSensorBlock extends FunctionBlock {
+    /**
+     * 有効な距離をmm単位で渡す数値出力。無効値はundefined。
+     */
     readonly outputPort = new NumberPort(this, PortType.outputPort);
+    /**
+     * 機器接続状態の購読を解除する関数。
+     */
     private releaseState?: () => void;
+    /**
+     * 共有センサーSTREAMの保持要求を解放する関数。
+     */
     private releaseStream?: () => void;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
 
     /** 出力ポートと、接続状態・共有STREAMの購読を作成する。 */

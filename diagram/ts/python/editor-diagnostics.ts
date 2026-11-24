@@ -7,8 +7,17 @@ import { Term } from "./syntax";
 
 /** endは含まない。EOFではstart=endとし、表示側が1文字幅の波線を補う。 */
 export interface PythonEditorDiagnostic {
+    /**
+     * 元ソース内で診断範囲が始まるUTF-16位置。
+     */
     start: number;
+    /**
+     * 元ソース内で診断範囲が終わる位置の直後。
+     */
     end: number;
+    /**
+     * 範囲と一緒に表示する診断メッセージ。
+     */
     message: string;
 }
 

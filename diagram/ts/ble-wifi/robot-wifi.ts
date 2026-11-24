@@ -1,3 +1,6 @@
+/**
+ * BLEによるWi-Fi設定と、LAN内機器とのHMAC認証付きHTTP/WebSocket通信を担当する。カメラ画像の取得は通常の制御パケットから分離する。
+ */
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import { DeviceInfoMaxLength } from "./device-telemetry";
 import { bytecodeTransfer, type BytecodeChannel } from "./bytecode-transfer";
@@ -5,14 +8,35 @@ import type { DebugChannel } from "./debug-protocol";
 
 /** Wi-Fi transport and authenticated BLE provisioning. No live credentials are serialized. */
 export interface RobotEndpoint {
-    id: string; name: string; host: string; ip: string;
-    port: number; wsPort: number; cameraPort: number; camera: boolean;
+    /**
+     * 機器固有番号またはブラウザーの保存候補を識別する名前。
+     */
+    id: string; /** 機器の利用者向け表示名。 */ name: string; /** 接続先機器のmDNSホスト名。 */ host: string; /** 接続先機器の最後に確認したLAN内IPv4アドレス。 */ ip: string;
+    /**
+     * 機器の認証付きHTTP制御窓口のポート番号。
+     */
+    port: number; /** 機器のWebSocket制御窓口のポート番号。 */ wsPort: number; /** 機器のJPEG取得用HTTP窓口のポート番号。 */ cameraPort: number; /** 接続先がカメラ画像の取得に対応しているか。 */ camera: boolean;
 }
-export interface ProvisionInfo extends RobotEndpoint { key?: string; state: string; error?: string; }
-export interface WifiNetwork { ssid: string; rssi: number; open: boolean; }
-export interface ConfigCharacteristic { readValue(): Promise<DataView>; writeValueWithResponse(value: Uint8Array): Promise<void>; }
-const encoder = new TextEncoder(), decoder = new TextDecoder();
+/**
+ * BLE設定窓口が返す機器接続先とWi-Fi設定の進行状態。
+ */
+export interface ProvisionInfo extends RobotEndpoint { /** 設定窓口から取得する公開教材用の接続キー。図には保存しない。 */ key?: string; /** 機器またはVMが報告した状態番号・状態値。 */ state: string; /** 設定・通信・処理が返した失敗の説明。 */ error?: string; }
+/**
+ * Wi-Fi検索で得たSSID・受信強度・パスワードの要否。
+ */
+export interface WifiNetwork { /** アクセスポイントのネットワーク名。 */ ssid: string; /** アクセスポイントの受信強度（dBm）。 */ rssi: number; /** パスワードなしで接続するアクセスポイントか。 */ open: boolean; }
+/**
+ * BLEのWi-Fi設定に必要なReadとresponse付きWriteの最小型。
+ */
+export interface ConfigCharacteristic { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView>; /** GATTの受付応答を待ってバイト列を書き込む。 */ writeValueWithResponse(value: Uint8Array): Promise<void>; }
+const /** 要求文字列と署名対象をUTF-8へ変換する共通エンコーダー。 */ encoder = new TextEncoder(), /** BLE設定応答のUTF-8 JSONを読む共通デコーダー。 */ decoder = new TextDecoder();
+/**
+ * 成功したSSIDの一覧だけを保存するlocalStorageのキー。
+ */
 const ssidHistoryKey = "uroa-wifi-ssids-v1";
+/**
+ * 保存済みのSSID履歴を型・UTF-8長で検証し、重複なしの最大20件で返す。
+ */
 export function savedWifiSSIDs(): string[] {
     try {
         const data: unknown = JSON.parse(localStorage.getItem(ssidHistoryKey) || "[]");
@@ -21,6 +45,9 @@ export function savedWifiSSIDs(): string[] {
             typeof ssid === "string" && ssid.length > 0 && encoder.encode(ssid).length <= 32))].slice(0, 20);
     } catch { return []; }
 }
+/**
+ * 成功したSSIDを先頭へ追加し、パスワードを含めず履歴を最大20件に保つ。
+ */
 export function rememberWifiSSID(ssid: string): void {
     if (!ssid.length || encoder.encode(ssid).length > 32) return;
     try {
@@ -29,11 +56,26 @@ export function rememberWifiSSID(ssid: string): void {
 }
 // Public teaching key; keep in sync with deviceKey in firmware/src/network.cpp.
 const teachingConnectionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+/**
+ * 通信バイト列を小文字の16進文字列へ変換する。
+ *
+ * @param data 初期属性または処理対象のデータ。
+ */
 export function packetHex(data: Uint8Array): string { return [...data].map(b => b.toString(16).padStart(2, "0")).join(""); }
+/**
+ * 偶数桁の小文字16進表現を検証し、バイト列へ復号する。
+ *
+ * @param value 検証または反映する値。
+ */
 function decodeHex(value: unknown): Uint8Array<ArrayBuffer> {
     if (typeof value !== "string" || !/^(?:[0-9a-f]{2})+$/.test(value)) throw new Error("機器の応答形式が正しくありません。");
     return Uint8Array.from(value.match(/../g)!, x => parseInt(x, 16));
 }
+/**
+ * mDNS名またはプライベートIPv4アドレスとして接続可能な形式かを検査する。
+ *
+ * @param value 検証または反映する値。
+ */
 function validHost(value: unknown): value is string {
     if (typeof value !== "string") return false;
     if (/^[a-z0-9][a-z0-9-]{0,62}\.local$/.test(value)) return true;
@@ -41,6 +83,11 @@ function validHost(value: unknown): value is string {
     return /^\d+\.\d+\.\d+\.\d+$/.test(value) && octets.every(n => Number.isInteger(n) && n >= 0 && n <= 255) &&
         (octets[0] === 10 || (octets[0] === 192 && octets[1] === 168) || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31));
 }
+/**
+ * 機器ID・LAN内アドレス・ポート範囲を検証し、接続情報を取り出す。
+ *
+ * @param value 検証または反映する値。
+ */
 export function endpoint(value: unknown): RobotEndpoint {
     const data = value as Partial<RobotEndpoint> | undefined;
     if (!data || typeof data.id !== "string" || !/^uroa-[a-f0-9]{12}$/.test(data.id) ||
@@ -50,11 +97,20 @@ export function endpoint(value: unknown): RobotEndpoint {
     return { id: data.id, name: data.name.slice(0, 64), host: data.host, ip: data.ip!,
         port: data.port!, wsPort: data.wsPort!, cameraPort: data.cameraPort!, camera: data.camera === true };
 }
+/**
+ * 対応する安全なブラウザー環境で、資格情報保存の候補をパスワード管理へ渡す。
+ */
 export function savePassword(id: string, password: string): void {
-    const Constructor = (window as Window & { PasswordCredential?: new (data: { id: string; password: string }) => Credential }).PasswordCredential;
+    const Constructor = (window as Window & { /** 対応ブラウザーが提供する資格情報保存用コンストラクター。 */ PasswordCredential?: new (data: { /** 機器固有番号またはブラウザーの保存候補を識別する名前。 */ id: string; /** ブラウザーの保存候補として渡す一時的なパスワード。 */ password: string }) => Credential }).PasswordCredential;
     if (!window.isSecureContext || !Constructor || !navigator.credentials?.store || !password) return;
     try { void navigator.credentials.store(new Constructor({ id, password })).catch(() => {}); } catch { /* Browser owns save approval. */ }
 }
+/**
+ * 取消シグナルで中断できるミリ秒単位の待機を行う。
+ *
+ * @param ms 待機または期限の時間（ms）。
+ * @param signal 処理を取り消すシグナル。
+ */
 export function wait(ms: number, signal: AbortSignal): Promise<void> {
     return new Promise((resolve, reject) => {
         signal.throwIfAborted();
@@ -63,6 +119,12 @@ export function wait(ms: number, signal: AbortSignal): Promise<void> {
         signal.addEventListener("abort", cancel, { once: true });
     });
 }
+/**
+ * 既存の非同期処理へ期限と取消を付け、タイマーと購読を完了時に解除する。
+ *
+ * @param signal 処理を取り消すシグナル。
+ * @param ms 待機または期限の時間（ms）。
+ */
 async function deadline<T>(promise: Promise<T>, signal: AbortSignal, ms = 15000): Promise<T> {
     signal.throwIfAborted();
     return new Promise((resolve, reject) => {
@@ -79,9 +141,21 @@ async function deadline<T>(promise: Promise<T>, signal: AbortSignal, ms = 15000)
  * Not pairedは操作案内へ変換する。資格情報や設定要求をログへ出さず、自動再送しない。
  */
 export class BLEWifiSetup {
+    /**
+     * 通信要求を直列化する待ち列の末尾Promise。
+     */
     private tail: Promise<unknown> = Promise.resolve();
-    constructor(private tx: ConfigCharacteristic, private rx: ConfigCharacteristic) {}
-    request(data: object, signal: AbortSignal): Promise<ProvisionInfo & { pages?: number; networks?: WifiNetwork[] }> {
+    /**
+     * この型の状態と依存先を初期化する。
+     */
+    constructor(/** Wi-Fi設定の分割要求を書き込むGATT特性。 */ private tx: ConfigCharacteristic, /** Wi-Fi設定の処理結果を読み取るGATT特性。 */ private rx: ConfigCharacteristic) {}
+    /**
+     * 設定JSONをBLEへ分割送信し、期限付きで処理結果を読む。送信バッファーは使用後に消去する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     * @param signal 処理を取り消すシグナル。
+     */
+    request(data: object, signal: AbortSignal): Promise<ProvisionInfo & { /** Wi-Fi検索結果の一覧が持つページ数。 */ pages?: number; /** 一ページ分または検索全体のアクセスポイント一覧。 */ networks?: WifiNetwork[] }> {
         const task = this.tail.catch(() => {}).then(async () => {
             let bytes = encoder.encode(JSON.stringify(data));
             if (bytes.length > 380) throw new Error("Wi-Fi設定が長すぎます。");
@@ -105,11 +179,21 @@ export class BLEWifiSetup {
         });
         this.tail = task; return task;
     }
+    /**
+     * 現在のBLE機器のWi-Fi情報を読み、機器形式と教材用キーを検証する。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     async info(signal: AbortSignal): Promise<ProvisionInfo> {
         const data = await this.request({ op: "info" }, signal); endpoint(data);
         if (data.key !== teachingConnectionKey) throw new Error("教材用の固定接続キーに対応したファームウェアを書き込んでください。");
         return data;
     }
+    /**
+     * アクセスポイント検索を要求し、全ページを重複なし・受信強度順にまとめる。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     async scan(signal: AbortSignal): Promise<WifiNetwork[]> {
         await this.request({ op: "scan" }, signal); await wait(500, signal);
         const until = Date.now() + 20000;
@@ -125,6 +209,11 @@ export class BLEWifiSetup {
         }
         return [...networks.values()].sort((a, b) => b.rssi - a.rssi);
     }
+    /**
+     * SSIDとパスワードのUTF-8長を検査し、現在のBLE機器へ接続設定を送る。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     async configure(ssid: string, password: string, signal: AbortSignal): Promise<ProvisionInfo> {
         const n = encoder.encode(ssid).length, p = encoder.encode(password).length;
         if (!n || n > 32 || (p && p < 8) || p > 63) throw new Error("SSIDは1～32バイト、パスワードは8～63バイトで指定してください。");
@@ -141,21 +230,69 @@ export class BLEWifiSetup {
 
 /** One authenticated control session. HTTP fallback supports secure-page local-network access. */
 export class RobotWifi implements ControlTransport {
+    /**
+     * 共通通信層でBLEとWi-Fiの経路を区別する識別子。
+     */
     readonly kind = "wifi";
+    /**
+     * この通信経路の要求を切断時にまとめて取り消す制御元。
+     */
     private controller = new AbortController();
+    /**
+     * 認証済み制御に利用するWebSocket。HTTP利用時は未設定。
+     */
     private socket?: WebSocket;
+    /**
+     * 要求署名と応答検証に使う、エクスポート不可のHMAC鍵。
+     */
     private cryptoKey?: CryptoKey;
+    /**
+     * 現在の認証済み接続を識別するセッション文字列。
+     */
     private session = "";
+    /**
+     * 現在セッション内で単調増加させる送信要求番号。
+     */
     private counter = 0;
+    /**
+     * WebSocketで受理済みの最新通知番号。古い通知を拒否する。
+     */
     private outputCounter = 0;
+    /**
+     * 現在接続先の制御HTTP URLの基点。
+     */
     private base = "";
+    /**
+     * 通常制御とは別ポートのカメラ画像HTTP URLの基点。
+     */
     private cameraBase = "";
+    /**
+     * WebSocketの認証・通知処理を受信順に行うための待ち列。
+     */
     private inbound: Promise<void> = Promise.resolve();
+    /**
+     * HTTPによるイベント取得を継続している状態。
+     */
     private polling = false;
+    /**
+     * この通信インスタンスの終了状態。終了後の結果は採用しない。
+     */
     private closed = false;
+    /**
+     * 最新のカメラ画像取得を期限・切断で中断する制御元。
+     */
     private latestImageController?: AbortController;
+    /**
+     * 本人確認済みの機器名・アドレス・各通信ポート。
+     */
     endpoint?: RobotEndpoint;
+    /**
+     * 認証済みの通常パケットを受け取る購読者の集合。
+     */
     private packetListeners = new Set<(data: DataView | undefined, kind?: ControlPacketKind) => void>();
+    /**
+     * 通信終了と利用者向けの失敗メッセージを所有元へ通知する処理。
+     */
     onLost: (message: string) => void = () => {};
     /** 認証済みバイト列を共通層へ渡す。形式検証・ACK照合はcontrol-connection.tsが行う。 */
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void {
@@ -164,15 +301,31 @@ export class RobotWifi implements ControlTransport {
             this.packetListeners.delete(listener);
         };
     }
+    /**
+     * 切断済みでなく、認証済みセッションを保持しているかを返す。
+     */
     get connected(): boolean { return !this.closed && !!this.session; }
+    /**
+     * 現在のHMAC鍵で署名対象のUTF-8文字列へSHA-256の署名を付ける。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private async mac(message: string): Promise<string> {
         if (!this.cryptoKey) throw new Error("接続キーがありません。");
         return packetHex(new Uint8Array(await crypto.subtle.sign("HMAC", this.cryptoKey, encoder.encode(message))));
     }
+    /**
+     * 受け取った16進署名を現在のHMAC鍵で検証し、不一致を例外にする。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private async verify(message: string, proof: unknown): Promise<void> {
         if (!this.cryptoKey || !await crypto.subtle.verify("HMAC", this.cryptoKey, decodeHex(proof), encoder.encode(message)))
             throw new Error("機器の認証に失敗しました。");
     }
+    /**
+     * HTTP要求へ任意の認証ヘッダーと期限を付け、応答番号を照合してJSONを返す。
+     */
     private async json(path: string, body?: string, authenticated = false): Promise<any> {
         const headers: Record<string, string> = {};
         let requestCount = 0;
@@ -197,6 +350,11 @@ export class RobotWifi implements ControlTransport {
             return reply;
         } finally { clearTimeout(timer); this.controller.signal.removeEventListener("abort", abort); }
     }
+    /**
+     * 機器IDを照合し、WebSocketまたはHTTPで制御権の認証を完了する。
+     *
+     * @param outerSignal 呼出し元の実行を取り消すシグナル。
+     */
     async connect(target: RobotEndpoint, outerSignal: AbortSignal): Promise<RobotEndpoint> {
         outerSignal.throwIfAborted();
         this.cryptoKey = await crypto.subtle.importKey("raw", encoder.encode(teachingConnectionKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
@@ -230,12 +388,20 @@ export class RobotWifi implements ControlTransport {
         } catch (error) { this.close(); throw error; }
         finally { outerSignal.removeEventListener("abort", cancel); }
     }
+    /**
+     * 機器ID・nonce・接続情報をHMACで照合してセッションを採用する。
+     */
     private async acceptSession(reply: any, nonce: string, id: string): Promise<void> {
         if (endpoint(reply).id !== id || typeof reply.session !== "string" || !/^[a-f0-9]{32}$/.test(reply.session)) throw new Error("機器の接続情報が正しくありません。");
         await this.verify(`ready|${id}|${nonce}|${reply.session}|${reply.host}|${reply.ip}`, reply.proof);
         if (this.closed) throw new DOMException("中断しました。", "AbortError");
         this.session = reply.session; this.endpoint = endpoint(reply);
     }
+    /**
+     * WebSocketのチャレンジ認証を行い、以後の通知を番号と署名で検証する。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     private async connectSocket(info: any, target: RobotEndpoint, signal: AbortSignal): Promise<void> {
         const host = new URL(this.base).hostname;
         const ws = this.socket = new WebSocket(`ws://${host}:${target.wsPort}`);
@@ -264,6 +430,11 @@ export class RobotWifi implements ControlTransport {
         }), signal, 5000);
         void info;
     }
+    /**
+     * 認証済みの16進パケットをDataViewへ変換し、通常通信の購読者へ渡す。
+     *
+     * @param value 検証または反映する値。
+     */
     private receive(value: unknown): void {
         if (this.closed) return;
         const bytes = decodeHex(value);
@@ -272,6 +443,9 @@ export class RobotWifi implements ControlTransport {
             listener(data);
         }
     }
+    /**
+     * HTTPイベントを署名とセッションで照合しながら継続取得する。
+     */
     private async poll(): Promise<void> {
         try {
             while (!this.closed && this.polling) {
@@ -382,6 +556,11 @@ export class RobotWifi implements ControlTransport {
             readData: () => this.readControlValue("debug-data", 1, 20, session),
         };
     }
+    /**
+     * 現在セッションでJPEGを認証付き取得し、通常制御とは別のBlobとして返す。
+     *
+     * @param signal 処理を取り消すシグナル。
+     */
     async image(signal: AbortSignal): Promise<Blob> {
         if (!this.connected || !this.endpoint?.camera) throw new Error("カメラを利用できません。");
         const count = ++this.counter, mac = await this.mac(`${this.session}|${count}|/capture|`);
@@ -398,7 +577,15 @@ export class RobotWifi implements ControlTransport {
             return image;
         } finally { clearTimeout(timer); signal.removeEventListener("abort", cancel); this.latestImageController = undefined; }
     }
+    /**
+     * 通信資源を終了し、所有元へ接続喪失の説明を通知する。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private fail(message: string): void { this.close(); this.onLost(message); }
+    /**
+     * 全要求・ソケット・画像取得・認証状態を終了する。
+     */
     close(): void {
         if (this.closed) return;
         if (this.session && this.polling && this.cryptoKey) {

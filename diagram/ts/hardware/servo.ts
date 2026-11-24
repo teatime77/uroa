@@ -1,3 +1,6 @@
+/**
+ * CHごとの角度・連続回転速度の明示的な有効化と指令UIを提供する。ACKと入力検査はdevice-connection.tsへ委譲する。
+ */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramDevice, type ServoMode } from "../ble-wifi/device-connection";
@@ -10,25 +13,84 @@ import { Button, type Attr, type UI } from "../ui";
  * 角度の表示範囲はdevice-connection.tsのmoveAngle()と合わせ、入力検査・送信を同APIへ委譲する。
  */
 export class ServoMotorBlock extends FunctionBlock {
+    /**
+     * ブロックの処理に渡す値の入力ポート。
+     */
     readonly inputPort = new NumberPort(this, PortType.inputPort);
+    /**
+     * サーボCH0〜15を選ぶ数値入力欄。
+     */
     readonly input: HTMLInputElement;
+    /**
+     * 角度モードで使用する移動時間（ms）の入力欄。
+     */
     readonly durationInput: HTMLInputElement;
+    /**
+     * 角度と連続回転速度を切り替える選択欄。
+     */
     readonly modeInput: HTMLSelectElement;
+    /**
+     * 角度90度または速度0%でCHを明示的に有効化するボタン。
+     */
     readonly armButton: Button;
+    /**
+     * 現在の入力値を選択した制御モードで送るボタン。
+     */
     readonly moveButton: Button;
+    /**
+     * このCHのPWMを無効にするボタン。
+     */
     readonly disableButton: Button;
+    /**
+     * 全サーボのPWMを停止するボタン。
+     */
     readonly stopButton: Button;
+    /**
+     * 速度モードでPWM有効状態を保ち、速度0%を指令するボタン。
+     */
     readonly zeroButton: Button;
+    /**
+     * 現在選択したサーボの角度または速度の制御モード。
+     */
     mode: ServoMode = "angle";
+    /**
+     * 受付結果または入力・通信の失敗を表示する文字列。
+     */
     message = "";
+    /**
+     * 機器の接続・CH状態の購読を解除する関数。
+     */
     private unsubscribe?: () => void;
+    /**
+     * 入力ポートの接続変更通知を解除する関数。
+     */
     private releaseConnection?: () => void;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
+    /**
+     * 接続・CH変更後に古い有効化や停止操作の結果を反映しないための世代。
+     */
     private actionVersion = 0;
+    /**
+     * 入力と接続の変更後に古い移動要求を採用しないための世代。
+     */
     private moveVersion = 0;
+    /**
+     * 現在このブロックが操作対象として選んでいるCH番号。
+     */
     private configuredChannel = 0;
+    /**
+     * 有効化・停止等の操作結果を待っている状態。
+     */
     private busy = false;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data: Attr) {
         super(data);
         this.deviceType = DeviceType.ServoMotor;
@@ -85,10 +147,19 @@ export class ServoMotorBlock extends FunctionBlock {
         this.refresh();
     }
 
+    /**
+     * DeviceInfoへアクチュエーターとして登録することを示す。
+     */
     isActuator() : boolean {
         return true;
     }
 
+    /**
+     * サーボ種別・CH・操作モードの3バイトを書き込み、次の位置を返す。
+     *
+     * @param bytes 読み書きするバイト列。
+     * @param offset バイト列内の開始位置。
+     */
     writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
         bytes[offset]     = this.deviceType!;
         bytes[offset + 1] = this.configuredChannel;
@@ -97,6 +168,11 @@ export class ServoMotorBlock extends FunctionBlock {
         return offset + 3;
     }
 
+    /**
+     * ラベル・上下限・初期値・表示幅を持つ数値入力欄を作る。
+     *
+     * @param value 検証または反映する値。
+     */
     private makeInput(label: string, min: number, max: number, value: number, width: number): HTMLInputElement {
         const input = document.createElement("input");
         input.type = "number";
@@ -108,21 +184,40 @@ export class ServoMotorBlock extends FunctionBlock {
         return input;
     }
 
+    /**
+     * この部品が所有する、描画や操作の対象となる子UIを返す。
+     */
     children(): UI[] {
         return [this.armButton, this.moveButton, this.disableButton, this.stopButton,
             ...(this.mode === "speed" ? [this.zeroButton] : [])];
     }
+    /**
+     * 描画コンテキストを設定し、子要素にも共有する。
+     *
+     * @param ctx 描画先の2Dコンテキスト。
+     */
     setContext2D(ctx: CanvasRenderingContext2D): void {
         super.setContext2D(ctx);
         // 初期モードでchildren()に含まれないボタンにも描画先を渡す。
         this.zeroButton.setContext2D(ctx);
     }
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize(): void { this.boxSize = new Vec2(320, this.inToolbox ? 60 : 280); }
 
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj(): any {
         return { ...super.makeObj(), channel: this.input.valueAsNumber, duration: this.durationInput.valueAsNumber, mode: this.mode };
     }
 
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj: any): void {
         super.loadObj(obj);
         this.input.value = `${obj.channel ?? 0}`;
@@ -133,6 +228,9 @@ export class ServoMotorBlock extends FunctionBlock {
         this.refresh();
     }
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     copy(): ServoMotorBlock {
         const block = new ServoMotorBlock({});
         this.copyUI(block);
@@ -142,9 +240,20 @@ export class ServoMotorBlock extends FunctionBlock {
         return block;
     }
 
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position: Vec2): void { super.setPosition(position); this.positionControls(); }
+    /**
+     * ブロックの現在位置と大きさに合わせてポートを配置する。
+     */
     setPortPositions(): void { super.setPortPositions(); this.positionControls(); }
 
+    /**
+     * ブロックの位置に合わせて操作ボタンを配置する。
+     */
     private positionControls(): void {
         if (!this.armButton) return;
         const { x, y } = this.position;
@@ -163,6 +272,9 @@ export class ServoMotorBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * 接続・CH・モード・入力値からボタンと設定欄の有効性を更新する。
+     */
     private refresh(): void {
         if (!this.armButton) return;
         const channel = this.input.valueAsNumber;
@@ -207,6 +319,9 @@ export class ServoMotorBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * 通信または入力検証の失敗をブロックの状態表示へ反映する。
+     */
     private showError(error: unknown): void {
         if (this.removed) return;
         this.message = error instanceof Error ? error.message : "サーボ操作に失敗しました。";
@@ -214,6 +329,9 @@ export class ServoMotorBlock extends FunctionBlock {
         this.refresh();
     }
 
+    /**
+     * 選択したCHを角度90度または速度0%で明示的に有効化する。
+     */
     async arm(): Promise<void> {
         if (this.removed || this.inToolbox || this.busy) return;
         const channel = this.input.valueAsNumber, version = ++this.actionVersion;
@@ -226,6 +344,9 @@ export class ServoMotorBlock extends FunctionBlock {
         finally { if (current()) { this.busy = false; this.refresh(); } }
     }
 
+    /**
+     * 現世代で有効なCHへ入力値を送る。接続や型が不正な場合は送信しない。
+     */
     async valueChanged(): Promise<void> {
         const version = ++this.moveVersion;
         if (this.removed || this.inToolbox) return;
@@ -274,6 +395,9 @@ export class ServoMotorBlock extends FunctionBlock {
     // Port value propagation already sends MOVE; calculation traversal is passive.
     calc(): void {}
 
+    /**
+     * 選択CHのPWMを無効にし、受付結果を表示する。
+     */
     async disable(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.actionVersion++; this.moveVersion++; this.busy = false; this.message = "";
@@ -282,6 +406,9 @@ export class ServoMotorBlock extends FunctionBlock {
         this.refresh();
     }
 
+    /**
+     * 全サーボ停止を要求し、このブロックの進行中の操作も失効させる。
+     */
     async stop(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.actionVersion++; this.moveVersion++; this.busy = false; this.message = "";
@@ -290,6 +417,9 @@ export class ServoMotorBlock extends FunctionBlock {
         this.refresh();
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(): void {
         super.draw();
         const ctx = this.ctx, { x, y } = this.position;
@@ -319,6 +449,9 @@ export class ServoMotorBlock extends FunctionBlock {
         ctx.restore();
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         if (this.removed) return;
         this.removed = true;

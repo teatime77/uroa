@@ -1,6 +1,12 @@
 /** PythonBlock用の公開Pythonファイル選択。URL・保存・読込の契約はpython-block.tsのopenSource()を参照する。 */
 export interface PythonSourceFile {
+    /**
+     * 公開一覧で選択したPythonファイルの名前。
+     */
     filename: string;
+    /**
+     * 選択した公開ファイルから取得したUTF-8のPythonソース。
+     */
     source: string;
 }
 

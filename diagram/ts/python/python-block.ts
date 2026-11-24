@@ -1,29 +1,8 @@
 /**
  * Python編集・実行用ActionBlock。parser.ts、semantic.ts、bytecode.tsでビルドし、
  * ble-wifi/device-connection.tsが転送・VM指令を担当する。index.tsがツール、procedure.tsが復元を登録する。
- * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
- * 最大化中は横並びのworkspaceに左エディタと右デバッグ欄を配置する。右欄の縦配置・スクロール・
- * 操作アイコン・浮動小数点表示はdebugger-view.tsが担当し、停止値がなくても欄を表示する。
- * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
  * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
- * チェックと表示の契約：チェックボタンは機器未接続でも字句・構文・意味解析だけを行い、
- * バイトコード生成・転送・VM操作を行わない。入力時の解析・自動チェックは行わない。
- * Startは毎回チェックし、問題があれば転送・VM開始を行わない。
- * editor-diagnostics.tsが診断をUTF-16範囲へ変換し、highlight-editor.tsが赤い波線、
- * マウス位置のtooltipと、文字カーソル位置の編集領域下部の説明を表示する。
- * 構文エラーは最初の1件、意味エラーは診断一覧を表示する。API・通信失敗に仮の波線は付けない。
- * 入力・読込で古い診断を消し、解析中の入力変更・取消・削除後に遅れて届く結果は破棄する。
- * Startで得た解析結果はそのまま生成に使い、同じStart内で解析を繰り返さない。
- * Startは同一生成のDebugInfo・コード・両PC一覧を送り、ESP32の検証・開始後にReceiptを保持する。
- * 停止通知で自動最大化し、取得完了した同一停止の大域・局所・Call Stack・PC/SP/BPと全スロットを表示する。
- * 構造体とフレーム選択はdebugger-view.ts、ワイヤー仕様はble-wifi/debug-protocol.tsを参照する。
- * 実行状態の表示はEventを正本とし、Start完了時に取得済み状態を「開始受付」で上書きしない。
- * Event v2のRunningではPC・命令数、ErrorではVMエラー番号・失敗PCを表示する。
- * 実行中・一時停止中は編集とブレークポイント変更を禁止する。再開・3種のステップは全停止データ取得後に許す。
- * 操作時は旧停止値を破棄し、新しい停止・終了まで操作ボタンを無効化する。Stop・削除・切断では送信待ちも取り消す。
- * ブレークポイントがある実行は手動Startに限定し、Actionチェーンからは開始前に拒否する。
- * 所有Receiptの失効・切断・Stop・編集・読込・削除で旧停止値を破棄し、保存・コピーには含めない。
  */
 import { Vec2 } from "@i18n";
 import { diagramDevice } from "../ble-wifi/device-connection";
@@ -49,42 +28,146 @@ import { openPythonSource } from "./source-dialog";
  * 開始成功と正常終了は別とし、observeDeployment()が短い実行の終了・エラー・Pausedも取得する。
  */
 export class PythonBlock extends ActionBlock {
+    /**
+     * 学習者がPythonソースを編集するtextarea。ソースと選択状態の正本。
+     */
     readonly sourceEditor: HTMLTextAreaElement;
+    /**
+     * 色分け・行ブレークポイント・診断・実行行を描く所有エディタ。
+     */
     private readonly highlightEditor: PythonHighlightEditor;
+    /**
+     * 編集・ファイル操作・実行操作をまとめるDOMパネル。
+     */
     private readonly panel = document.createElement("div");
+    /**
+     * 最大化時にソース編集欄と停止情報欄を横に並べる領域。
+     */
     private readonly workspace = document.createElement("div");
+    /**
+     * 接続やブロック位置を保ったまま編集パネルを拡大するボタン。
+     */
     private readonly maximizeButton = document.createElement("button");
+    /**
+     * 拡大表示を解除して通常のブロック表示へ戻すボタン。
+     */
     private readonly minimizeButton = document.createElement("button");
+    /**
+     * 公開のPythonソースを選択して読み込むボタン。
+     */
     private readonly openButton = document.createElement("button");
+    /**
+     * 現在のソースをPythonファイルとして保存するボタン。
+     */
     private readonly downloadButton = document.createElement("button");
+    /**
+     * 現在のソースのファイル名を表示する欄。
+     */
     private readonly filenameView = document.createElement("span");
+    /**
+     * 通信やVM操作なしで字句・構文・意味のチェックを行うボタン。
+     */
     private readonly checkButton = document.createElement("button");
+    /**
+     * チェック・同一生成・一括転送と検証後の実行を要求するボタン。
+     */
     private readonly startButton = document.createElement("button");
+    /**
+     * 進行中の処理と所有するVM実行を止めるボタン。
+     */
     private readonly stopButton = document.createElement("button");
+    /**
+     * チェック・転送・VM状態と失敗の説明を表示する欄。
+     */
     private readonly statusView = document.createElement("div");
+    /**
+     * 同一ビルドと同一停止の値・Call Stack・操作を表示する所有ビュー。
+     */
     private readonly debuggerView = new PythonDebuggerView(action => {
         void this.executeDebug(action);
     });
+    /**
+     * この部品で登録したDOMイベントをまとめて解除するための取消元。
+     */
     private readonly events = new AbortController();
+    /**
+     * 機器の接続変更通知を解除する関数。
+     */
     private readonly releaseConnection: () => void;
+    /**
+     * diagram停止通知の購読を解除する関数。
+     */
     private readonly releaseStop: () => void;
+    /**
+     * 停止値とVM状態の購読を解除する関数。
+     */
     private readonly releaseDebug: () => void;
+    /**
+     * 現在のビルド・転送・開始をまとめて取り消す制御元。
+     */
     private request?: AbortController;
+    /**
+     * 実行を伴わないソースチェックを取り消す制御元。
+     */
     private checkRequest?: AbortController;
+    /**
+     * 公開Pythonソースの取得を取り消す制御元。
+     */
     private openRequest?: AbortController;
+    /**
+     * 再開・ステップ等の送信待ちを取り消す制御元。
+     */
     private debugRequest?: AbortController;
+    /**
+     * 現在の停止値の全取得と表示が済み、デバッグ操作を許可できる状態。
+     */
     private debugValuesReady = false;
+    /**
+     * 画面表示とダウンロード名に使うソースファイル名。
+     */
     private sourceFilename = "";
+    /**
+     * 重複するVM停止操作を一つへまとめるPromise。
+     */
     private stopping?: Promise<void>;
+    /**
+     * DOM編集パネルを最大化表示している状態。
+     */
     private expanded = false;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
+    /**
+     * このブロックが現接続で最後に開始したVMの停止責任を持つ状態。
+     */
     private ownsVM = false;
+    /**
+     * 所有するVMで正常終了または停止・実行時エラーの通知を得た状態。
+     */
     private vmFinished = false;
+    /**
+     * 所有する実行と同一のコード転送を識別する受領情報。
+     */
     private vmReceipt?: BytecodeReceipt;
+    /**
+     * 入力・読込みによるソース変更の世代。遅延したチェック結果を拒否する。
+     */
     private editRevision = 0;
+    /**
+     * 現実行と同じ一回の生成で得たソース・変数・最終PCの対応。
+     */
     private debugInfo?: PythonDebugInfo;
 
-    /** 初期状態は縮小表示。編集欄・通信・実行は自動で開始しない。 */
+    /**
+     * 初期状態は縮小表示。編集欄・通信・実行は自動で開始しない。
+     *
+     * 独自の動物アイコンはpublic/diagram/images/toolbox/PythonBlock.svgを使用する。
+     * 停止通知で自動最大化し、取得完了した同一停止の大域・局所・Call Stack・PC/SP/BPと全スロットを表示する。
+     * 構造体とフレーム選択はdebugger-view.ts、ワイヤー仕様はble-wifi/debug-protocol.tsを参照する。
+     * 実行状態の表示はEventを正本とし、Start完了時に取得済み状態を「開始受付」で上書きしない。
+     * Event v2のRunningではPC・命令数、ErrorではVMエラー番号・失敗PCを表示する。
+     */
     constructor(data: Attr) {
         super(data);
         this.setBoxSize();
@@ -232,6 +315,9 @@ export class PythonBlock extends ActionBlock {
         this.positionPanel();
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize(): void {
         // 通常表示では7個のボタンを2行に折り返して収める。
         this.boxSize = new Vec2(440, 220);
@@ -242,6 +328,11 @@ export class PythonBlock extends ActionBlock {
         return { ...super.makeObj(), source: this.sourceEditor.value, sourceFilename: this.sourceFilename };
     }
 
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj: any): void {
         void this.stop().catch(() => undefined);
         super.loadObj(obj);
@@ -263,6 +354,9 @@ export class PythonBlock extends ActionBlock {
         this.clearDebugView();
     }
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     copy(): PythonBlock {
         const block = new PythonBlock({});
         this.copyUI(block);
@@ -274,6 +368,11 @@ export class PythonBlock extends ActionBlock {
         return block;
     }
 
+    /**
+     * 表示と保存に使用するソースのファイル名を更新する。
+     *
+     * @param filename 表示または読込みに使うファイル名。
+     */
     private setSourceFilename(filename: string): void {
         this.sourceFilename = filename;
         this.filenameView.textContent = filename;
@@ -343,7 +442,13 @@ export class PythonBlock extends ActionBlock {
         }
     }
 
-    /** diagramのDOM親を覆って編集する。通常のCanvas配置は変えず、縮小時にそのまま戻す。 */
+    /**
+     * diagramのDOM親を覆って編集する。通常のCanvas配置は変えず、縮小時にそのまま戻す。
+     *
+     * 最大化はlayer-diagram内のDOM表示だけを拡大し、Actionの位置・接続・通常サイズを保つ。
+     * 最大化中は横並びのworkspaceに左エディタと右デバッグ欄を配置する。右欄の縦配置・スクロール・
+     * 操作アイコン・浮動小数点表示はdebugger-view.tsが担当し、停止値がなくても欄を表示する。
+     */
     private setExpanded(expanded: boolean): void {
         if (this.removed || this.inToolbox) {
             return;
@@ -360,6 +465,11 @@ export class PythonBlock extends ActionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position: Vec2): void {
         super.setPosition(position);
         this.positionPanel();
@@ -395,6 +505,11 @@ export class PythonBlock extends ActionBlock {
         });
     }
 
+    /**
+     * 実行・接続・停止値取得の状態から操作の可否を更新する。
+     *
+     * 実行中・一時停止中は編集とブレークポイント変更を禁止する。再開・3種のステップは全停止データ取得後に許す。
+     */
     private updateControls(): void {
         const disabled = this.removed || this.inToolbox;
         this.maximizeButton.disabled = disabled || this.expanded;
@@ -413,13 +528,22 @@ export class PythonBlock extends ActionBlock {
             && !this.stopping && this.ownsVM && this.vmReceipt === diagramDevice.bytecodeReceipt);
     }
 
-    /** 部分受信・失効時には古い値を残さない。最大化状態は維持する。 */
+    /**
+     * 部分受信・失効時には古い値を残さない。最大化状態は維持する。
+     *
+     * 所有Receiptの失効・切断・Stop・編集・読込・削除で旧停止値を破棄し、保存・コピーには含めない。
+     */
     private clearDebugView(): void {
         this.debugValuesReady = false;
         this.debuggerView.clear();
         this.highlightEditor.setExecutionLine();
     }
 
+    /**
+     * 現在のチェック・転送・実行状態を状態欄へ表示する。
+     *
+     * @param message 画面または診断に表示する説明。
+     */
     private showStatus(message: string): void {
         this.statusView.textContent = message;
         this.statusView.title = message;
@@ -427,7 +551,12 @@ export class PythonBlock extends ActionBlock {
         theCanvas?.requestUpdateCanvas();
     }
 
-    /** チェックは手動操作時だけ実行する。入力変更で取消し、古い結果やエラーを表示し直さない。 */
+    /**
+     * チェックは手動操作時だけ実行する。入力変更で取消し、古い結果やエラーを表示し直さない。
+     *
+     * チェックと表示の契約：チェックボタンは機器未接続でも字句・構文・意味解析だけを行い、
+     * バイトコード生成・転送・VM操作を行わない。入力時の解析・自動チェックは行わない。
+     */
     private async check(): Promise<void> {
         if (this.removed || this.inToolbox || this.request || this.checkRequest || this.stopping || this.openRequest) {
             return;
@@ -455,7 +584,14 @@ export class PythonBlock extends ActionBlock {
         }
     }
 
-    /** 同じスナップショットの診断と解析結果を返す。構文・意味エラーがあれば生成用の結果は返さない。 */
+    /**
+     * 同じスナップショットの診断と解析結果を返す。構文・意味エラーがあれば生成用の結果は返さない。
+     *
+     * editor-diagnostics.tsが診断をUTF-16範囲へ変換し、highlight-editor.tsが赤い波線、
+     * マウス位置のtooltipと、文字カーソル位置の編集領域下部の説明を表示する。
+     * 構文エラーは最初の1件、意味エラーは診断一覧を表示する。API・通信失敗に仮の波線は付けない。
+     * 入力・読込で古い診断を消し、解析中の入力変更・取消・削除後に遅れて届く結果は破棄する。
+     */
     private async checkSource(controller: AbortController): Promise<PythonAnalysis | undefined> {
         const source = this.sourceEditor.value;
         const revision = this.editRevision;
@@ -491,7 +627,13 @@ export class PythonBlock extends ActionBlock {
         }
     }
 
-    /** 毎回チェック・同一生成のコード/両PC一覧の一括転送を行い、ESP32の開始結果後に状態監視する。 */
+    /**
+     * 毎回チェック・同一生成のコード/両PC一覧の一括転送を行い、ESP32の開始結果後に状態監視する。
+     *
+     * Startは毎回チェックし、問題があれば転送・VM開始を行わない。
+     * Startで得た解析結果はそのまま生成に使い、同じStart内で解析を繰り返さない。
+     * Startは同一生成のDebugInfo・コード・両PC一覧を送り、ESP32の検証・開始後にReceiptを保持する。
+     */
     private async start(signal?: AbortSignal): Promise<void> {
         if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest
             || this.stopping || this.openRequest || this.debugRequest) {
@@ -551,6 +693,11 @@ export class PythonBlock extends ActionBlock {
         }
     }
 
+    /**
+     * Actionチェーンから実行を開始する。
+     *
+     * ブレークポイントがある実行は手動Startに限定し、Actionチェーンからは開始前に拒否する。
+     */
     async run(): Promise<void> {
         if (this.highlightEditor.getBreakpointLines().length !== 0) {
             throw new Error("ブレークポイントがあるPythonは、PythonBlockのStartボタンで手動実行してください。");
@@ -558,7 +705,11 @@ export class PythonBlock extends ActionBlock {
         await this.start(getProcedureSignal());
     }
 
-    /** 現在停止している最上位フレームを操作する。表示フレームを変更しても、送信先PC/BPは指定しない。 */
+    /**
+     * 現在停止している最上位フレームを操作する。表示フレームを変更しても、送信先PC/BPは指定しない。
+     *
+     * 操作時は旧停止値を破棄し、新しい停止・終了まで操作ボタンを無効化する。Stop・削除・切断では送信待ちも取り消す。
+     */
     private async executeDebug(action: DebugAction): Promise<void> {
         const receipt = this.vmReceipt;
         const snapshot = diagramDevice.debugSnapshot;
@@ -617,6 +768,9 @@ export class PythonBlock extends ActionBlock {
         return task;
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(): void {
         super.draw();
         this.positionPanel();

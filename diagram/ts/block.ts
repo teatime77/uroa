@@ -1,3 +1,6 @@
+/**
+ * データを受け渡すブロックと、入力・カメラ・計算ブロックを実装する。ポート接続はport.ts、配置と操作はcanvas.ts、実行の停止はruntime.tsが担当する。
+ */
 ///<reference path="ui.ts" />
 
 import { assert, msg, MyError, sum, Vec2 } from "@i18n";
@@ -15,11 +18,23 @@ import { DeviceCameraFeed } from "./camera/device-camera";
 
 const blockLineColor = "brown";
 
+/**
+ * 範囲入力スライダーの表示幅（pixel）。
+ */
 const rangeWidth  = 150;
+/**
+ * 数値入力欄の表示幅（pixel）。
+ */
 const numberWidth = 45;
 
+/**
+ * 機器種別でセンサーとアクチュエーターを分ける境界値。
+ */
 const ActuatorBase = 128;
 
+/**
+ * WebとESP32で共有するセンサー・アクチュエーターの種別番号。
+ */
 export enum DeviceType { 
     IMU6Axis = 0,
     IMU9Axis = 1,
@@ -29,13 +44,36 @@ export enum DeviceType {
     ServoMotor = ActuatorBase,
  }
 
+/**
+ * 入出力ポート・描画・保存・実行を持つdiagramブロックの基底。
+ */
 export abstract class Block extends UI {
+    /**
+     * このブロックが所有する実行・データ・条件ポート。
+     */
     ports : Port[] = [];
+    /**
+     * ブロックの輪郭色の設定。
+     */
     outlineColor : string = "green";
+    /**
+     * 下側に実行接続の切欠きを設けるための表示指定。
+     */
     notchBottom : boolean = true;
+    /**
+     * 右側に切欠きを設けるための表示指定。
+     */
     notchRight  : boolean = true;
+    /**
+     * 実配置された部品とツールボックス上の見本を区別するフラグ。
+     */
     inToolbox   : boolean = false;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         if(this.backgroundColor == undefined){
@@ -48,8 +86,14 @@ export abstract class Block extends UI {
         }
     }
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     abstract copy() : Block;
 
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj() : any{
         return {
             idx: this.idx,
@@ -60,33 +104,59 @@ export abstract class Block extends UI {
         };
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock() : void {        
         if (isRunning) stopDiagram();
         this.ports.forEach(port => port.disconnectAll());
     }
 
+    /**
+     * 派生ブロックが保存設定を復元するための入口。基底では設定を変更しない。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj : any ){        
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     abstract setBoxSize() : void;
 
+    /**
+     * ブロックの描画に必要な高さを求める。
+     */
     calcHeight() : number {
         return this.boxSize!.y;
     }
 
+    /**
+     * 指定した差分だけブロックとポートを移動する。
+     */
     moveDiff(diff : Vec2) : void {
         const new_position = this.position.add(diff);
         this.setBlockPortPosition(new_position);
     }
 
+    /**
+     * 後続ブロックへ値を渡す出力ポートを返す。
+     */
     outputPorts() : Port[] {
         return this.ports.filter(x => x.type == PortType.outputPort);
     }
 
+    /**
+     * 描画と当たり判定に使う矩形の一覧を返す。
+     */
     drawBoxes() : [number, number, number, number][] {
         return [ this.drawBox() ];
     }
 
+    /**
+     * 指定座標がブロックを構成するいずれかの矩形内にあるかを調べる。
+     */
     inDrawBoxes(pos : Vec2) : boolean {
         for(const [xa, ya, xb, yb] of this.drawBoxes()){
             if(xa <= pos.x && pos.x < xb && ya <= pos.y && pos.y < yb){
@@ -97,6 +167,9 @@ export abstract class Block extends UI {
         return false;
     }
 
+    /**
+     * 全出力ポートの接続先から後続の計算ブロックを集める。
+     */
     nextDataflowBlocks() : Block[] {
         const blocks : Block[] = [];
 
@@ -110,11 +183,17 @@ export abstract class Block extends UI {
         return blocks;
     }
 
+    /**
+     * 直接接続された後続のデータフローブロックに再計算を要求する。
+     */
     propergateCalc(){
         const next_dataflow_blocks = this.nextDataflowBlocks();
         next_dataflow_blocks.forEach(x => x.calc());
     }
 
+    /**
+     * 上下の実行ポートを接続し、ルート配置を調整する。
+     */
     connectBlock(ports : Port[]){
         let [port1, port2] = ports;
         assert(port1.parent == this);
@@ -135,6 +214,9 @@ export abstract class Block extends UI {
         msg(`connect block`);
     }
 
+    /**
+     * ブロックの現在位置と大きさに合わせてポートを配置する。
+     */
     setPortPositions(){     
         const [xa, ya, xb, yb] = this.drawBox();
 
@@ -158,11 +240,19 @@ export abstract class Block extends UI {
         }
     }
 
+    /**
+     * ブロックの基準座標とポート位置をまとめて更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setBlockPortPosition(position : Vec2) : void {
         this.setPosition(position);
         this.setPortPositions();
     }
 
+    /**
+     * 直線とポートの切欠きから輪郭を描き、ドラッグ時の透過表示も反映する。
+     */
     drawOutline(points : ([number, number] | Port | null)[], color : string = blockLineColor){
         if(this == theCanvas.draggedUI){
 
@@ -208,14 +298,23 @@ export abstract class Block extends UI {
         }
     }
 
+    /**
+     * 値の入出力と条件入力に使うポートだけを取り出す。
+     */
     IOPorts(){
         return this.ports.filter(x =>  x.type == PortType.inputPort || x.type == PortType.outputPort || x.type == PortType.condition);
     }
 
+    /**
+     * データ入出力と条件ポートを描画する。
+     */
     drawIOPorts(){
         this.IOPorts().forEach(x => x.drawIOPort(this.ctx));
     }
 
+    /**
+     * この部品の表示領域へアイコンを描く。
+     */
     drawIcon(img : HTMLImageElement){
         const [x1, y1, x2, y2] = this.borderInnerBox();
 
@@ -229,6 +328,9 @@ export abstract class Block extends UI {
         this.ctx.drawImage(img, img_x, img_y, img_width, img_height);
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(){
         const [x1, y1, x2, y2] = this.drawBox();
 
@@ -242,6 +344,9 @@ export abstract class Block extends UI {
         this.drawIOPorts();
     }
 
+    /**
+     * 相手ブロックとの間で型と距離が合う最初のポート対を返す。
+     */
     canConnectNearPortPair(block : Block) : Port[] {
         for(const port1 of this.ports){
             for(const port2 of block.ports){
@@ -254,10 +359,16 @@ export abstract class Block extends UI {
         return [];
     }
 
+    /**
+     * 入力変更を診断出力する。具体的な更新処理は派生ブロックが追加する。
+     */
     async valueChanged(){
         msg(`changed : ${this.constructor.name}`);
     }
 
+    /**
+     * 名前を持つ数値入力を集め、数式評価用の名前と値の対応表を作る。
+     */
     makeInputValueMap() : Map<string, number> {
         const map = new Map<string, number>();
         for(const port of this.ports){
@@ -270,14 +381,23 @@ export abstract class Block extends UI {
         return map;
     }
 
+    /**
+     * 派生ブロック向けの計算入口。基底のまま呼ばれた場合は未実装の例外を投げる。
+     */
     calc(){
         throw new MyError();
     }
 
+    /**
+     * 派生ブロック向けの実行入口。基底のまま呼ばれた場合は未実装の例外を投げる。
+     */
     async run(){
         throw new MyError();
     }
 
+    /**
+     * ブロックの診断情報を現在の描画位置へ表示する。
+     */
     drawDebug(){
         const x = this.position.x;
         const y = this.position.y;
@@ -312,37 +432,74 @@ export abstract class Block extends UI {
         this.ctx.restore();
     }
 
+    /**
+     * 診断表示に使う部品の状態文字列を返す。
+     */
     str() : string {
         return `${this.constructor.name} idx:${this.idx} pos:${this.position.toString()}`
     }
 
+    /**
+     * 現在の状態を指定した深さで字下げして診断出力する。
+     *
+     * @param nest 診断出力の字下げの深さ。
+     */
     dump(nest : number){
         msg(`${tab(nest)}${this.str()}`);
         this.ports.forEach(x => x.dumpPort(nest + 1));
     }
 }
 
+/**
+ * 値の計算や機器操作を担う機能ブロックの基底。
+ */
 export abstract class FunctionBlock extends Block {
     /** Functions that must finish before the action chains start. */
     readonly runOnStart: boolean = false;
+    /**
+     * DeviceInfoへ書き込む機器の種別。非機器ブロックでは未指定。
+     */
     deviceType? : DeviceType;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
     }
 
+    /**
+     * 機器種別がアクチュエーター境界より前のセンサーであるかを調べる。
+     */
     isSensor() : boolean {
         return false;
     }
 
+    /**
+     * 機器種別がアクチュエーターの範囲にあるかを調べる。
+     */
     isActuator() : boolean {
         return false;
     }
 
+    /**
+     * DeviceInfo用の機器種別を書き込み、次の書込み位置を返す。
+     *
+     * @param bytes 読み書きするバイト列。
+     * @param offset バイト列内の開始位置。
+     */
     writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
         throw new MyError();
     }
 
+    /**
+     * この機能ブロックの通常指令を書き込むための派生型向け入口。
+     *
+     * @param bytes 読み書きするバイト列。
+     * @param offset バイト列内の開始位置。
+     */
     writeCommand(bytes : Uint8Array, offset : number) : number {
         throw new MyError();
     }
@@ -358,8 +515,14 @@ export abstract class FunctionBlock extends Block {
         throw new MyError();
     }
 
+    /**
+     * Start前に実行ごとの状態を初期化するための派生型向け入口。
+     */
     resetForRun(): void {}
 
+    /**
+     * 同じ種類のブロックを作成し、複製対象の設定をコピーする。
+     */
     copy() : Block {
         const block = makeFunctionBlockByTypeName(this.constructor.name)!;
         this.copyUI(block);
@@ -369,11 +532,25 @@ export abstract class FunctionBlock extends Block {
 }
 
 
+/**
+ * DOM入力欄からポートへ値を渡すブロックの共通処理。
+ */
 export abstract class InputBlock extends FunctionBlock {
+    /**
+     * ブロックに重ねる値入力用のDOM要素。
+     */
     input : HTMLInputElement;
 
+    /**
+     * 入力UIの現在値を対応する出力ポートへ反映する。
+     */
     abstract updatePort() : void;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
 
@@ -385,6 +562,9 @@ export abstract class InputBlock extends FunctionBlock {
         parent.appendChild(this.input);
     }
 
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj() : any {
         let obj = Object.assign(super.makeObj(), {
             text : this.input.value
@@ -393,16 +573,27 @@ export abstract class InputBlock extends FunctionBlock {
         return obj;
     }
 
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj : any ){        
         super.loadObj(obj);
         this.input.value = obj.text;
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         super.clearBlock();
         this.input.parentElement?.removeChild(this.input);
     }
 
+    /**
+     * ブロックの枠内でDOM入力欄を配置する基準座標を返す。
+     */
     getInputPosition() : [number, number]{
         const [x1, y1, x2, y2] = this.borderInnerBox();
 
@@ -415,6 +606,11 @@ export abstract class InputBlock extends FunctionBlock {
         return [input_x, input_y];
     }
 
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position : Vec2) : void {
         super.setPosition(position);
 
@@ -426,10 +622,24 @@ export abstract class InputBlock extends FunctionBlock {
 }
 
 
+/**
+ * 最小・最大を指定できる数値スライダー入力。
+ */
 export class InputRangeBlock extends InputBlock {
+    /**
+     * 範囲入力の最小値を編集する数値欄。
+     */
     minInput : HTMLInputElement;
+    /**
+     * 範囲入力の最大値を編集する数値欄。
+     */
     maxInput : HTMLInputElement;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
 
@@ -472,6 +682,9 @@ export class InputRangeBlock extends InputBlock {
         this.ports = [ new Port(this, PortType.outputPort) ];
     }
 
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         super.clearBlock();
         
@@ -479,6 +692,9 @@ export class InputRangeBlock extends InputBlock {
         document.body.removeChild(this.maxInput);
     }
 
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj() : any {
         let obj = Object.assign(super.makeObj(), {
             value : this.input.value,
@@ -489,6 +705,11 @@ export class InputRangeBlock extends InputBlock {
         return obj;
     }
 
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj : any ){        
         super.loadObj(obj);
 
@@ -497,6 +718,9 @@ export class InputRangeBlock extends InputBlock {
         this.maxInput.value = `${obj.max}`;
     }
 
+    /**
+     * 入力UIの現在値を対応する出力ポートへ反映する。
+     */
     updatePort() : void {        
         const value = parseFloat(this.input.value);
         for(const src of this.ports){
@@ -504,10 +728,18 @@ export class InputRangeBlock extends InputBlock {
         }
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         this.boxSize = new Vec2(200, 80);
     }
 
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position : Vec2) : void {
         super.setPosition(position);
 
@@ -535,9 +767,20 @@ export class InputRangeBlock extends InputBlock {
 }
 
 
+/**
+ * 文字列を入力してTextPortへ出力するブロック。
+ */
 export class InputTextBlock extends InputBlock {
+    /**
+     * 入力した文字列を後続へ渡す出力ポート。
+     */
     textPort : TextPort;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.input.type = "text";
@@ -552,18 +795,35 @@ export class InputTextBlock extends InputBlock {
         });
     }
 
+    /**
+     * 入力UIの現在値を対応する出力ポートへ反映する。
+     */
     updatePort() : void {        
         this.textPort.setPortValue(this.input.value);
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         this.boxSize = new Vec2(200, 20 + 2 * 2 * notchRadius);
     }
 }
 
+/**
+ * 数値を入力してNumberPortへ出力するブロック。
+ */
 export class InputNumberBlock extends InputBlock {
+    /**
+     * 入力した数値を後続へ渡す出力ポート。
+     */
     numberPort : NumberPort;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.input.type = "number";
@@ -581,6 +841,9 @@ export class InputNumberBlock extends InputBlock {
         });
     }
 
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj() : any {
         let obj = Object.assign(super.makeObj(), {
             value : this.input.valueAsNumber
@@ -589,37 +852,95 @@ export class InputNumberBlock extends InputBlock {
         return obj;
     }
 
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj : any ){        
         super.loadObj(obj);
         this.input.value = obj.value;
         this.updatePort();
     }
 
+    /**
+     * 入力UIの現在値を対応する出力ポートへ反映する。
+     */
     updatePort() : void {        
         const value = this.input.valueAsNumber;
         this.numberPort.setPortValue(Number.isFinite(value) ? value : undefined);
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         this.boxSize = new Vec2(200, 20 + 2 * 2 * notchRadius);
     }
 }
 
+/**
+ * 端末またはXIAOの画像を取得し、AIブロック等へフレームを提供する。
+ */
 export class CameraBlock extends FunctionBlock {
+    /**
+     * 画像や入力元の変化を識別するフレーム世代。
+     */
     private frameRevision = 0;
+    /**
+     * 直前に購読者へ通知した入力元・画像世代の状態文字列。
+     */
     private frameState = "";
+    /**
+     * カメラ入力状態の変更を購読する処理の集合。
+     */
     private readonly frameListeners = new Set<() => void>();
+    /**
+     * Wi-Fiカメラ画像の購読を解除する関数。
+     */
     private releaseCamera?: () => void;
+    /**
+     * 画像未取得やカメラ利用状態を描画するメッセージ。
+     */
     private cameraMessage = "Wi-Fiカメラ未接続";
+    /**
+     * 現在選択している入力元。XIAO画像または端末カメラ。
+     */
     private cameraSource: "xiao" | "device" = "xiao";
+    /**
+     * 端末カメラの権限・ストリーム・画像固定を管理する所有インスタンス。
+     */
     private readonly deviceCamera: DeviceCameraFeed;
+    /**
+     * 端末カメラへ切り替えるボタン。
+     */
     private readonly deviceButton: Button;
+    /**
+     * Wi-Fi接続したXIAOカメラへ切り替えるボタン。
+     */
     private readonly xiaoButton: Button;
+    /**
+     * 端末カメラの取得画像を固定するボタン。
+     */
     private readonly captureButton: Button;
+    /**
+     * この部品で登録したDOMイベントをまとめて解除するための取消元。
+     */
     private readonly events = new AbortController();
+    /**
+     * diagram停止通知の購読を解除する関数。
+     */
     private readonly releaseStop: () => void;
+    /**
+     * 削除済みの部品に非同期結果を反映しないための状態。
+     */
     private removed = false;
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.ports = [ new Port(this, PortType.outputPort) ];
@@ -643,17 +964,31 @@ export class CameraBlock extends FunctionBlock {
         this.refreshControls();
     }
 
+    /**
+     * この部品が所有する、描画や操作の対象となる子UIを返す。
+     */
     children(): UI[] { return this.inToolbox ? [] : [this.deviceButton, this.xiaoButton, this.captureButton]; }
+    /**
+     * 描画コンテキストを設定し、子要素にも共有する。
+     *
+     * @param ctx 描画先の2Dコンテキスト。
+     */
     setContext2D(ctx: CanvasRenderingContext2D): void {
         super.setContext2D(ctx);
         this.subscribeXiao();
     }
+    /**
+     * Wi-Fiカメラの画像と状態を購読して描画へ反映する。
+     */
     private subscribeXiao(): void {
         if (this.removed || this.inToolbox || !this.ctx || this.cameraSource !== "xiao" || this.releaseCamera) return;
         this.releaseCamera = subscribeCamera(message => {
             this.cameraMessage = message; this.refreshControls(); this.notifyFrameState();
         });
     }
+    /**
+     * 端末とXIAOの入力元を切り替え、旧入力の取得と購読を終了する。
+     */
     private selectSource(source: "xiao" | "device"): void {
         if (this.removed || this.inToolbox) return;
         this.releaseCamera?.(); this.releaseCamera = undefined;
@@ -665,16 +1000,27 @@ export class CameraBlock extends FunctionBlock {
         this.refreshControls();
         this.notifyFrameState();
     }
+    /**
+     * 画像状態の変更を購読し、解除関数を返す。
+     *
+     * @param listener 変更通知を受け取る処理。
+     */
     subscribeFrameState(listener: () => void): () => void {
         this.frameListeners.add(listener);
         return () => { this.frameListeners.delete(listener); };
     }
+    /**
+     * 画像の入力元・状態が変わったときだけ購読者へ通知する。
+     */
     private notifyFrameState(): void {
         const frame = this.getFrame();
         const state = `${this.cameraSource}:${frame ? `${frame.width}x${frame.height}` : "none"}`;
         if (state !== this.frameState) { this.frameState = state; this.frameRevision++; }
         this.frameListeners.forEach(listener => listener());
     }
+    /**
+     * 実行状態と利用可能性に合わせて操作ボタンの状態を更新する。
+     */
     private refreshControls(): void {
         const disabled = this.removed || this.inToolbox;
         this.deviceButton.disabled = disabled || this.cameraSource === "device";
@@ -683,8 +1029,19 @@ export class CameraBlock extends FunctionBlock {
         this.captureButton.text = this.deviceCamera?.active ? "停止" : "開始";
         theCanvas?.requestUpdateCanvas();
     }
+    /**
+     * 部品の基準座標を更新する。
+     *
+     * @param position 基準となる座標またはソース内の位置。
+     */
     setPosition(position: Vec2): void { super.setPosition(position); this.positionControls(); }
+    /**
+     * ブロックの現在位置と大きさに合わせてポートを配置する。
+     */
     setPortPositions(): void { super.setPortPositions(); this.positionControls(); }
+    /**
+     * ブロックの位置に合わせて操作ボタンを配置する。
+     */
     private positionControls(): void {
         if (!this.deviceButton) return;
         for (const [button, x, width] of [
@@ -694,11 +1051,22 @@ export class CameraBlock extends FunctionBlock {
             button.boxSize = new Vec2(width, 44);
         }
     }
+    /**
+     * 図の保存に必要な設定をJSON化可能なオブジェクトへ変換する。
+     */
     makeObj(): any { return { ...super.makeObj(), cameraSource: this.cameraSource }; }
+    /**
+     * 保存オブジェクトからこの要素の設定を復元する。
+     *
+     * @param obj 復元する保存オブジェクト。
+     */
     loadObj(obj: any): void {
         super.loadObj(obj);
         this.selectSource(obj.cameraSource === "device" ? "device" : "xiao");
     }
+    /**
+     * 入力元の選択を保存オブジェクト経由で複製し、映像や権限は共有しない。
+     */
     copy(): CameraBlock {
         const block = new CameraBlock({});
         block.loadObj(this.makeObj());
@@ -707,7 +1075,10 @@ export class CameraBlock extends FunctionBlock {
         block.setBlockPortPosition(this.position.copy());
         return block;
     }
-    getFrame(): { image: HTMLImageElement | HTMLVideoElement; width: number; height: number; revision: number } | undefined {
+    /**
+     * 現在利用できる画像・寸法・更新世代を取得する。未取得ならundefinedを返す。
+     */
+    getFrame(): { /** 取得済みの画像または映像フレームの参照。 */ image: HTMLImageElement | HTMLVideoElement; /** レイアウトで使用する幅の指定。 */ width: number; /** レイアウトで使用する高さの指定。 */ height: number; /** 返却する画像の更新世代。 */ revision: number } | undefined {
         if (this.removed) return;
         if (this.cameraSource === "device") {
             const video = this.deviceCamera.image;
@@ -719,6 +1090,9 @@ export class CameraBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         if(this.inToolbox){
 
@@ -731,6 +1105,9 @@ export class CameraBlock extends FunctionBlock {
     }
 
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(){
         super.draw();
 
@@ -762,6 +1139,9 @@ export class CameraBlock extends FunctionBlock {
         }
         this.ctx.restore();
     }
+    /**
+     * 接続・イベント・所有資源を解放してブロックを削除可能にする。
+     */
     clearBlock(): void {
         if (this.removed) return;
         this.removed = true;
@@ -773,14 +1153,28 @@ export class CameraBlock extends FunctionBlock {
     }
 }
 
+/**
+ * 旧HTTP経路の顔矩形をカメラ画像へ重ねるブロック。
+ */
 export class FaceDetectionBlock extends FunctionBlock {
+    /**
+     * 旧HTTP顔検出の矩形座標を保持する配列。
+     */
     face : number[] = [];
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.ports = [ new Port(this, PortType.inputPort), new Port(this, PortType.outputPort), new Port(this, PortType.outputPort) ];
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         if(this.inToolbox){
 
@@ -792,6 +1186,9 @@ export class FaceDetectionBlock extends FunctionBlock {
         }
     }
 
+    /**
+     * 旧HTTP窓口から受け取った顔矩形を保持する。
+     */
     setFace(face : number[]){
         this.face = face.slice();
         const [x, y, w, h] = this.face;
@@ -803,6 +1200,9 @@ export class FaceDetectionBlock extends FunctionBlock {
         this.ports[2].setPortValue(cy);
     }
 
+    /**
+     * 入力接続から画像の供給元となるCameraBlockを探す。
+     */
     getCamera() : CameraBlock | undefined {
         if(this.ports[0].sources.length != 0){
             const camera = this.ports[0].sources.map(x => x.parent).find(x => x instanceof CameraBlock);
@@ -812,6 +1212,9 @@ export class FaceDetectionBlock extends FunctionBlock {
         return undefined;
     }
 
+    /**
+     * この部品の枠・内容・操作状態をキャンバスへ描く。
+     */
     draw(){
         super.draw();
 
@@ -860,17 +1263,33 @@ export class FaceDetectionBlock extends FunctionBlock {
     }
 }
 
+/**
+ * ジョイスティック部品の表示領域を持つ機能ブロック。
+ */
 export class JoyStickBlock extends FunctionBlock {
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.ports = [ ];
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         this.boxSize = new Vec2(200, 50);
     }
 }
 
+/**
+ * 入力値の対応表を使って数式木の数値・変数・四則・比較等を評価する。
+ *
+ * @param term 処理する式の構文木。
+ */
 function  calcTerm(map : Map<string, number>, term : Term) : number {
     let value : number;
 
@@ -921,7 +1340,15 @@ function  calcTerm(map : Map<string, number>, term : Term) : number {
     return term.value.fval() * value;
 }
 
+/**
+ * テキストに記した数式を数値入力ポートの値で評価するブロック。
+ */
 export class CalcBlock extends InputTextBlock {
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.ports = [ 
@@ -930,11 +1357,17 @@ export class CalcBlock extends InputTextBlock {
         ];
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         // const h = inputHeight + 2 * 2 * Port.radius + 4 * this.borderWidth;
         this.boxSize = new Vec2(200, 80);
     }
 
+    /**
+     * 入力ポートの値から出力を計算する。具体的な演算は派生型が担当する。
+     */
     calc(){
         msg(`start calc: a:${this.ports[0].value}`);
         const expr = parseMath(this.input.value.trim()) as App;
@@ -955,7 +1388,15 @@ export class CalcBlock extends InputTextBlock {
     }
 }
 
+/**
+ * 入力した比較式を評価して条件値を出すブロック。
+ */
 export class CompareBlock extends InputTextBlock {    
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.ports = [ 
@@ -966,10 +1407,16 @@ export class CompareBlock extends InputTextBlock {
         this.input.value = "a == a";
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         this.boxSize = new Vec2(200, 80);
     }
 
+    /**
+     * 入力ポートの値から出力を計算する。具体的な演算は派生型が担当する。
+     */
     calc() {
         msg(`start compare: a:${this.ports[0].value}`);
         let expr : App;
@@ -1004,16 +1451,36 @@ export class CompareBlock extends InputTextBlock {
     }
 }
 
+/**
+ * データ入出力と条件入力のポートを持つ機能ブロック。
+ */
 export class ConditionGate extends FunctionBlock {
+    /**
+     * 条件判定に使用する値の入力ポート。
+     */
     conditionPort : Port = new NumberPort(this, PortType.condition);
+    /**
+     * ブロックが所有するデータ入力ポートの一覧。
+     */
     inPorts : Port[] = [ new Port(this, PortType.inputPort) ];
+    /**
+     * ブロックが所有するデータ出力ポートの一覧。
+     */
     outPorts : Port[] = [ new Port(this, PortType.outputPort) ];
 
+    /**
+     * この型の状態と依存先を初期化する。
+     *
+     * @param data 初期属性または処理対象のデータ。
+     */
     constructor(data : Attr){
         super(data);
         this.ports = [this.conditionPort].concat(this.inPorts, this.outPorts);
     }
 
+    /**
+     * 部品の内容に必要な描画サイズをboxSizeへ設定する。
+     */
     setBoxSize() : void {
         this.boxSize = new Vec2(200, 80);
     }
@@ -1022,10 +1489,16 @@ export class ConditionGate extends FunctionBlock {
 // External block modules register factories without an import cycle through Block.
 const functionBlockFactories = new Map<string, () => FunctionBlock>();
 
+/**
+ * 派生モジュールの機能ブロックを型名と生成関数で登録する。
+ */
 export function registerFunctionBlock(typeName: string, factory: () => FunctionBlock): void {
     functionBlockFactories.set(typeName, factory);
 }
 
+/**
+ * 登録表または組込みの型名から機能ブロックを作る。未知の型はundefined。
+ */
 export function makeFunctionBlockByTypeName(typeName : string) : FunctionBlock | undefined {
     switch(typeName){
     case InputRangeBlock.name:               return new InputRangeBlock({});
