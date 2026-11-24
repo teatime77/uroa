@@ -26,6 +26,7 @@ from typing import Any, Dict, List, NoReturn, Optional, Set
 # 明示したJSON/C++以外の生成物を残さないため、補助モジュールのpycは書き出さない。
 sys.dont_write_bytecode = True
 from device_api_cpp import generate_cpp
+from module_api import MODULE_NAMES, ModuleParser
 
 
 SCRIPT_DIRECTORY = Path(__file__).resolve().parent
@@ -315,6 +316,10 @@ class InterfaceParser:
 
         JSONのschemaVersion/callingConventionVersionは2、
         stringPolicyVersionは1とし、classes/functionsを出力する。
+        class numpyはクラスIDを持たない組込みモジュール宣言としてmodule_api.pyへ渡す。
+        moduleDefinitionVersion=1とmodulesを追加し、引数番号・省略可否・型もABI指紋に含める。
+        この追加は定義情報だけで、既存の値受渡し規約とnativeIdの採番は変更しない。
+        module関数のIDはモジュール内だけの番号であり、実行用nativeIdはまだ割り当てない。
         呼出し規約version=2ではrecordを宣言順の末端フィールドの連続スロットへ
         展開し、代入・引数・戻り値で値をコピーする。deviceは1スロットの
         ハンドルとする。配置とコピーはsemantic.ts・bytecode.ts・VMが担当する。
@@ -345,13 +350,16 @@ class InterfaceParser:
             self.register(names, node.name, node)
             if node.name in PRIMITIVE_TYPES:
                 self.fail(node, "組込み型名と同じ名前は宣言できません: " + node.name)
-            if isinstance(node, ast.ClassDef):
+            if isinstance(node, ast.ClassDef) and node.name not in MODULE_NAMES:
                 self.class_ids[node.name] = self.check_id(len(self.class_ids) + 1, node)
 
         classes = []
         functions = []
+        modules = []
         for node in declarations:
-            if isinstance(node, ast.ClassDef):
+            if isinstance(node, ast.ClassDef) and node.name in MODULE_NAMES:
+                modules.append(ModuleParser(self.fail).parse(node))
+            elif isinstance(node, ast.ClassDef):
                 classes.append(self.read_class(node))
             else:
                 functions.append(self.read_callable(node, len(functions) + 1))
@@ -361,6 +369,8 @@ class InterfaceParser:
             "stringPolicyVersion": 1,
             "classes": classes,
             "functions": functions,
+            "moduleDefinitionVersion": 1,
+            "modules": modules,
         }
         canonical = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         result["abiHash"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()

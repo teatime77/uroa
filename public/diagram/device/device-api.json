@@ -699,5 +699,129 @@
             }
         }
     ],
-    "abiHash": "53fd97a62ddc1b1ed049aefa27727f8edd175dd1f867769a8589dfd53c6147e0"
+    "moduleDefinitionVersion": 1,
+    "modules": [
+        {
+            "name": "numpy",
+            "types": [
+                {
+                    "name": "Shape",
+                    "kind": "shape"
+                },
+                {
+                    "name": "DType",
+                    "kind": "dtype"
+                },
+                {
+                    "name": "Device",
+                    "kind": "device"
+                },
+                {
+                    "name": "ArrayLike",
+                    "kind": "array_like"
+                },
+                {
+                    "name": "ndarray",
+                    "kind": "ndarray"
+                }
+            ],
+            "constants": [
+                {
+                    "name": "float32",
+                    "type": "dtype"
+                },
+                {
+                    "name": "uint8",
+                    "type": "dtype"
+                }
+            ],
+            "functions": [
+                {
+                    "id": 1,
+                    "name": "zeros",
+                    "parameters": [
+                        {
+                            "name": "shape",
+                            "type": "shape",
+                            "position": 0,
+                            "required": true,
+                            "optionId": null
+                        },
+                        {
+                            "name": "dtype",
+                            "type": "dtype",
+                            "position": 1,
+                            "required": false,
+                            "optionId": 0
+                        },
+                        {
+                            "name": "order",
+                            "type": "str",
+                            "position": 2,
+                            "required": false,
+                            "optionId": 1
+                        },
+                        {
+                            "name": "device",
+                            "type": "device",
+                            "position": null,
+                            "required": false,
+                            "optionId": 2
+                        },
+                        {
+                            "name": "like",
+                            "type": "array_like",
+                            "position": null,
+                            "required": false,
+                            "optionId": 3
+                        }
+                    ],
+                    "returnType": "ndarray"
+                },
+                {
+                    "id": 2,
+                    "name": "empty",
+                    "parameters": [
+                        {
+                            "name": "shape",
+                            "type": "shape",
+                            "position": 0,
+                            "required": true,
+                            "optionId": null
+                        },
+                        {
+                            "name": "dtype",
+                            "type": "dtype",
+                            "position": 1,
+                            "required": false,
+                            "optionId": 0
+                        },
+                        {
+                            "name": "order",
+                            "type": "str",
+                            "position": 2,
+                            "required": false,
+                            "optionId": 1
+                        },
+                        {
+                            "name": "device",
+                            "type": "device",
+                            "position": null,
+                            "required": false,
+                            "optionId": 2
+                        },
+                        {
+                            "name": "like",
+                            "type": "array_like",
+                            "position": null,
+                            "required": false,
+                            "optionId": 3
+                        }
+                    ],
+                    "returnType": "ndarray"
+                }
+            ]
+        }
+    ],
+    "abiHash": "4bd50af883ac34579c00aa0f0c84ef54c1f4a44f80b7406f1d3901dc0e28882d"
 }

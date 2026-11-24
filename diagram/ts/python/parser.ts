@@ -10,7 +10,7 @@
 import { fetchText, msg } from "@i18n";
 import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
 import {
-    AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
+    AbstractSyntaxNode, App, BlockStatement, CallStatement, ClassDefinition, ConstNum, Fn, KeywordArgument,
     ForStatement, GlobalStatement, IfStatement, Module, RefVar, ReturnStatement, Statement,
     Str, Term, Variable, WhileStatement, indexOpr, isAssignmentToken
 } from "./syntax.js";
@@ -27,6 +27,10 @@ export class Parser {
      * returnを許可する関数本体の入れ子の深さ。
      */
     private functionDepth = 0;
+    /**
+     * クラス本体の入れ子を防ぐための解析状態。
+     */
+    private classDepth = 0;
     /**
      * 入力トークンの末尾で使用する安全なeotトークン。
      */
@@ -186,9 +190,14 @@ export class Parser {
     }
 
     /**
-     * if・while・for・defまたは単純文を読み、文末の改行も検査する。
+     * if・while・for・class・defまたは単純文を読み、文末の改行も検査する。
+     * @returns 元位置を保持した文の構文木。
+     * @throws {SyntaxError} 文の構文や制御文の配置が不正な場合。
      */
     parseStatement(): Statement {
+        if (this.isToken("class")) {
+            return this.readClass();
+        }
         if (this.isToken("if")) {
             return this.parseIf();
         }
@@ -331,6 +340,36 @@ export class Parser {
     }
 
     /**
+     * クラス名と本体を読む。継承・入れ子のクラスは対象外とする。
+     * 型とフィールド配置は後段の責務で、第1段階では意味解析が実行未対応として拒否する。
+     * @returns クラス名・本体・元位置を保持したクラス宣言。
+     * @throws {SyntaxError} 定義位置・継承指定・本体の構文が不正な場合。
+     */
+    private readClass(): ClassDefinition {
+        if (this.functionDepth !== 0 || this.classDepth !== 0) {
+            this.fail("クラス定義はモジュール直下に置いてください");
+        }
+        const position = this.token.charPos;
+        this.nextToken("class");
+        const name = this.readName();
+        if (this.match("(")) {
+            if (!this.match(")")) {
+                this.fail("クラスの継承は未対応です");
+            }
+        }
+        const previousLoopDepth = this.loopDepth;
+        this.loopDepth = 0;
+        this.classDepth++;
+        try {
+            return this.at(new ClassDefinition(name, this.parseBlock()), position);
+        }
+        finally {
+            this.classDepth--;
+            this.loopDepth = previousLoopDepth;
+        }
+    }
+
+    /**
      * 関数名・重複のない仮引数・本体を読み、関数内の制御文の配置を検査する。
      */
     readFn(): Fn {
@@ -433,6 +472,45 @@ export class Parser {
     }
 
     /**
+     * 呼出し引数を評価順に保持する。名前と値をKeywordArgumentで区別する。
+     * 同じキーワードの重複と、キーワード後の位置引数は構文エラーにする。
+     * *args・**kwargsは扱わない。引数名の存在・必須引数・型は意味解析が検査する。
+     * @returns 位置引数とキーワード引数をソース順に保持した一覧。
+     * @throws {SyntaxError} 引数の構文・順序・キーワードの重複が不正な場合。
+     */
+    private readCallArguments(): Term[] {
+        this.nextToken("(");
+        const args: Term[] = [];
+        const names = new Set<string>();
+        let keywordSeen = false;
+        while (!this.isToken(")")) {
+            if (this.token.typeTkn === TokenType.identifier && this.tokenIs(this.tokens[this.tokenPos + 1], "=")) {
+                const position = this.token.charPos;
+                const name = this.current();
+                if (names.has(name)) {
+                    this.fail(`キーワード引数が重複しています: ${name}`);
+                }
+                names.add(name);
+                this.next();
+                this.nextToken("=");
+                args.push(this.at(new KeywordArgument(name, this.LogicalExpression()), position));
+                keywordSeen = true;
+            }
+            else {
+                if (keywordSeen) {
+                    this.fail("キーワード引数の後に位置引数は指定できません");
+                }
+                args.push(this.LogicalExpression());
+            }
+            if (!this.match(",")) {
+                break;
+            }
+        }
+        this.nextToken(")");
+        return args;
+    }
+
+    /**
      * f文字列を、文字列部分・置換式・@format呼出しを引数とするAppへ変換する。
      *
      * 開始記号は f"・f'・F"・F' を受け付け、対応する終了引用符までを読む。
@@ -480,6 +558,8 @@ export class Parser {
 
     /**
      * リテラル・名前・括弧式を読み、呼出し・属性・添字の後置式を連結する。
+     * @returns 後置式を含む、元位置付きの式の構文木。
+     * @throws {SyntaxError} 式や後置式の構文が不正な場合。
      */
     PrimaryExpression(): Term {
         const position = this.token.charPos;
@@ -528,15 +608,17 @@ export class Parser {
 
         while (true) {
             if (this.isToken("(")) {
-                const args = this.readComma("(", ")");
+                const args = this.readCallArguments();
                 term = term instanceof RefVar
                     ? this.at(new App(term, args), position)
                     : this.application("()", [term, ...args], position);
             }
-            else if (this.match("[")) {
-                const index = this.LogicalExpression();
-                this.nextToken("]");
-                term = this.application(indexOpr, [term, index], position);
+            else if (this.isToken("[")) {
+                const indices = this.readComma("[", "]");
+                if (indices.length === 0) {
+                    this.fail("添字を1個以上指定してください");
+                }
+                term = this.application(indexOpr, [term, ...indices], position);
             }
             else if (this.match(".")) {
                 const fieldPosition = this.token.charPos;

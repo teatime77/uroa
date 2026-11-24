@@ -5,6 +5,8 @@
 
 ## 1. この一覧に反映する作業範囲
 
+2026-11-24: 第1段階の共通定義・構文解析を実装した。実装の正本は[生成用モジュール解析](../../../diagram/python/module_api.py)と[コンパイラー側のモジュール定義](../../../diagram/ts/python/module-api.ts)のコメントを参照する。クラス・NumPy呼出しは意味診断で実行未対応として拒否し、オブジェクト本体・ndarrayの生成命令はまだ追加していない。確認記録は[build-and-test.md](../../build-and-test.md)を参照する。第2段階以降は未着手。
+
 - 通常の変数・引数・計算途中の値は値スタック、本体は関数ごとの論理的なデータ領域へ置く。通常の代入は参照共有、引数は参照渡しとする。
 - 通常関数終了時に、その関数の本体領域を解放する。`main`から`f()`、続いて`g()`を呼ぶ場合、`f`終了後に`f`の本体は残らない。物理的なバッファを共用する場合も、関数の境界を保存・復元する。
 - コンストラクタと、そこから直接呼ぶ子孫コンストラクタは、構築先から同じ所有フレームを引き継ぐ。途中に通常関数を挟む場合、その通常関数へ所有先を自動継承しない。コンストラクタが直接確保する一時的な本体も所有先終了まで保持する。
@@ -23,11 +25,11 @@
 |---|---|---|---|
 | [diagram/ts/python/syntax.ts](../../../diagram/ts/python/syntax.ts) | `App`、`App.children`、`App.precedence()`、`App.source()`、`App.toString()` | 既存 | `dtype=`のキーワード引数、複数添字、形状指定を表現・走査・再文字列化できるようにする。キーワード名を変数参照と混同しない。 |
 | 同上 | `Fn`、`Fn.children`、`Fn.toString()`、`Domain.fns` | 既存 | クラス所属のメソッド・コンストラクタを保持し、モジュール関数と区別する。名前・親子関係・元位置を保持する。 |
-| 同上 | `ClassDefinition`の`children`・`toString()`、キーワード引数用ノード | 新規候補 | クラス本体と呼出し引数の新しい表現を追加する。既存の`App`を拡張する方式でもよい。 |
+| 同上 | `ClassDefinition`・`KeywordArgument`の`children`・`toString()` | 第1段階で追加済み | クラス本体・キーワード引数の値を走査し、元位置とソース順を保持する。後続段階で意味解析・生成へ接続する。 |
 | [diagram/ts/python/parser.ts](../../../diagram/ts/python/parser.ts) | `Parser.parseStatement()`、`parseBlock()`、`readFn()` | 既存 | `class`とその配下の`def`を解析し、`__init__`・`self`を後段へ渡す。通常関数とクラスの配置・入れ子の制約を確認する。 |
 | 同上 | `Parser.readImport()`、`readModuleName()` | 既存 | 現在作成できるimportの構文木を再利用し、NumPyの別名を後段へ渡す。importの受理範囲を意味解析とそろえる。 |
 | 同上 | `Parser.PrimaryExpression()`、`readComma()`、`parseAssignment()` | 既存 | `dtype=object`等の引数、`a[i, j]`、複数添字への代入を解析する。リストを実行可能な配列生成として受理しない。既存の単一添字・位置引数・式の括弧を維持する。 |
-| 同上 | `Parser.readClass()`、`readCallArguments()` | 新規候補 | クラス宣言と、位置／キーワードを区別する呼出し引数の解析を分離する。 |
+| 同上 | `Parser.readClass()`、`readCallArguments()` | 第1段階で追加済み | クラス宣言と、位置／キーワードを区別する呼出し引数を解析する。実行未対応の機能は意味解析が拒否する。 |
 | 同上 | `parsePython()` | 既存・入口 | 新しいノードも`source`・`parent`・`charPos`を失わず返す。型・寿命の検査は引き続き意味解析に任せる。 |
 | [diagram/ts/python/global-scope.ts](../../../diagram/ts/python/global-scope.ts) | `collectScopeGlobals()`内の`expression`・`statement` | 既存 | クラス本体と各メソッドのスコープを混ぜない。NumPy別名、キーワード引数の値、複数添字の式を正しく走査する。寿命検査では大域への参照格納も対象にする。 |
 | [diagram/ts/python/lex.ts](../../../diagram/ts/python/lex.ts) | `lexicalAnalysis()`、`keywords`、`symbols` | 条件付き | `class`・`import`・`as`・`=`・`,`等は既存の字句で表現可能。新しい構文に字句の追加が必要な場合だけ変更する。クラス名用の新しいトークン型を安易に増やさない。 |
@@ -46,7 +48,7 @@
 | 同上 | `readType()`、`readCallable()`、`readDeviceApi()`、`loadDeviceApi()` | 既存 | ネイティブAPIの参照型・呼出し規約・ABI変更を検証する。ユーザークラスの型IDを機器クラスのIDと混同しない。 |
 | 同上 | `resolvePython()`、`analyzePython()` | 既存・入口 | 新しい解析を共通入口から実行し、寿命違反も既存の診断一覧へ返す。診断があれば生成・送信を止める。 |
 | `diagram/ts/python/lifetime.ts` | `analyzeLifetimes()`、`checkReferenceStore()`、`checkReturnReferences()`、呼出し条件の集約処理 | 新規候補・ファイル未作成 | 寿命解析を切り出す場合の候補。局所生成、引数由来、通常関数の戻り値、コンストラクタ所有先を追跡する。`semantic.ts`内に実装する場合は新規ファイル不要。 |
-| `diagram/ts/python/numpy-api.ts` | NumPy関数・dtypeの定義、呼出し解決・引数正規化処理 | 新規候補・ファイル未作成 | NumPy名、`zeros`・`empty`、shape・dtypeの対応表を置く候補。名前は仮。C++側のID・型・ABIと同じ定義からそろえる方式を選ぶ。 |
+| [diagram/ts/python/module-api.ts](../../../diagram/ts/python/module-api.ts) | `readModuleDefinitions()`、`bindModuleArguments()`、`ModuleCallBinding` | 第1段階で追加済み | 生成JSONの型・引数番号を検証し、式を評価せずソース順の対応を作る。後続段階で型推論と実行命令へ接続する。 |
 
 寿命解析では、直近の代入式だけではなく、通常関数の呼出し条件を要約して呼出し側で照合する必要がある。例えば「引数`src`を引数`dst`へ格納する」関数を経由しても禁止を回避できないようにする。コンストラクタは所有先を引き継ぐが、通常メソッド・通常関数へその例外を広げない。
 
@@ -67,12 +69,13 @@
 
 ## 5. ネイティブAPI定義・生成物
 
-現行のAPI生成器は`device.pyi`の機器・数値API専用であり、NumPyのモジュール名、dtype、キーワード引数、ndarrayは定義していない。NumPy用に別の定義を置く場合も、コンパイラーとESP32の登録表が一致するようにする。ユーザーが書くクラス本体を、機器スタブ生成器へ渡す設計にはしない。
+第1段階で`device.pyi`へNumPyの宣言を追加した。機器クラスと組込みモジュールを区別し、共通の宣言からJSONとC++の引数番号を生成する。モジュール関数の実行登録は後続段階で行う。ユーザーが書くクラス本体を、機器スタブ生成器へ渡す設計にはしない。
 
 | ファイル | 関数／メソッド・宣言 | 区分 | 変更内容 |
 |---|---|---|---|
-| [diagram/python/generate-device-api.py](../../../diagram/python/generate-device-api.py) | `InterfaceParser.read_type()`、`read_callable()`、`read_class()`、`parse()`、`main()` | 既存 | recordの参照化に伴うJSONの型・呼出し規約・ABIを更新する。NumPyの定義も統合する場合はモジュール・ndarrayの表現を追加する。 |
-| [diagram/python/device_api_cpp.py](../../../diagram/python/device_api_cpp.py) | `CppGenerator.record()`、`cpp_type()`、`leaves()`、`arguments()`、`result_type()`、`generate()`、`generate_cpp()` | 既存 | 平坦化したrecordの引数・戻り値をVM本体との変換へ変更する。ネイティブが配列を確保する場合のVM確保先・結果型・登録表を生成する。 |
+| [diagram/python/module_api.py](../../../diagram/python/module_api.py) | `ModuleParser.parse()`、`function()`、`type_name()` | 第1段階で追加済み | 組込みモジュールの型・関数・必須引数・optionIdを構築する。実行対応する型と関数を追加する際も、この定義から共有する。 |
+| [diagram/python/generate-device-api.py](../../../diagram/python/generate-device-api.py) | `InterfaceParser.read_type()`、`read_callable()`、`read_class()`、`parse()`、`main()` | 既存／第1段階で拡張済み | モジュールの宣言をJSON・ABIへ含めた。recordの参照化に伴う型・呼出し規約の更新は後続段階で行う。 |
+| [diagram/python/device_api_cpp.py](../../../diagram/python/device_api_cpp.py) | `CppGenerator.module_enums()`、`record()`、`cpp_type()`、`leaves()`、`arguments()`、`result_type()`、`generate()`、`generate_cpp()` | 既存／第1段階で拡張済み | 共通定義からモジュール関数・引数番号のenumを生成した。recordの変換と、配列のVM確保先・結果型・実行登録表への対応は後続段階で行う。 |
 | [diagram/python/device.pyi](../../../diagram/python/device.pyi) | `Vec3`、`IMUValue`、`IMU.get_value()`等のrecord関連宣言 | 条件付き | Pythonから見える既存の機器APIを維持できれば、宣言変更は不要。コメント・型定義の拡張が必要な場合だけ変更する。NumPy APIをグローバルな機器関数として追加しない。 |
 | [public/diagram/device/device-api.json](../../../public/diagram/device/device-api.json) | `schemaVersion`、`callingConventionVersion`、`abiHash`、型・呼出し情報 | 再生成 | 生成元から更新する。JSONを手編集しない。 |
 | [ESP32/include/device_api.generated.h](../../../../esp32/app/diagram-control/include/device_api.generated.h) | `device_api::Vec3`、`IMUValue`、`Backend`、`makeNativeApi()` | 再生成 | C++側の値型を残すかVM参照用の型を置くかを決め、登録APIへ反映する。直接編集しない。 |
@@ -133,7 +136,7 @@
 
 1. データ領域の容量、最大次元数・要素数・本体サイズ、整列、相対アドレスの幅。関数ごとの別バッファと共通バッファ＋境界管理のどちらを使うか。
 2. 本体のヘッダー、ユーザークラス型表、dtype表、命令番号、呼出し規約・バイトコード・Snapshotの形式版。
-3. NumPy API定義の生成元と登録方法、対応メソッドの正確な範囲。既定dtypeをfloat32とする推奨案の明文化と、NumPyの既定float64との差の表示。
+3. NumPyの実行登録方法と対応メソッドの正確な範囲。共通定義の生成元は第1段階で`device.pyi`へ統合済み。既定dtypeをfloat32とする推奨案の明文化と、NumPyの既定float64との差の表示は実装時に行う。
 4. `uint8`への数値代入時の変換規則、非数値・非有限値、空配列、object要素型が推論不能な場合、`None`要素アクセスのエラー表現。
 5. `shape`等の属性の表現と、汎用タプル・ビューを追加しない範囲。文字列をオブジェクトのフィールドへ許すかどうか。
 
@@ -141,11 +144,17 @@
 
 ## 10. 実装時の進め方と確認範囲
 
-1. 構文木・クラス／NumPy名前解決・型と寿命条件を具体化する。
-2. `bytecode.ts`と`bytecode_vm.h/.cpp`の表現・CALL／RET・コンストラクタ確保先をそろえる。
-3. NumPyのC++処理、既存recordの変換、生成API・ABI、双方の形式検証を接続する。
-4. 命令PC走査とSnapshot、変数・配列表示まで更新し、既存の送信入口から利用できる形にする。
+各段階で修正内容を確認し、ユーザーがcommit・pushした後に次段階へ進む。
+
+1. 共通定義・構文解析：`device.pyi`からJSON・C++の引数番号を共有し、クラス・キーワード引数・複数添字の構文を追加する。第1段階は完了。実行未対応の構文は意味診断で拒否する。
+2. 実行コンテキスト・データスタック・形式：確保とフレーム境界、参照表現、命令・形式検証、Snapshotの基盤をそろえる。
+3. オブジェクト・コンストラクタ：型・メンバー・メソッド・所有先継承・寿命解析と既存recordの統合を実装する。
+4. 数値NumPy配列：`zeros`・`empty`、実行時shape、数値dtype、添字・属性とC++処理を接続する。
+5. 戻り値：オブジェクト・実行時サイズ配列をcallerへ残す処理と寿命制約を実装する。
+6. object配列：要素型推論、`None`初期化、要素参照と格納時の寿命制約を実装する。
+
+各段階で命令PC走査・デバッガー表示・既存の送信入口への影響を反映する。イテレーター・yield・マルチスレッドはこの6段階の対象外。
 
 将来の生成・ビルド手順は[uroaのbuild-and-test.md](../../build-and-test.md)と[ESP32のbuild-and-test.md](../../../../esp32/docs/build-and-test.md)を参照する。API生成を変更する場合は生成器の`--check`で一致を確認する。ESP32をビルドする際は、その時点の`platformio.ini`の`default_envs`を読み直す。
 
-本書の作成時に行った確認は、現行ソースの宣言・呼出し関係、文書内の既存ファイルへのリンク、差分の確認だけである。新規候補のファイル・関数は未作成。ビルド、生成器の実行、テスト、ブラウザー、通信、実機確認は行っていない。
+初版作成時は宣言・呼出し関係、文書リンク、差分だけを確認した。第1段階では生成器の実行・`--check`、Webの`verify`、ESP32の`supermini_esp32s3`ビルドが成功した。詳細は上記の確認記録を参照する。ユーザー指定によりテストは作成・実行せず、ブラウザー・通信・VM実行・実機も未確認。

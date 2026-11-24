@@ -4,15 +4,19 @@
  * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理から利用する。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
  * アセンブリ・version=3のバイトコード生成はbytecode.tsがこの結果を利用する。
+ * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
+ * 第1段階のclass・NumPy呼出しは構文と宣言だけを扱い、実行未対応の診断で生成を止める。
  * 新形式のBLE転送・受信形式検証はble-wifi側、値コピーと呼出しの実行はESP32の
  * bytecode_vm.cppが担当する。生成スタブはdevice_api.generated.cppからdevice_native.cppを呼ぶ。
  */
 import {
-    AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn,
-    GlobalStatement, IfStatement, Module, RefVar, ReturnStatement, Statement, Str, Term,
+    AbstractSyntaxNode, App, BlockStatement, CallStatement, ClassDefinition, ConstNum, Fn,
+    GlobalStatement, IfStatement, KeywordArgument, Module, RefVar, ReturnStatement, Statement, Str, Term,
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
 import { collectScopeGlobals } from "./global-scope";
+import { bindModuleArguments, readModuleDefinitions } from "./module-api";
+import type { ModuleCallBinding, ModuleDefinition } from "./module-api";
 
 /**
  * 意味解析で扱う数値・文字列・None・APIオブジェクトの型。
@@ -103,6 +107,10 @@ export interface DeviceClass {
  * abiHashはそのまま保持し、この解析器では指紋の再計算やVMとの照合は行わない。
  */
 export interface DeviceApi {
+    /**
+     * device/recordとは別に定義する、検証済みの組込みモジュール一覧。
+     */
+    modules: ModuleDefinition[];
     /**
      * 機器API定義のデータ形式の版番号。
      */
@@ -210,6 +218,10 @@ export interface PythonDiagnostic {
  * 診断がある場合も部分的な解決情報を返すが、変数のslotはすべて-1とする。
  */
 export interface PythonAnalysis {
+    /**
+     * NumPy呼出しの名前・引数番号の対応。第1段階では診断付きで返し、生成は拒否する。
+     */
+    moduleCalls: ReadonlyMap<App, ModuleCallBinding>;
     /** 同じノード・メッセージの重複を除き、ソース位置順で返す。1件以上ならコード生成禁止。 */
     diagnostics: readonly PythonDiagnostic[];
     /**
@@ -466,8 +478,13 @@ function readDeviceApi(value: unknown): DeviceApi {
     for (const fn of functions) {
         checkCallable(fn, fn.name);
     }
+    const modules = readModuleDefinitions(data.moduleDefinitionVersion, data.modules);
+    if (modules.some(module => classes.some(owner => owner.name === module.name)
+        || functions.some(fn => fn.name === module.name))) {
+        invalidApi("modules（既存API名と衝突）");
+    }
     const api = { schemaVersion: 2, callingConventionVersion: 2, stringPolicyVersion: 1,
-        abiHash: data.abiHash, classes, functions };
+        abiHash: data.abiHash, classes, functions, modules };
     for (const owner of classes) {
         valueSlotTypes({ kind: "object", classId: owner.id }, api);
     }
@@ -616,6 +633,18 @@ class PythonResolver {
      */
     private readonly classes: Map<string, DeviceClass>;
     /**
+     * モジュール直下のimportから作る別名対応。実行時のモジュールオブジェクトは作らない。
+     */
+    private readonly moduleAliases = new Map<string, ModuleDefinition>();
+    /**
+     * モジュール直下で検証済みのimport文。
+     */
+    private readonly validImports = new Set<Statement>();
+    /**
+     * 名前と引数番号だけを解決した呼出し。実行命令はまだ生成しない。
+     */
+    private readonly moduleCalls = new Map<App, ModuleCallBinding>();
+    /**
      * importなしで解決するAPI関数名と定義の索引。
      */
     private readonly nativeFunctions: Map<string, DeviceCallable>;
@@ -723,10 +752,77 @@ class PythonResolver {
     /**
      * API名または組込み定数名との衝突を調べる。
      * @param name 宣言候補の名前。
-     * @returns True・False・None、APIクラス名、API関数名のいずれかならtrue。
+     * @returns True・False・None、APIクラス名、API関数名、import済み別名のいずれかならtrue。
      */
     private reserved(name: string): boolean {
-        return ["True", "False", "None"].includes(name) || this.classes.has(name) || this.nativeFunctions.has(name);
+        return ["True", "False", "None"].includes(name) || this.classes.has(name)
+            || this.nativeFunctions.has(name) || this.moduleAliases.has(name);
+    }
+
+    /**
+     * import numpy [as 別名]を生成定義へ対応付ける。from形式や動的importは未対応。
+     * import自体には実行命令を出さず、別名の再代入・API名との衝突を禁止する。
+     */
+    private registerModuleImports(): void {
+        for (const statement of this.module.block.statements) {
+            if (statement.keyword !== "import") {
+                continue;
+            }
+            if (statement.moduleName !== undefined) {
+                this.fail(statement, "from形式は未対応です。import numpy as npを使用してください");
+                continue;
+            }
+            let valid = true;
+            for (const imported of statement.imports) {
+                const definition = this.api.modules.find(module => module.name === imported.name);
+                const alias = imported.alias ?? imported.name;
+                if (definition === undefined) {
+                    this.fail(statement, `未対応の組込みモジュールです: ${imported.name}`);
+                    valid = false;
+                }
+                else if (this.reserved(alias)) {
+                    this.fail(statement, `importの別名が重複・衝突しています: ${alias}`);
+                    valid = false;
+                }
+                else {
+                    this.moduleAliases.set(alias, definition);
+                }
+            }
+            if (valid) {
+                this.validImports.add(statement);
+            }
+        }
+    }
+
+    /**
+     * 別名.関数をモジュール定義へ結び、引数をソース順に対応付ける。
+     * 第1段階では値の型推論・本体確保・ネイティブ実行を行わず、明示的に診断する。
+     * @param app 呼出し式。
+     * @returns モジュール呼出しとして処理した場合はtrue。
+     */
+    private resolveModuleCall(app: App): boolean {
+        const attribute = app.args[0];
+        if (app.fncName !== "()" || !(attribute instanceof App) || attribute.fncName !== "."
+            || !(attribute.args[0] instanceof RefVar) || !(attribute.args[1] instanceof RefVar)) {
+            return false;
+        }
+        const module = this.moduleAliases.get(attribute.args[0].name);
+        if (module === undefined) {
+            return false;
+        }
+        const name = attribute.args[1].name;
+        const definition = module.functions.find(fn => fn.name === name);
+        if (definition === undefined) {
+            this.fail(attribute.args[1], `${module.name}に関数が宣言されていません: ${name}`);
+        }
+        else {
+            const args = bindModuleArguments(definition, app.args.slice(1), app, (node, message) => {
+                this.fail(node, message);
+            });
+            this.moduleCalls.set(app, { module, definition, arguments: args });
+            this.fail(app, `${module.name}.${name}は宣言・引数番号の解析のみ対応しています。配列の生成・実行は第4段階で追加します`);
+        }
+        return true;
     }
 
     /**
@@ -947,6 +1043,13 @@ class PythonResolver {
      * @returns 戻り値型。未定ならundefined、不正な呼出しならerror。
      */
     private call(app: App): PythonType | undefined {
+        if (this.resolveModuleCall(app)) {
+            return errorType;
+        }
+        const keyword = app.args.find(argument => argument instanceof KeywordArgument);
+        if (keyword !== undefined) {
+            return this.fail(keyword, "キーワード引数の構文解析には対応しましたが、通常API・ユーザー関数への実行はまだ未対応です");
+        }
         if (app.fncName === "()") {
             const attribute = app.args[0];
             if (!(attribute instanceof App) || attribute.fncName !== "." || !(attribute.args[1] instanceof RefVar)) {
@@ -1247,6 +1350,16 @@ class PythonResolver {
      * @param statement 解析する文。分岐・ループの本体も同じスコープで解析する。
      */
     private statement(statement: Statement): void {
+        if (statement instanceof ClassDefinition) {
+            this.fail(statement, "ユーザークラスは構文解析のみ対応しています。生成・実行は第3段階で追加します");
+            return;
+        }
+        if (statement.keyword === "import") {
+            if (!this.validImports.has(statement)) {
+                this.fail(statement, "importはモジュール直下の組込みモジュールだけに対応しています");
+            }
+            return;
+        }
         if (statement instanceof Fn || statement instanceof GlobalStatement) {
             return;
         }
@@ -1335,9 +1448,10 @@ class PythonResolver {
      * @returns 診断をcharPos順に並べた解析結果。診断があれば全変数のslotを-1にする。
      */
     resolve(): PythonAnalysis {
+        this.registerModuleImports();
         let executable = false;
         for (const statement of this.module.block.statements) {
-            if (statement instanceof GlobalStatement) {
+            if (statement instanceof GlobalStatement || statement.keyword === "import") {
                 continue;
             }
             if (!(statement instanceof Fn)) {
@@ -1442,7 +1556,7 @@ class PythonResolver {
             }
         }
         this.diagnostics.sort((left, right) => left.charPos - right.charPos);
-        return { diagnostics: this.diagnostics, module: this.module, api: this.api,
+        return { diagnostics: this.diagnostics, module: this.module, api: this.api, moduleCalls: this.moduleCalls,
             globals: this.globals, functions: this.functions, references: this.references,
             types: this.types, calls: this.calls, fields: this.fields };
     }

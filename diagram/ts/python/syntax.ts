@@ -1,7 +1,11 @@
 /**
  * Pythonサブセットの式・文・ブロック・関数・モジュールの構文木を定義する。位置と親参照を保持し、必要な括弧と字下げを補ってソース表現を生成する。
  */
-/** 添字アクセスを表すAppの演算子名。WebGPU側と共通の表記。 */
+/**
+ * 添字アクセスを表すAppの演算子名。WebGPU側と共通の表記。
+ * argsは[対象, 添字1, 添字2, ...]とし、単一添字も同じ配置で保持する。
+ * parser.tsが読み、App.source()がカンマ区切りへ戻す。スライスはこの表現に含めない。
+ */
 export const indexOpr = "t[i]";
 
 /**
@@ -234,7 +238,52 @@ export class RefVar extends Term {
     }
 }
 
-/** 演算・呼出し・属性・添字・リスト・タプルを共通の形で保持する。 */
+/**
+ * 呼出しのキーワード引数。名前は変数参照ではなく、子ノードは値の式だけとする。
+ * App.argsでは位置引数と同じ配列へソース順に置き、評価順を失わない。
+ */
+export class KeywordArgument extends Term {
+    /**
+     * キーワードの識別名。
+     */
+    name: string;
+    /**
+     * 引数の値となる式。
+     */
+    value: Term;
+
+    /**
+     * 引数名と未評価の値の式を保持する。
+     * @param name 引数名。
+     * @param value 引数の式。
+     */
+    constructor(name: string, value: Term) {
+        super();
+        this.name = name;
+        this.value = value;
+    }
+
+    /**
+     * 値の式だけをスコープ走査へ渡す。
+     * @returns 引数の値だけを含む子ノード一覧。
+     */
+    get children(): AbstractSyntaxNode[] {
+        return [this.value];
+    }
+
+    /**
+     * 元の引数名と値を再文字列化する。
+     * @returns name=value形式のソース表現。
+     */
+    toString(): string {
+        if (this._str === undefined) {
+            this._str = `${this.name}=${this.value}`;
+        }
+        return this._str;
+    }
+}
+
+/** 演算・呼出し・属性・複数添字・リスト・タプルを共通の形で保持する。 */
 export class App extends Term {
     // <compare>のとき、args間の比較演算子を評価順で保持する。
     comparisonOperators: string[] = [];
@@ -284,6 +333,7 @@ export class App extends Term {
 
     /**
      * 演算子の結合順と子の優先順位を保って、Appの原文表現を組み立てる。
+     * @returns 必要な括弧を補った演算・呼出し・属性・添字等のソース表現。
      */
     private source(): string {
         const name = this.fncName;
@@ -303,7 +353,7 @@ export class App extends Term {
                 return `${base}.${args[1]}`;
             }
             case indexOpr:
-                return `${formatOperand(args[0], 13)}[${args[1]}]`;
+                return `${formatOperand(args[0], 13)}[${args.slice(1).map(arg => arg.toString()).join(", ")}]`;
             case "<compare>": {
                 let source = formatOperand(args[0], 4, true);
                 for (const [index, operator] of this.comparisonOperators.entries()) {
@@ -664,6 +714,51 @@ export class Fn extends Statement {
         if (this._str === undefined) {
             const args = this.args.map(arg => arg.toString()).join(", ");
             this._str = `def ${this.name}(${args}):\n${formatSuite(this.block)}`;
+        }
+        return this._str;
+    }
+}
+
+/**
+ * ユーザークラスの宣言。機器APIのクラスとは異なり、元ソースのメソッド本体を保持する。
+ * 第1段階では構文木だけを作り、意味解析で実行未対応として拒否する。
+ */
+export class ClassDefinition extends Statement {
+    /**
+     * 宣言されたクラス名。
+     */
+    name: string;
+    /**
+     * メソッド等をソース順に保持するクラス本体。
+     */
+    block: BlockStatement;
+
+    /**
+     * クラス名と本体を保持する。
+     * @param name クラス名。
+     * @param block クラス本体。
+     */
+    constructor(name: string, block: BlockStatement) {
+        super();
+        this.name = name;
+        this.block = block;
+    }
+
+    /**
+     * メソッド・クラス本体の親子関係と元位置を保持する。
+     * @returns クラス本体だけを含む子ノード一覧。
+     */
+    get children(): AbstractSyntaxNode[] {
+        return [this.block];
+    }
+
+    /**
+     * クラス本体を1段字下げして再文字列化する。
+     * @returns クラス宣言全体のソース表現。
+     */
+    toString(): string {
+        if (this._str === undefined) {
+            this._str = `class ${this.name}:\n${formatSuite(this.block)}`;
         }
         return this._str;
     }

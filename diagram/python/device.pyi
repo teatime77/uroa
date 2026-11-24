@@ -73,3 +73,51 @@ def atan2(y: float, x: float) -> float: ...
 
 # 絶対値をfloatで返す。整数引数もfloatへ変換する。仕様は生成C++のinvokeFloatUnaryを参照する。
 def abs(value: float) -> float: ...
+
+
+# 組込みモジュールの共通定義。ここでのclass numpyは機器クラスではなく名前空間。
+# 省略可能な項目は= ...で示し、実際の既定値はC++実装が設定する。
+# 引数の宣言順からJSONとC++の引数番号を同時生成する。第1段階では実行未対応。
+class numpy:
+    class Shape: ...
+    class DType: ...
+    class Device: ...
+    class ArrayLike: ...
+    class ndarray: ...
+
+    float32: DType
+    uint8: DType
+
+    @staticmethod
+    def zeros(shape: Shape, dtype: DType = ..., order: str = ..., *,
+              device: Device = ..., like: ArrayLike = ...) -> ndarray:
+        """ゼロ初期化配列を作る関数のシグネチャを共通定義する。実行処理は未登録。
+
+        Args:
+            shape: 確保する配列の形状。
+            dtype: 要素の型。省略時の値はC++実装が設定する。
+            order: 要素の配置順を指定する項目。
+            device: 確保先を指定するキーワード専用の項目。
+            like: 配列生成の基準を指定するキーワード専用の項目。
+
+        Returns:
+            宣言上の配列型。各オプションの対応範囲は実行処理の追加時に定める。
+        """
+        ...
+
+    @staticmethod
+    def empty(shape: Shape, dtype: DType = ..., order: str = ..., *,
+              device: Device = ..., like: ArrayLike = ...) -> ndarray:
+        """配列領域を確保する関数のシグネチャを共通定義する。実行処理は未登録。
+
+        Args:
+            shape: 確保する配列の形状。
+            dtype: 要素の型。省略時の値はC++実装が設定する。
+            order: 要素の配置順を指定する項目。
+            device: 確保先を指定するキーワード専用の項目。
+            like: 配列生成の基準を指定するキーワード専用の項目。
+
+        Returns:
+            宣言上の配列型。初期化と各オプションの対応範囲は実行処理の追加時に定める。
+        """
+        ...

@@ -204,13 +204,74 @@ class CppGenerator:
         }
 """.splitlines() + [""]
 
+    def module_enums(self) -> List[str]:
+        """モジュール定義から共有の番号だけを生成する。実行用スタブはまだ登録しない。
+
+        Functionの番号はモジュール内の宣言順で、CALL_NATIVEのnativeIdとは異なる。
+        必須位置引数は各関数のArgument、optionalはOptionの独立したenumにする。
+        optionIdは必須引数を除いた宣言順なので、zerosではdtype=0、order=1、
+        device=2、like=3となる。既定値の補完はC++実装側の責務とする。
+
+        Returns:
+            ヘッダーへ出力する定義版・名前空間・共有enumの行一覧。
+
+        Raises:
+            ValueError: 関数名から生成したenum名が同じモジュール内で重複する場合。
+        """
+        lines = [
+            "    /**", "     * @brief 組込みモジュール定義の版。呼出し規約の版とは独立する。",
+            "     */", "    constexpr uint16_t ModuleDefinitionVersion = {};".format(self.interface["moduleDefinitionVersion"]),
+        ]
+        for module in self.interface["modules"]:
+            lines.extend(["", "    /**", "     * @brief {}の引数番号。実行処理は第1段階では未登録。".format(module["name"]),
+                          "     */", "    namespace " + module["name"] + " {",
+                          "        /**", "         * @brief モジュール内の関数ID。nativeIdとは異なる。",
+                          "         */", "        enum class Function : uint16_t {"])
+            for function in module["functions"]:
+                lines.append("            {} = {},".format(function["name"], function["id"]))
+            lines.append("        };")
+            enum_names = {"Function"}
+            for function in module["functions"]:
+                stem = "".join(part[:1].upper() + part[1:] for part in function["name"].split("_"))
+                for suffix, required in [("Argument", True), ("Option", False)]:
+                    parameters = [item for item in function["parameters"] if item["required"] == required]
+                    if not parameters:
+                        continue
+                    enum_name = stem + suffix
+                    if enum_name in enum_names:
+                        raise ValueError("C++のモジュールenum名が重複しています: " + enum_name)
+                    enum_names.add(enum_name)
+                    lines.extend(["", "        /**", "         * @brief {}の{}番号。".format(function["name"], "必須引数" if required else "省略可能な引数"),
+                                  "         */", "        enum class " + enum_name + " : uint16_t {"])
+                    for parameter in parameters:
+                        number = parameter["position"] if required else parameter["optionId"]
+                        lines.append("            {} = {},".format(parameter["name"], number))
+                    lines.append("        };")
+            lines.append("    }")
+        return lines
+
     def generate(self) -> Tuple[bytes, bytes]:
-        """全成果物をメモリー上で作る。未知のC++識別子や幅超過は書出し前に拒否する。"""
+        """全成果物をメモリー上で作る。未知のC++識別子や幅超過は書出し前に拒否する。
+
+        Returns:
+            UTF-8で符号化した生成ヘッダーと生成ソースのバイト列の組。
+
+        Raises:
+            ValueError: C++識別子、enum名、型、または引数・戻り値の幅が不正な場合。
+        """
         keywords = set("alignas alignof and asm auto bool break case catch char class const constexpr continue default delete do double else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not nullptr operator or private protected public register reinterpret_cast return short signed sizeof static struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor".split())
         for item in self.interface["classes"]:
             for name in [item["name"]] + [field["name"] for field in item["fields"]]:
                 if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or name in keywords:
                     raise ValueError("C++で使用できない型名またはフィールド名: " + name)
+        for module in self.interface["modules"]:
+            names = [module["name"]]
+            for function in module["functions"]:
+                names.append(function["name"])
+                names.extend(parameter["name"] for parameter in function["parameters"])
+            for name in names:
+                if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", name) or name in keywords:
+                    raise ValueError("C++で使用できないモジュール名・引数名: " + name)
         header = [
             "/** @file device_api.generated.h",
             " * @brief device.pyiから自動生成した値型・機器バックエンドの契約。直接編集しない。",
@@ -218,6 +279,7 @@ class CppGenerator:
             "    /** @brief 呼出し中だけ有効な長さ付きUTF-8。埋込NULを許す。 */",
             "    struct StringView {", "        const char *data;", "        size_t length;", "    };", "",
         ]
+        header.extend(self.module_enums())
         for item in self.interface["classes"]:
             header.append("    constexpr uint16_t ClassId{} = {}; ///< device.pyiのクラスID。".format(item["name"], item["id"]))
         for item in self.records:

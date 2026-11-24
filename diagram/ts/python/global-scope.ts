@@ -3,18 +3,22 @@
  * semantic.tsが本処理の診断を蓄積して型・スロットを決定する。bytecode.tsはその解析結果を使用する。
  */
 import {
-    AbstractSyntaxNode, App, BlockStatement, CallStatement, Fn, ForStatement, GlobalStatement,
+    AbstractSyntaxNode, App, BlockStatement, CallStatement, ClassDefinition, Fn, ForStatement, GlobalStatement, KeywordArgument,
     IfStatement, RefVar, ReturnStatement, Term, Variable, WhileStatement
 } from "./syntax";
 
 /**
- * 同じスコープのglobal名を収集する。if・while等の内側も含め、入れ子の関数本体には入らない。
+ * 同じスコープのglobal名を収集する。if・while等の内側も含め、関数・クラスの本体には入らない。
  * globalの宣言は関数全体で読み書きをモジュールへ向け、宣言自体では変数・値を作らない。
  * モジュール直下では束縛を変えない。宣言より前の参照・代入と仮引数との衝突は診断する。
- * 属性名・演算子名を変数の使用と数えず、属性の対象・添字・引数・f文字列の置換式は走査する。
+ * 属性名・演算子名・キーワード引数名を変数の使用と数えず、その対象・添字・値の式を走査する。
  * paramsと衝突した名前は回復用の集合から外し、仮引数を局所変数として解析できるようにする。
  * 関数内でglobal宣言した名前への代入は、モジュール直下に同名の代入がなくても大域領域を作る。
  * global未指定の代入は従来どおり局所変数。nonlocal・クロージャには対応しない。
+ * @param block global宣言と参照・代入の順序を検査するスコープ本体。
+ * @param parameters global名との衝突を検査する仮引数一覧。
+ * @param report 違反したノードと診断メッセージを受け取る関数。
+ * @returns 仮引数との衝突を除いた、このスコープのglobal名の集合。
  */
 export function collectScopeGlobals(
     block: BlockStatement,
@@ -25,9 +29,16 @@ export function collectScopeGlobals(
     const parameterNames = new Set(parameters.map(parameter => parameter.name));
     const seen = new Set<string>();
 
+    /**
+     * 式内の変数参照を使用済み名へ登録する。
+     * @param term 走査する式。属性名・キーワード引数名は変数参照に含めない。
+     */
     const expression = (term: Term): void => {
         if (term instanceof RefVar) {
             seen.add(term.name);
+        }
+        else if (term instanceof KeywordArgument) {
+            expression(term.value);
         }
         else if (term instanceof App) {
             if (term.fncName === ".") {
@@ -44,6 +55,10 @@ export function collectScopeGlobals(
         }
     };
 
+    /**
+     * 同じスコープの文を順に走査し、global宣言と参照順を検査する。
+     * @param node 走査する文またはブロック。関数・クラスの本体へは入らない。
+     */
     const statement = (node: AbstractSyntaxNode): void => {
         if (node instanceof GlobalStatement) {
             for (const name of node.names) {
@@ -57,7 +72,7 @@ export function collectScopeGlobals(
                 globals.add(name.name);
             }
         }
-        else if (node instanceof Fn) {
+        else if (node instanceof Fn || node instanceof ClassDefinition) {
             seen.add(node.name);
         }
         else if (node instanceof CallStatement) {

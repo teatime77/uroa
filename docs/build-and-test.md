@@ -1,5 +1,13 @@
 # ビルドと回帰テスト
 
+## オブジェクト・NumPy対応 第1段階：共通定義・構文解析（2026-11-24）
+
+[device.pyi](../diagram/python/device.pyi)にNumPyの宣言を追加した。定義の解析は[module_api.py](../diagram/python/module_api.py)、JSONの検証と引数対応は[module-api.ts](../diagram/ts/python/module-api.ts)を参照する。[syntax.ts](../diagram/ts/python/syntax.ts)・[parser.ts](../diagram/ts/python/parser.ts)にクラス宣言、キーワード引数、複数添字を追加した。クラスとNumPy関数の実行は未実装として、意味診断によりコード生成を止める。
+
+`C:\Users\hamad\.platformio\penv\Scripts\python.exe -B diagram/python/generate-device-api.py`でJSON・C++を再生成し、`--check`の一致確認が成功した。API指紋を更新したため、使用時にはWeb側の定義とファームウェアをそろえ、Pythonバイトコードを再生成・再送信する。`npm.cmd run verify`で型・公開ビルド・成果物の静的確認が成功した。既存のgameに関するimport混在警告2件は残る。ESP32のビルドは[別リポジトリーの記録](../../esp32/docs/build-and-test.md)を参照する。
+
+ユーザー指定によりテストは作成・実行していない。構文解析・意味診断の実行試験、ブラウザー操作、Upload、通信、VM・実機確認は行っていない。第2段階へは進めず、ユーザーのレビューとcommit・pushを待つ。
+
 ## Python VMの旧形式削除・形式解釈の共通化（2026-11-24）
 
 意味解析済みの生成入口へ統一し、バイトコード版1・2と旧Event／Snapshotの受信を削除した。現行の参照先は[バイトコード案内](diagram/python/bytecode.md)、今後のオブジェクト・NumPy対応の変更先は[変更箇所一覧](diagram/python/object-array-change-map.md)を参照する。新しいオブジェクト・配列機能そのものは今回追加していない。
