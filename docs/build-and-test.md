@@ -1,5 +1,11 @@
 # ビルドと回帰テスト
 
+## オブジェクト・NumPy対応 第2段階：ヒープ管理・GC基盤（2026-11-24）
+
+ESP32側へGCヒープとVMの根登録を追加した。実装・ビルド結果・未確認の範囲は[ESP32の記録](../../esp32/docs/build-and-test.md)、GC採用後の全5段階と変更箇所は[共有文書](diagram/python/object-array-change-map.md)を参照する。実装済み仕様はESP32のソースコメントを正本とする。
+
+今回uroa側は文書だけを更新し、リンク・記述・差分を確認した。TypeScript・API宣言・生成物は変更せず、Webビルドは行っていない。ユーザー指定によりテストは作成・実行せず、第3段階へは進めない。
+
 ## オブジェクト・NumPy対応 第1段階：共通定義・構文解析（2026-11-24）
 
 [device.pyi](../diagram/python/device.pyi)にNumPyの宣言を追加した。定義の解析は[module_api.py](../diagram/python/module_api.py)、JSONの検証と引数対応は[module-api.ts](../diagram/ts/python/module-api.ts)を参照する。[syntax.ts](../diagram/ts/python/syntax.ts)・[parser.ts](../diagram/ts/python/parser.ts)にクラス宣言、キーワード引数、複数添字を追加した。クラスとNumPy関数の実行は未実装として、意味診断によりコード生成を止める。
