@@ -73,14 +73,75 @@ class CppGenerator:
             return item["name"] if item["kind"] == "record" else "uint32_t"
         return {"int": "int32_t", "float": "float", "str": "StringView"}[value["kind"]]
 
-    def leaves(self, value: Dict[str, Any], name: str) -> List[Tuple[Dict[str, Any], str]]:
-        """recordをフィールド宣言順に再帰展開する。device・数値・文字列は1スロット。"""
-        if value["kind"] == "object":
-            item = self.classes[value["classId"]]
-            if item["kind"] == "record":
-                return [leaf for field in item["fields"]
-                        for leaf in self.leaves(field["type"], name + "." + field["name"])]
-        return [(value, name)]
+    def record_helpers(self) -> List[str]:
+        """GC本体とC++の値型を変換するrecordごとの関数を生成する。
+
+        Returns:
+            依存するrecordから順に並べた読取り・書込み関数の行一覧。
+
+        Raises:
+            ValueError: 現行ネイティブrecordで未対応の文字列出力を宣言した場合。
+        """
+        lines = []
+        for item in self.records:
+            name = item["name"]
+            count = len(item["fields"])
+            if any(field["type"]["kind"] == "str" for field in item["fields"]):
+                raise ValueError("ネイティブrecordの文字列変換は未対応です")
+            lines.extend([
+                "        /**", "         * @brief GC本体をC++の{}へコピーする。".format(name),
+                "         * @param vm 本体を検査するVM。", "         * @param value 本体参照。",
+                "         * @param result 成功時のC++値。", "         * @return 型・幅が一致すればtrue。", "         */",
+                "        inline bool read_{}(BytecodeVM &vm, const BytecodeVM::Value &value, {} &result) {{".format(name, name),
+                "            const BytecodeVM::Value *fields = nullptr;",
+                "            if (!vm.heapFields(value, {}, {}, fields)) {{".format(item["id"], count),
+                "                return false;", "            }",
+            ])
+            for index, field in enumerate(item["fields"]):
+                value = field["type"]
+                target = "result." + field["name"]
+                slot = "fields[{}]".format(index)
+                if value["kind"] == "object" and self.classes[value["classId"]]["kind"] == "record":
+                    condition = "!read_{}(vm, {}, {})".format(self.classes[value["classId"]]["name"], slot, target)
+                else:
+                    tag, member = {"int": ("Integer", "integer"), "float": ("Float", "real"), "object": ("Object", "address")}[value["kind"]]
+                    condition = "{}.type != BytecodeVM::Type::{}".format(slot, tag)
+                    if value["kind"] == "object":
+                        condition += " || {}.classId != {}".format(slot, value["classId"])
+                    if value["kind"] == "float":
+                        condition += " || !std::isfinite({}.real)".format(slot)
+                lines.extend(["            if ({}) {{".format(condition), "                return false;", "            }"])
+                if not (value["kind"] == "object" and self.classes[value["classId"]]["kind"] == "record"):
+                    lines.append("            {} = {}.{};".format(target, slot, member))
+            lines.extend(["            return true;", "        }", "", "        /**",
+                          "         * @brief C++の{}を入れ子も含めてGC本体へコピーする。".format(name),
+                          "         * @param vm 確保先のVM。", "         * @param input バックエンドの結果。",
+                          "         * @param value 成功時だけ設定する参照。", "         * @return 確保と変換の成功時true。",
+                          "         * @details 構築途中の親をHeapRootで保持し、子の確保中のGCから保護する。", "         */",
+                          "        inline bool write_{}(BytecodeVM &vm, const {} &input, BytecodeVM::Value &value) {{".format(name, name),
+                          "            BytecodeVM::Value holder;", "            BytecodeVM::HeapRoot root(vm, holder);",
+                          "            if (!vm.allocateHeapValue({}, {}, 0, holder)) {{".format(item["id"], count),
+                          "                return false;", "            }",
+                          "            auto *fields = static_cast<BytecodeVM::Value *>(holder.reference->data);"])
+            for index, field in enumerate(item["fields"]):
+                value = field["type"]
+                source = "input." + field["name"]
+                slot = "fields[{}]".format(index)
+                if value["kind"] == "str":
+                    raise ValueError("ネイティブrecordの文字列出力は未対応です")
+                if value["kind"] == "object" and self.classes[value["classId"]]["kind"] == "record":
+                    lines.extend(["            if (!write_{}(vm, {}, {})) {{".format(self.classes[value["classId"]]["name"], source, slot),
+                                  "                return false;", "            }"])
+                else:
+                    tag, member = {"int": ("Integer", "integer"), "float": ("Float", "real"), "object": ("Object", "address")}[value["kind"]]
+                    if value["kind"] == "float":
+                        lines.extend(["            if (!std::isfinite({})) {{".format(source), "                return false;", "            }"])
+                    lines.append("            {}.type = BytecodeVM::Type::{};".format(slot, tag))
+                    if value["kind"] == "object":
+                        lines.append("            {}.classId = {};".format(slot, value["classId"]))
+                    lines.append("            {}.{} = {};".format(slot, member, source))
+            lines.extend(["            value = holder;", "            return true;", "        }", ""])
+        return lines
 
     def arguments(self, owner: Optional[Dict[str, Any]], function: Dict[str, Any], constructor: bool) -> List[Tuple[str, Dict[str, Any]]]:
         """メソッドのselfを先頭に置く。コンストラクターは明示引数だけを受け取る。"""
@@ -277,15 +338,15 @@ class CppGenerator:
             " * @brief device.pyiから自動生成した値型・機器バックエンドの契約。直接編集しない。",
             " */", "#pragma once", '#include "bytecode_vm.h"', "", "namespace device_api {",
             "    /** @brief 呼出し中だけ有効な長さ付きUTF-8。埋込NULを許す。 */",
-            "    struct StringView {", "        const char *data;", "        size_t length;", "    };", "",
+            "    struct StringView {", "        const char *data; ///< 呼出し中だけ有効なUTF-8。", "        size_t length; ///< 終端NULを含まないバイト数。", "    };", "",
         ]
         header.extend(self.module_enums())
         for item in self.interface["classes"]:
             header.append("    constexpr uint16_t ClassId{} = {}; ///< device.pyiのクラスID。".format(item["name"], item["id"]))
         for item in self.records:
-            header.extend(["", "    /** @brief 宣言順の値フィールド。VMでは葉の連続スロットへ展開する。 */", "    struct " + item["name"] + " {"])
+            header.extend(["", "    /** @brief バックエンドとの変換用値型。VMではGC本体参照として扱う。 */", "    struct " + item["name"] + " {"])
             for field in item["fields"]:
-                header.append("        {} {};".format(self.cpp_type(field["type"]), field["name"]))
+                header.append("        {} {}; ///< device.pyiの宣言フィールド。".format(self.cpp_type(field["type"]), field["name"]))
             header.append("    };")
         header.extend(["", "    /** @brief loop()で同期実行する機器操作。生成スタブが引数を検査して呼ぶ。 */", "    class Backend {", "        public:", "        /** @brief 派生バックエンドを破棄する。 */", "        virtual ~Backend();", "        /** @brief VM所有の出力を停止し、ハンドルをすべて無効化する。 */", "        virtual void reset() = 0;"])
         source = [
@@ -301,6 +362,7 @@ class CppGenerator:
             source.extend(self.float_binary_helper())
         if any(owner is None and function["name"] == "modf" for owner, function, _ in self.calls):
             source.extend(self.modf_adapter())
+        source.extend(self.record_helpers())
         entries = []
         for owner, function, constructor in self.calls:
             method = self.method_name(owner, function, constructor)
@@ -330,8 +392,8 @@ class CppGenerator:
                 header.append("         * @param result 成功時の戻り値。")
             header.extend(["         * @return None=成功、NativePending=再試行、その他は実行エラー。", "         */",
                            "        virtual BytecodeVM::Error {}({}) = 0;".format(method, ", ".join(parameters))])
-            leaves = [leaf for name, value in arguments for leaf in self.leaves(value, name)]
-            outputs = [] if result["kind"] == "none" else self.leaves(result, "result")
+            leaves = [(value, name) for name, value in arguments]
+            outputs = [] if result["kind"] == "none" else [(result, "result")]
             width = max(1, len(outputs))
             if len(leaves) > 1024 or width > 1024:
                 raise ValueError(method + ": VMのスロット上限1024を超えています")
@@ -345,6 +407,10 @@ class CppGenerator:
                 source.append("            {} {}{{}};".format(self.cpp_type(value), name))
             for index, (value, name) in enumerate(leaves):
                 slot = "call.arguments[{}]".format(index)
+                if value["kind"] == "object" and self.classes[value["classId"]]["kind"] == "record":
+                    source.extend(["            if (!read_{}(call.vm, {}, {})) {{".format(self.classes[value["classId"]]["name"], slot, name),
+                                   "                return Error::Type;", "            }"])
+                    continue
                 if value["kind"] == "str":
                     condition = "!call.vm.stringBytes({}, {}.data, {}.length)".format(slot, name, name)
                 else:
@@ -363,6 +429,10 @@ class CppGenerator:
             if result["kind"] == "none":
                 source.append("            call.results[0].type = Type::None;")
             for index, (value, name) in enumerate(outputs):
+                if value["kind"] == "object" and self.classes[value["classId"]]["kind"] == "record":
+                    source.extend(["            if (!write_{}(call.vm, {}, call.results[{}])) {{".format(self.classes[value["classId"]]["name"], name, index),
+                                   "                return call.vm.error == Error::None ? Error::Type : call.vm.error;", "            }"])
+                    continue
                 tag, member = {"int": ("Integer", "integer"), "float": ("Float", "real"), "object": ("Object", "address")}[value["kind"]]
                 source.append("            call.results[{}].type = Type::{};".format(index, tag))
                 if value["kind"] == "object":
@@ -373,14 +443,40 @@ class CppGenerator:
         digest = bytes.fromhex(self.interface["abiHash"])
         source.extend(["        // JSONと同一のABIハッシュ。シグネチャ・ID・フィールド配置の差をVM開始時に検出する。",
                        "        const uint8_t abiHash[32] = {", "            " + ", ".join("0x{:02X}".format(byte) for byte in digest), "        };",
-                       "        // nativeIdの昇順。引数と戻り値の幅はrecord展開後のスロット数。",
+                       "        // nativeIdの昇順。recordも1スロットのGC参照で受け渡す。",
                        "        const BytecodeVM::NativeEntry entries[] = {"] + (entries or ["            {},"]) + ["        };", "",
                        "        /** @brief VM停止時に機器の出力とハンドルを解放する。@param context 登録バックエンド。 */",
                        "        void resetBackend(void *context) {", "            static_cast<Backend *>(context)->reset();", "        }", "    }", "",
                        "    /** @brief VM登録表を構築する。@param backend 登録中保持する機器操作。@return 静的なID表を参照する登録情報。 */",
                        "    BytecodeVM::NativeApi makeNativeApi(Backend &backend) {",
                        "        return {abiHash, entries, " + str(len(entries)) + ", &backend, resetBackend};", "    }", "}", ""])
-        return "\n".join(header).encode("utf-8"), "\n".join(source).encode("utf-8")
+        return self.documented(header), self.documented(source)
+
+    def documented(self, lines: List[str]) -> bytes:
+        """生成C++の文書コメントを規約どおり複数行・1タグ1行へ整える。
+
+        Args:
+            lines: ヘッダーまたは実装の行一覧。
+
+        Returns:
+            UTF-8の生成ソース。コードの行とタグ以外の説明は変更しない。
+        """
+        result = []
+        for line in lines:
+            match = re.match(r"^(\s*)/\*\*\s+(.+)$", line)
+            if match:
+                indent, body = match.groups()
+                closed = body.endswith("*/")
+                body = body[:-2].rstrip() if closed else body
+                result.append(indent + "/**")
+                for text in re.split(r"(?=@(?:file|brief|param|return|details)\b)", body):
+                    if text.strip():
+                        result.append(indent + " * " + text.strip())
+                if closed:
+                    result.append(indent + " */")
+            else:
+                result.append(line)
+        return "\n".join(result).encode("utf-8")
 
 
 def generate_cpp(interface: Dict[str, Any]) -> Tuple[bytes, bytes]:

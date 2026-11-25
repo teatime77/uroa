@@ -1,11 +1,11 @@
 /**
- * Python一括転送version=2の中心契約。バイナリversion=3だけを扱う。形式はpython/bytecode.tsを参照する。
+ * Python一括転送version=2の中心契約。バイナリversion=4だけを扱う。形式はpython/bytecode.tsを参照する。
  * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
  * python-block.tsが同一生成のコードとPC一覧、ESP32のbytecode_receiver.cppが検証、main.cppが開始を担当する。
  */
 import {
     bytecodeFunctionRecordLength, bytecodeHeaderLength, bytecodeMaxLength,
-    bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion
+    bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion, bytecodeTypeRecordLength
 } from "../python/bytecode.js";
 
 /** 一括転送の上限。BLEの実サイズはResultから決定する。 */
@@ -101,14 +101,18 @@ export function bytecodeCrc32(bytes: Uint8Array): number {
     return (crc ^ 0xFFFFFFFF) >>> 0;
 }
 
-/** 転送上限・version=3ヘッダー・文字列領域を検査する。全命令の検証は受信側で行う。 */
+/**
+ * 転送上限・version=4ヘッダー・本体型表・文字列領域を検査する。全命令の検証は受信側で行う。
+ * @param bytes 生成済みのイメージ。
+ * @throws {Error} 形式・型・長さが不正な場合。
+ */
 export function checkBytecodeTransfer(bytes: Uint8Array): void {
     if (bytes.byteLength < bytecodeHeaderLength || bytes.byteLength > bytecodeTransfer.maxLength) {
         throw new RangeError(`バイトコード全体は${bytecodeHeaderLength}〜${bytecodeTransfer.maxLength}バイトにしてください。`);
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (view.getUint16(2, true) !== bytecodeVersion) {
-        throw new Error("バイトコードはversion=3だけに対応しています。");
+        throw new Error("バイトコードはversion=4だけに対応しています。");
     }
     const headerLength = bytecodeHeaderLength;
     const functionRecordLength = bytecodeFunctionRecordLength;
@@ -116,15 +120,45 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     const stringCount = view.getUint16(16, true);
     const dataLength = view.getUint32(20, true);
     const functionCount = view.getUint16(6, true);
-    const codeOffset = headerLength + functionCount * functionRecordLength;
+    const typeCount = view.getUint16(56, true);
+    const typeLength = view.getUint32(60, true);
+    const typeOffset = headerLength + functionCount * functionRecordLength;
+    const codeOffset = typeOffset + typeLength;
     const tableOffset = codeOffset + codeLength;
     const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
     if (view.getUint16(0, true) !== bytecodeSignature
-        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 2
-        || view.getUint16(18, true) !== 2
+        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 3
+        || view.getUint16(18, true) !== 3 || view.getUint16(58, true) !== 0
+        || typeLength < typeCount * bytecodeTypeRecordLength
         || codeLength < 1 || codeLength > 65536
         || bytes.byteLength !== dataOffset + dataLength) {
         throw new Error("バイトコードのヘッダーまたは長さが不正です。");
+    }
+    const typeIds = new Set<number>();
+    let fieldOffset = typeCount * bytecodeTypeRecordLength;
+    let previousId = 0;
+    for (let index = 0; index < typeCount; index++) {
+        const record = typeOffset + index * bytecodeTypeRecordLength;
+        const id = view.getUint16(record, true);
+        const bytes = view.getUint16(record + 2, true) * 4;
+        if (id <= previousId || view.getUint32(record + 4, true) !== fieldOffset || bytes > typeLength - fieldOffset) {
+            throw new Error("本体型表のID・配置・長さが不正です。");
+        }
+        typeIds.add(id);
+        previousId = id;
+        fieldOffset += bytes;
+    }
+    if (fieldOffset !== typeLength) {
+        throw new Error("本体フィールド表の長さが一致しません。");
+    }
+    for (let offset = typeCount * bytecodeTypeRecordLength; offset < typeLength; offset += 4) {
+        const kind = view.getUint8(typeOffset + offset);
+        const flags = view.getUint8(typeOffset + offset + 1);
+        const id = view.getUint16(typeOffset + offset + 2, true);
+        if (![1, 2, 3, 6, 7, 8].includes(kind) || (flags & ~3) !== 0 || ([7, 8].includes(kind) ? id === 0 : id !== 0)
+            || kind === 8 && !typeIds.has(id)) {
+            throw new Error("本体フィールドの型・権限が不正です。");
+        }
     }
     for (let index = 0; index < functionCount; index++) {
         const recordOffset = headerLength + index * functionRecordLength;

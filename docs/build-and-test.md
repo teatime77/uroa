@@ -1,5 +1,13 @@
 # ビルドと回帰テスト
 
+## オブジェクト・NumPy対応 第3段階：オブジェクト・メソッド（2026-11-24）
+
+ユーザークラス・コンストラクタ・メソッド・属性アクセスを[意味解析](../diagram/ts/python/semantic.ts)と[コード生成](../diagram/ts/python/bytecode.ts)からESP32 VMへ接続した。既存recordのGC参照化、文字列保持、共有・循環を含むSnapshotと表示も更新した。変更箇所と残りの段階は[共有文書](diagram/python/object-array-change-map.md)、仕様の正本は各ソースのコメントを参照する。
+
+uroaルートで`C:\Users\hamad\.platformio\penv\Scripts\python.exe -B diagram/python/generate-device-api.py`を実行し、JSON・C++を再生成した。`--check`の生成物一致確認と`npm.cmd run verify`の型・公開ビルド・成果物の静的確認は成功。既存gameのimport混在警告2件は残る。ESP32は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)のとおりsupermini_esp32s3だけでビルドした。
+
+バイトコード・API呼出し規約・文字列規約・SnapshotとABI指紋を更新したため、Webとファームウェアをそろえ、Pythonバイトコードを再生成・再送信する。ユーザー指定によりテストは作成・実行していない。構文・意味診断の実行試験、ブラウザー、Upload、転送、VM実行、実機GC動作・時間は未確認。NumPy実行の第4段階へは進めず、commit・pushはユーザーが行う。
+
 ## オブジェクト・NumPy対応 第2段階：ヒープ管理・GC基盤（2026-11-24）
 
 ESP32側へGCヒープとVMの根登録を追加した。実装・ビルド結果・未確認の範囲は[ESP32の記録](../../esp32/docs/build-and-test.md)、GC採用後の全5段階と変更箇所は[共有文書](diagram/python/object-array-change-map.md)を参照する。実装済み仕様はESP32のソースコメントを正本とする。

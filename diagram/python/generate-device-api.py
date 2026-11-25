@@ -314,15 +314,17 @@ class InterfaceParser:
         classId相当のidはクラス宣言順、functionId相当のidは関数宣言順で
         それぞれ1から付ける。各IDの上限は65535とする。
 
-        JSONのschemaVersion/callingConventionVersionは2、
-        stringPolicyVersionは1とし、classes/functionsを出力する。
+        JSONのschemaVersion/callingConventionVersionは3、
+        stringPolicyVersionは2とし、classes/functionsを出力する。
         class numpyはクラスIDを持たない組込みモジュール宣言としてmodule_api.pyへ渡す。
         moduleDefinitionVersion=1とmodulesを追加し、引数番号・省略可否・型もABI指紋に含める。
-        この追加は定義情報だけで、既存の値受渡し規約とnativeIdの採番は変更しない。
+        module定義の追加はnativeIdの採番を変更しない。
         module関数のIDはモジュール内だけの番号であり、実行用nativeIdはまだ割り当てない。
-        呼出し規約version=2ではrecordを宣言順の末端フィールドの連続スロットへ
-        展開し、代入・引数・戻り値で値をコピーする。deviceは1スロットの
-        ハンドルとする。配置とコピーはsemantic.ts・bytecode.ts・VMが担当する。
+        呼出し規約version=3ではrecordとユーザー本体は1スロットのGC参照とし、
+        代入・引数・戻り値で共有する。deviceは従来の1スロットのハンドルを使う。
+        C++バックエンドのrecord値型との変換は生成スタブが担当する。
+        文字列は変数・メンバー・ユーザー関数の引数と戻り値にも保持できる。
+        ネイティブAPIの文字列引数・戻り値の宣言制限はread_callableで検査する。
 
         abiHashは、指紋自身を除いたJSON全体をsort_keys=True、
         ensure_ascii=False、separators=(",", ":")で正規化したUTF-8の
@@ -364,9 +366,9 @@ class InterfaceParser:
             else:
                 functions.append(self.read_callable(node, len(functions) + 1))
         result = {
-            "schemaVersion": 2,
-            "callingConventionVersion": 2,
-            "stringPolicyVersion": 1,
+            "schemaVersion": 3,
+            "callingConventionVersion": 3,
+            "stringPolicyVersion": 2,
             "classes": classes,
             "functions": functions,
             "moduleDefinitionVersion": 1,

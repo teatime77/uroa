@@ -10,7 +10,7 @@ import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
  * デバッグ通信の版・上限・結果名と状態番号を共有する定義。
  */
 export const debugProtocol = {
-    version: 1, eventVersion: 2, snapshotVersion: 2, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
+    version: 1, eventVersion: 2, snapshotVersion: 3, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
     errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
         "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
 } as const;
@@ -125,7 +125,7 @@ export interface DebugValue {
      */
     tag: number;
     /**
-     * ObjectのAPIクラスID。Object以外では0。
+     * tag=7の機器またはtag=8のGC本体の型ID。それ以外では0。
      */
     classId: number;
     /**
@@ -134,10 +134,20 @@ export interface DebugValue {
     value: number | null | undefined;
 }
 
+/** Snapshotで受け取るGC本体。フィールドは宣言順のValue列。 */
+export interface DebugObject {
+    /** 本体型ID。コンパイル情報のクラスへ対応する。 */
+    classId: number;
+    /** 宣言順の値。tag=8の本体IDで共有・循環を表す。 */
+    fields: readonly DebugValue[];
+}
+
 /**
  * 同一停止に属するPC・フレーム・全値スロットと文字列本体。
  */
 export interface DebugSnapshot {
+    /** 本体IDと、型ID・宣言順フィールドの対応。生アドレスは保持しない。 */
+    objects: ReadonlyMap<number, DebugObject>;
     /**
      * ESP32稼働中に再利用しない停止ID。同じ停止の要求とデータを照合する。
      */
@@ -221,7 +231,7 @@ function parseEvent(view: DataView): DebugEvent {
         errorPc: progress && state === 4 ? view.getUint32(4, true) : undefined,
     };
     if (paused && event.code === 0 && (event.stopId === 0 || event.revision === 0
-        || event.byteLength < 24 || event.byteLength > debugProtocol.maxSnapshotLength)
+        || event.byteLength < 32 || event.byteLength > debugProtocol.maxSnapshotLength)
         || !paused && (event.stopId !== 0 || event.byteLength !== 0 || event.crc32 !== 0)) {
         throw new Error("デバッグ停止通知の範囲が不正です。");
     }
@@ -231,21 +241,27 @@ function parseEvent(view: DataView): DebugEvent {
 /**
  * 全体CRCとスロットのタグ・範囲を検証してから利用者へ返す。
  *
- * Snapshotヘッダー24バイト: version:u8@0=2、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
+ * Snapshotヘッダー24バイト: version:u8@0=3、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
  * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
  * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
- * classId:u16@2(Object以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
- * 4ReturnPc、5SavedBp、6String ID、7Object handle。未初期化/Noneのpayloadは0。
+ * classId:u16@2(tag7/8以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
+ * 4ReturnPc、5SavedBp、6String ID、7Object handle、8GC本体ID。未初期化/Noneのpayloadは0。
  * スロット列の後に文字列数:u32、続いて各文字列のID:u32、UTF-8バイト長:u32、本体（終端・パディングなし）。
- * 大域→スタック順で参照されるString IDの初出順に1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
+ * 大域→スタック→本体フィールド順のString IDを1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
  * 定数と動的文字列の両方を含む。メモリ不足では明示エラーとし、切り詰めない。
- * Snapshotはversion=2だけを受理する。参照中の文字列本体は必須で、旧版の受信は行わない。
+ * 文字列列の後に本体数:u32、各本体のID:u32・型ID:u16・フィールド数:u16と8バイトValue列を置く。
+ * 同一IDは同じ本体を表し、全参照先の存在と型を全件検証する。確保一覧の未回収本体も含み、
+ * アドレスは送らない。表示は同一IDの重複展開を止める。Snapshotはversion=3だけを受理する。
  * 専用フレーム表は送らず、BP+0(ReturnPc)、BP+1(SavedBp)と同一ビルドのCALL PC/関数範囲で復元する。
  * モジュールと最初の関数のBPがともに0でも、所属関数とCALL対応で区別する。
  * 名前・型・行・変数配置はpython/bytecode.tsが同一コンパイルで作り、python/debugger-view.tsが表示する。
+ * @param bytes 同一停止に属する全Snapshot。
+ * @param event 直前の停止通知。長さとCRCを照合する。
+ * @returns 検証済みのスロット・本体・文字列。
+ * @throws {Error} 形式・参照・型・CRCが不正な場合。
  */
 function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
-    if (bytes.length < 28 || bytes.length !== event.byteLength || bytecodeCrc32(bytes) !== event.crc32) {
+    if (bytes.length < 32 || bytes.length !== event.byteLength || bytecodeCrc32(bytes) !== event.crc32) {
         throw new Error("デバッグ停止データのCRCが一致しません。");
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -261,14 +277,20 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         || bytes.length < valuesEnd + 4) {
         throw new Error("デバッグ停止データのヘッダーが不正です。");
     }
-    const values: DebugValue[] = [];
-    for (let index = 0; index < globals + stack; index++) {
-        const offset = 24 + index * 8;
+    /**
+     * スロットまたはフィールドの8バイトを検証する。
+     * @param offset レコード先頭。
+     * @param management スタック管理値を許可するか。
+     * @returns 検証済みの値。
+     * @throws {Error} タグ・予約値・型ID・数値が不正な場合。
+     */
+    const readValue = (offset: number, management: boolean): DebugValue => {
         const tag = view.getUint8(offset);
         const classId = view.getUint16(offset + 2, true);
         const payload = view.getUint32(offset + 4, true);
-        if (tag > 7 || view.getUint8(offset + 1) !== 0 || (tag === 7 ? classId === 0 : classId !== 0)
-            || (tag === 0 || tag === 3) && payload !== 0 || index < globals && (tag === 4 || tag === 5)
+        if (tag > 8 || view.getUint8(offset + 1) !== 0 || (tag === 7 || tag === 8 ? classId === 0 : classId !== 0)
+            || tag === 8 && payload === 0
+            || (tag === 0 || tag === 3) && payload !== 0 || !management && (tag === 4 || tag === 5)
             || tag === 4 && payload > 65535 || tag === 5 && payload > sp) {
             throw new Error("デバッグ停止データの値が不正です。");
         }
@@ -277,19 +299,26 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         if (typeof value === "number" && !Number.isFinite(value)) {
             throw new Error("デバッグ停止データの数値が不正です。");
         }
-        values.push({ tag, classId, value });
+        return { tag, classId, value };
+    };
+    const values: DebugValue[] = [];
+    for (let index = 0; index < globals + stack; index++) {
+        values.push(readValue(24 + index * 8, index >= globals));
     }
     const strings = new Map<number, string>();
-    const ids = [...new Set(values.filter(value => value.tag === 6).map(value => value.value as number))];
     const count = view.getUint32(valuesEnd, true);
-    if (count !== ids.length) {
+    if (count > Math.floor((bytes.length - valuesEnd - 4) / 8)) {
         throw new Error("停止データの文字列数が不正です。");
     }
     let offset = valuesEnd + 4;
     const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
-    for (const id of ids) {
-        if (offset + 8 > bytes.length || view.getUint32(offset, true) !== id) {
+    for (let index = 0; index < count; index++) {
+        if (offset + 8 > bytes.length) {
             throw new Error("停止データの文字列IDが不正です。");
+        }
+        const id = view.getUint32(offset, true);
+        if (strings.has(id)) {
+            throw new Error("停止データの文字列IDが重複しています。");
         }
         const length = view.getUint32(offset + 4, true);
         offset += 8;
@@ -299,12 +328,45 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         strings.set(id, decoder.decode(bytes.subarray(offset, offset + length)));
         offset += length;
     }
+    const objects = new Map<number, DebugObject>();
+    if (offset + 4 > bytes.length) {
+        throw new Error("停止データの本体数がありません。");
+    }
+    const objectCount = view.getUint32(offset, true);
+    offset += 4;
+    if (objectCount > Math.floor((bytes.length - offset) / 8)) {
+        throw new Error("停止データの本体数が不正です。");
+    }
+    for (let index = 0; index < objectCount; index++) {
+        if (offset + 8 > bytes.length) {
+            throw new Error("停止データの本体レコードが短すぎます。");
+        }
+        const id = view.getUint32(offset, true);
+        const classId = view.getUint16(offset + 4, true);
+        const fields = view.getUint16(offset + 6, true);
+        offset += 8;
+        if (id === 0 || classId === 0 || objects.has(id) || fields > Math.floor((bytes.length - offset) / 8)) {
+            throw new Error("停止データの本体ID・型・フィールド数が不正です。");
+        }
+        const members: DebugValue[] = [];
+        for (let field = 0; field < fields; field++) {
+            members.push(readValue(offset, false));
+            offset += 8;
+        }
+        objects.set(id, { classId, fields: members });
+    }
+    const allValues = [...values, ...[...objects.values()].flatMap(object => object.fields)];
+    const ids = new Set(allValues.filter(value => value.tag === 6).map(value => Number(value.value)));
+    if (strings.size !== ids.size || [...ids].some(id => !strings.has(id)) || allValues.some(value =>
+        value.tag === 8 && objects.get(Number(value.value))?.classId !== value.classId)) {
+        throw new Error("停止データの参照先が存在しないか、型が一致しません。");
+    }
     if (offset !== bytes.length) {
         throw new Error("停止データの末尾に余分なデータがあります。");
     }
 
     return { stopId: event.stopId, revision: event.revision, reason, pc, bp, sp,
-        globals: values.slice(0, globals), stack: values.slice(globals), strings };
+        globals: values.slice(0, globals), stack: values.slice(globals), strings, objects };
 }
 
 /** 接続単位の通信。GATTオブジェクト・Snapshotは保存せず、dispose()後の結果は破棄する。 */

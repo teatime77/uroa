@@ -41,7 +41,7 @@ export interface PythonDebugInfo {
      */
     source: string;
     /**
-     * 検証済みの機器API定義。型参照・nativeId・ABI指紋を共有する。
+     * ネイティブAPIと、同一解析で追加したユーザークラス。型・nativeId・ABI指紋を共有する。
      */
     api: DeviceApi;
     /**

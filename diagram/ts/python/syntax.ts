@@ -721,7 +721,7 @@ export class Fn extends Statement {
 
 /**
  * ユーザークラスの宣言。機器APIのクラスとは異なり、元ソースのメソッド本体を保持する。
- * 第1段階では構文木だけを作り、意味解析で実行未対応として拒否する。
+ * フィールド配置・メソッドの一意名・GC本体型は意味解析で決定する。
  */
 export class ClassDefinition extends Statement {
     /**

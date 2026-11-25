@@ -285,7 +285,12 @@ export class PythonDebuggerView {
         this.raw.textContent = rawText || "スロットなし";
     }
 
-    /** 構造体の末端・全スロットを含む共通の値表記。int・PC・BP・IDには小数点を付けない。 */
+    /**
+     * 全スロットに共通する値表記。GC本体はIDを表示する。
+     * @param value 表示する値。
+     * @param snapshot 同一停止の文字列・本体。
+     * @returns 文字列化した値。int・PC・BP・IDには小数点を付けない。
+     */
     private value(value: DebugValue, snapshot: DebugSnapshot): string {
         switch (value.tag) {
             case 0:
@@ -304,6 +309,8 @@ export class PythonDebuggerView {
             }
             case 7:
                 return `handle=${value.value} (classId=${value.classId})`;
+            case 8:
+                return `参照 #${value.value} (classId=${value.classId})`;
             default:
                 return String(value.value);
         }
@@ -312,11 +319,20 @@ export class PythonDebuggerView {
     /**
      * 指定フレームの変数を名前と型に合わせて表示する。
      *
-     * 局所欄は仮引数を含み、global宣言・一時領域・管理値は除外する。構造体は宣言順の幅で再帰展開する。
+     * 局所欄は仮引数を含み、global宣言・一時領域・管理値は除外する。
+     * @param variables 表示する変数定義。
+     * @param slots 対象フレームのValue列。
+     * @param base フレームの先頭。
+     * @param limit フレーム領域の末尾直後。
+     * @param info 同一コンパイルの情報。
+     * @param snapshot 同一停止の本体・文字列。
+     * @returns 変数欄のDOM。
+     * @throws {Error} スロット範囲や本体型が不正な場合。
      */
     private variables(variables: readonly PythonVariable[], slots: readonly DebugValue[], base: number, limit: number,
         info: PythonDebugInfo, snapshot: DebugSnapshot): HTMLElement {
         const result = document.createElement("div");
+        const expanded = new Set<number>();
         if (variables.length === 0) {
             result.textContent = "変数なし";
         }
@@ -326,29 +342,47 @@ export class PythonDebuggerView {
             if (variable.slot < 0 || slot + valueSlotTypes(type, info.api).length > limit) {
                 throw new Error(`変数 ${variable.name} のスロット範囲が一致しません。`);
             }
-            result.append(this.variable(variable.name, type, slot, slots, info, snapshot));
+            result.append(this.variable(variable.name, type, slot, slots, info, snapshot, expanded));
         }
         return result;
     }
 
-    /** recordはフラットな末端スロットを名前付きの木へ戻す。機器のObjectは不透明ハンドルとして表示する。 */
+    /**
+     * 本体IDをたどってフィールドを表示する。共有・循環は参照行にして重複展開しない。
+     * @param name 変数またはフィールド名。
+     * @param type コンパイル時の型。
+     * @param slot 対象Valueの位置。
+     * @param slots 対象のValue列。
+     * @param info 同一コンパイルの名前・型情報。
+     * @param snapshot 同一停止の本体と文字列。
+     * @param expanded この表示内で展開済みの本体ID。
+     * @param depth 表示の入れ子深さ。64段で参照行へ切り替える。
+     * @returns 表示用DOM。
+     */
     private variable(name: string, type: PythonType, slot: number, slots: readonly DebugValue[],
-        info: PythonDebugInfo, snapshot: DebugSnapshot): HTMLElement {
+        info: PythonDebugInfo, snapshot: DebugSnapshot, expanded: Set<number>, depth = 0): HTMLElement {
         const owner = type.kind === "object" ? info.api.classes.find(item => item.id === type.classId) : undefined;
         const typeName = owner?.name ?? type.kind;
-        if (owner?.kind === "record") {
+        if (owner?.kind === "record" && slots[slot]?.tag === 8) {
+            const id = Number(slots[slot].value);
+            const body = snapshot.objects.get(id);
+            if (body === undefined || body.classId !== owner.id || body.fields.length !== owner.fields.length) {
+                throw new Error("停止データの本体型・フィールド数がコンパイル情報と一致しません。");
+            }
+            if (expanded.has(id) || depth >= 64) {
+                return textElement("div", `${name}: ${typeName} → 参照 #${id}`);
+            }
+            expanded.add(id);
             const details = document.createElement("details");
             details.open = true;
-            details.append(textElement("summary", `${name}: ${typeName}`));
+            details.append(textElement("summary", `${name}: ${typeName} #${id}`));
             const children = document.createElement("div");
             children.style.paddingLeft = "18px";
-            let offset = slot;
-            for (const field of owner.fields) {
-                children.append(this.variable(field.name, field.type, offset, slots, info, snapshot));
-                offset += valueSlotTypes(field.type, info.api).length;
+            for (const [index, field] of owner.fields.entries()) {
+                children.append(this.variable(field.name, field.type, index, body.fields, info, snapshot, expanded, depth + 1));
             }
             if (owner.fields.length === 0) {
-                children.textContent = slots[slot]?.tag === 0 ? "未初期化" : "メンバーなし";
+                children.textContent = "メンバーなし";
             }
             details.append(children);
             return details;

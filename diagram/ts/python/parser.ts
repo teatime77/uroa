@@ -341,7 +341,7 @@ export class Parser {
 
     /**
      * クラス名と本体を読む。継承・入れ子のクラスは対象外とする。
-     * 型とフィールド配置は後段の責務で、第1段階では意味解析が実行未対応として拒否する。
+     * 型・フィールド配置とクラス本体の制約は後段の意味解析で検査する。
      * @returns クラス名・本体・元位置を保持したクラス宣言。
      * @throws {SyntaxError} 定義位置・継承指定・本体の構文が不正な場合。
      */
@@ -775,7 +775,7 @@ export function parsePython(text: string): Module {
     return module;
 }
 
-/** 開発用入口は意味解析付きアセンブリとversion=3のバイト列を表示する。通信は行わない。 */
+/** 開発用入口は意味解析付きアセンブリとversion=4のバイト列を表示する。通信は行わない。 */
 export async function testPython(){
     const text = await fetchText("/diagram/python/a.py")
     msg(`python:${text}`)

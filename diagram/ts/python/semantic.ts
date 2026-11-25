@@ -3,10 +3,10 @@
  * parser.tsの同期構文解析とは分離し、構文木を入力として意味解析結果を返す。
  * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理から利用する。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
- * アセンブリ・version=3のバイトコード生成はbytecode.tsがこの結果を利用する。
+ * アセンブリ・version=4のバイトコード生成はbytecode.tsがこの結果を利用する。
  * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
- * 第1段階のclass・NumPy呼出しは構文と宣言だけを扱い、実行未対応の診断で生成を止める。
- * 新形式のBLE転送・受信形式検証はble-wifi側、値コピーと呼出しの実行はESP32の
+ * ユーザークラスとrecordはGC本体を参照する。NumPyの実行は後続段階まで拒否する。
+ * 新形式のBLE転送・受信形式検証はble-wifi側、参照共有と呼出しの実行はESP32の
  * bytecode_vm.cppが担当する。生成スタブはdevice_api.generated.cppからdevice_native.cppを呼ぶ。
  */
 import {
@@ -19,8 +19,8 @@ import { bindModuleArguments, readModuleDefinitions } from "./module-api";
 import type { ModuleCallBinding, ModuleDefinition } from "./module-api";
 
 /**
- * 意味解析で扱う数値・文字列・None・APIオブジェクトの型。
- * objectはAPIクラスのIDで区別する。errorは既知の問題に依存する値を表す回復用の型で、
+ * 意味解析で扱う数値・文字列・None・ユーザー／APIオブジェクトの型。
+ * objectは共通クラス表のIDで区別する。errorは既知の問題に依存する値を表す回復用の型で、
  * 機器APIのJSON・バイトコードには出力しない。
  */
 export type PythonType = { /** 数値・文字列・None・APIオブジェクト・回復用エラーを区別する型種別。 */ kind: "int" | "float" | "str" | "none" | "error" }
@@ -74,8 +74,16 @@ export interface DeviceField {
     writable: boolean;
 }
 
-/** APIクラスの定義。recordは値コピーの対象、deviceはフィールドを持たない機器ハンドル。 */
+/** APIとユーザークラスの定義。recordはGC本体、deviceは不透明な機器ハンドル。 */
 export interface DeviceClass {
+    /**
+     * ユーザークラスの元宣言。API定義では設定しない。
+     */
+    userClass?: ClassDefinition;
+    /**
+     * ユーザーメソッドの名前と推論状態。APIのnativeメソッドとは分離する。
+     */
+    userMethods?: Map<string, PythonFunction>;
     /**
      * 所属する定義一覧で名前解決に使う数値識別子。
      */
@@ -85,7 +93,7 @@ export interface DeviceClass {
      */
     name: string;
     /**
-     * 宣言順に値コピーするrecordと、ハンドルで扱うdeviceの区別。
+     * GC本体への参照で扱うrecordと、不透明ハンドルで扱うdeviceの区別。
      */
     kind: "record" | "device";
     /**
@@ -164,6 +172,14 @@ export interface PythonVariable {
 /** ユーザー関数の束縛と推論状態。全呼出し箇所で単一の仮引数型・戻り値型を共有する。 */
 export interface PythonFunction {
     /**
+     * コンパイル時の一意名。メソッドではClass.methodとする。
+     */
+    name: string;
+    /**
+     * メソッドの所属クラス。通常関数では未指定。
+     */
+    owner?: DeviceClass;
+    /**
      * 元ソースの位置と構造を保持する宣言ノード。
      */
     node: Fn;
@@ -193,6 +209,14 @@ export type PythonBinding = { /** この共用型の要素を区別する種別�
 
 /** 呼出し式の解決先。API呼出しのIDと型、またはユーザー関数の推論状態を生成器へ渡す。 */
 export type PythonCall = { /** この共用型の要素を区別する種別。 */ kind: "constructor" | "method"; /** 解決したメソッドまたはフィールドを所有するAPIクラス。 */ owner: DeviceClass; /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: DeviceCallable }
+    | {
+        /** ユーザーの本体生成またはメソッド呼出し。 */
+        kind: "userConstructor" | "userMethod";
+        /** 生成・呼出し対象のクラス。 */
+        owner: DeviceClass;
+        /** 初期化関数またはメソッド。暗黙の空コンストラクタでは未指定。 */
+        definition?: PythonFunction;
+    }
     | { /** この共用型の要素を区別する種別。 */ kind: "native"; /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: DeviceCallable }
     | { /** この共用型の要素を区別する種別。 */ kind: "function"; /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: PythonFunction };
 
@@ -375,17 +399,17 @@ function readCallable(value: unknown, path: string, constructor = false): Device
 
 /**
  * 未検証のJSONから、名前解決に使う機器API定義を作る。
- * schemaVersion/callingConventionVersion=2、stringPolicyVersion=1とABI指紋の形式を検証する。
+ * schemaVersion/callingConventionVersion=3、stringPolicyVersion=2とABI指紋の形式を検証する。
  * ID・名前の重複、型参照、メンバーの公開権限、コンストラクターの結果型を検査する。
  * nativeIdは全呼出し定義で一意とし、文字列引数はprint・Display.printのtextだけに許す。
- * recordの空定義・循環・スロット数はvalueSlotTypesで検証する。指紋の再計算は行わない。
+ * recordとdeviceのID参照を検証する。nativeのC++値型の循環は生成器が拒否する。指紋の再計算は行わない。
  * @param value 未検証のdevice-api.jsonの内容。
  * @returns 検証済みのAPI定義。JSONの宣言順を保持する。
  * @throws 形式・参照・制約に違反する場合のError。
  */
 function readDeviceApi(value: unknown): DeviceApi {
     const data = record(value, "$");
-    if (data.schemaVersion !== 2 || data.callingConventionVersion !== 2 || data.stringPolicyVersion !== 1
+    if (data.schemaVersion !== 3 || data.callingConventionVersion !== 3 || data.stringPolicyVersion !== 2
         || typeof data.abiHash !== "string" || !/^[0-9a-f]{64}$/.test(data.abiHash)) {
         invalidApi("version/abiHash");
     }
@@ -483,7 +507,7 @@ function readDeviceApi(value: unknown): DeviceApi {
         || functions.some(fn => fn.name === module.name))) {
         invalidApi("modules（既存API名と衝突）");
     }
-    const api = { schemaVersion: 2, callingConventionVersion: 2, stringPolicyVersion: 1,
+    const api = { schemaVersion: 3, callingConventionVersion: 3, stringPolicyVersion: 2,
         abiHash: data.abiHash, classes, functions, modules };
     for (const owner of classes) {
         valueSlotTypes({ kind: "object", classId: owner.id }, api);
@@ -492,41 +516,21 @@ function readDeviceApi(value: unknown): DeviceApi {
 }
 
 /**
- * recordを入れ子も含めて末端フィールドの型列へ展開する。
- * 値コピーの配置をbytecode.tsと共有し、ID順ではなくJSONの宣言順で並べる。
- * Vec3は3、IMUValueは6スロット。device・数値・None・内部文字列は1スロットとする。
+ * すべてのPython値を1スロットへ配置する。record・ユーザー本体はGC参照を格納する。
+ * Vec3とIMUValueの入れ子も参照で保持し、メンバーは本体内の宣言順Valueへ配置する。
  * @param type 配置する型。意味解析の回復用のerrorは指定できない。
  * @param api クラスIDを解決するAPI定義。
- * @param ancestors 循環検出用の展開中のクラスID列。通常の呼出しでは省略する。
  * @returns 各スロットに格納する型の列。
- * @throws error型、未知のクラス、空・循環record、65535スロット超過の場合のError。
+ * @throws error型または未知のクラスの場合のError。
  */
-export function valueSlotTypes(type: PythonType, api: DeviceApi, ancestors: readonly number[] = []): PythonType[] {
+export function valueSlotTypes(type: PythonType, api: DeviceApi): PythonType[] {
     if (type.kind === "error") {
         throw new Error("意味エラーを含む型はスロットへ配置できません");
     }
-    if (type.kind !== "object") {
-        return [type];
+    if (type.kind === "object" && !api.classes.some(owner => owner.id === type.classId)) {
+        invalidApi(`classId=${type.classId}`);
     }
-    const owner = api.classes.find(item => item.id === type.classId);
-    if (owner === undefined || ancestors.includes(type.classId)) {
-        invalidApi(`classId=${type.classId}（未知または循環するrecord）`);
-    }
-    if (owner.kind === "device") {
-        return [type];
-    }
-    if (owner.fields.length === 0) {
-        invalidApi(`${owner.name}（空のrecord）`);
-    }
-    const result: PythonType[] = [];
-    for (const field of owner.fields) {
-        const fields = valueSlotTypes(field.type, api, [...ancestors, owner.id]);
-        if (result.length + fields.length > 65535) {
-            invalidApi(`${owner.name}（スロット数の上限超過）`);
-        }
-        result.push(...fields);
-    }
-    return result;
+    return [type];
 }
 
 /**
@@ -632,6 +636,8 @@ class PythonResolver {
      * importなしで解決するAPIクラス名と定義の索引。
      */
     private readonly classes: Map<string, DeviceClass>;
+    /** __init__のself代入から決める固定フィールド名と宣言位置。型は反復中に推論する。 */
+    private readonly userFields = new Map<DeviceClass, Map<string, AbstractSyntaxNode>>();
     /**
      * モジュール直下のimportから作る別名対応。実行時のモジュールオブジェクトは作らない。
      */
@@ -661,7 +667,8 @@ class PythonResolver {
      * @param api 検証済みのAPI定義。
      */
     constructor(/** この処理が対象とする構文解析済みのモジュール。 */ private readonly module: Module, /** 検証済みの機器API定義。型参照・nativeId・ABI指紋を共有する。 */ private readonly api: DeviceApi) {
-        this.classes = new Map(api.classes.map(item => [item.name, item]));
+        this.api = { ...api, classes: [...api.classes] };
+        this.classes = new Map(this.api.classes.map(item => [item.name, item]));
         this.nativeFunctions = new Map(api.functions.map(item => [item.name, item]));
     }
 
@@ -713,6 +720,9 @@ class PythonResolver {
         if (sameType(left, right)) {
             return left;
         }
+        if (left.kind === "none" && right.kind === "object" || right.kind === "none" && left.kind === "object") {
+            return left.kind === "object" ? left : right;
+        }
         if (numeric(left) && numeric(right)) {
             return floatType;
         }
@@ -757,6 +767,101 @@ class PythonResolver {
     private reserved(name: string): boolean {
         return ["True", "False", "None"].includes(name) || this.classes.has(name)
             || this.nativeFunctions.has(name) || this.moduleAliases.has(name);
+    }
+
+    /**
+     * ユーザークラスとメソッドを登録し、__init__のself代入から固定フィールド名を収集する。
+     * @details 継承・クラス変数・動的フィールド追加は扱わない。型は全呼出しを反復して推論する。
+     */
+    private registerClasses(): void {
+        for (const statement of this.module.block.statements) {
+            if (!(statement instanceof ClassDefinition)) {
+                continue;
+            }
+            if (this.reserved(statement.name)) {
+                this.fail(statement, `クラス名が重複・衝突しています: ${statement.name}`);
+                continue;
+            }
+            const id = Math.max(0, ...this.api.classes.map(owner => owner.id)) + 1;
+            if (id > 65535) {
+                this.fail(statement, "クラス数が上限を超えています");
+                continue;
+            }
+            const owner: DeviceClass = { id, name: statement.name, kind: "record", constructor: null,
+                methods: [], fields: [], userClass: statement, userMethods: new Map() };
+            this.api.classes.push(owner);
+            this.classes.set(owner.name, owner);
+            const declarations = new Map<string, AbstractSyntaxNode>();
+            this.userFields.set(owner, declarations);
+            for (const member of statement.block.statements) {
+                if (!(member instanceof Fn)) {
+                    if (member.keyword !== "pass" && !(member instanceof CallStatement && member.app instanceof Str)) {
+                        this.fail(member, "クラス本体はメソッド・pass・説明文字列だけに対応しています");
+                    }
+                    continue;
+                }
+                if (owner.userMethods!.has(member.name) || member.args[0]?.name !== "self") {
+                    this.fail(member, "メソッド名の重複、または先頭引数selfがありません");
+                    continue;
+                }
+                const globalNames = collectScopeGlobals(member.block, member.args, (node, message) => {
+                    this.fail(node, message);
+                });
+                const fn: PythonFunction = { name: `${owner.name}.${member.name}`, owner, node: member,
+                    parameters: [], variables: new Map(), globalNames, type: undefined };
+                owner.userMethods!.set(member.name, fn);
+                this.functions.set(fn.name, fn);
+                if (member.name === "__init__") {
+                    const nodes: AbstractSyntaxNode[] = [];
+                    member.block.getAll(nodes);
+                    for (const node of nodes) {
+                        if (!(node instanceof App) || !node.isAssignmentApp()) {
+                            continue;
+                        }
+                        const target = node.args[0];
+                        if (target instanceof App && target.fncName === "." && target.args[0] instanceof RefVar
+                            && target.args[0].name === "self" && target.args[1] instanceof RefVar) {
+                            declarations.set(target.args[1].name, target);
+                        }
+                    }
+                }
+            }
+            for (const [name, node] of declarations) {
+                if (owner.userMethods!.has(name)) {
+                    this.fail(node, `フィールドとメソッドの名前が衝突しています: ${owner.name}.${name}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * ユーザーメソッドの明示引数を仮引数型へ統合する。
+     * @param app 診断位置となる呼出し式。
+     * @param args ソース順の引数。通常メソッドはselfを含む。
+     * @param fn 呼出し先の推論状態。
+     * @param offset コンストラクタが暗黙に渡すselfを除外する場合は1。
+     * @returns 推論済みの戻り値型。不正な個数・型ならerror。
+     */
+    private userArguments(app: App, args: Term[], fn: PythonFunction, offset = 0): PythonType | undefined {
+        let valid = args.length === fn.parameters.length - offset;
+        if (valid) {
+            this.validCalls.add(fn);
+        }
+        else {
+            this.invalidCalls.add(fn);
+            this.fail(app, `${fn.name}の引数は${fn.parameters.length - offset}個必要です`);
+        }
+        for (const [index, argument] of args.entries()) {
+            const actual = this.expression(argument);
+            const parameter = fn.parameters[index + offset];
+            if (valid && parameter !== undefined) {
+                this.update(parameter, actual, argument);
+            }
+            if (actual?.kind === "error" || parameter?.type?.kind === "error") {
+                valid = false;
+            }
+        }
+        return valid ? fn.type : errorType;
     }
 
     /**
@@ -860,7 +965,12 @@ class PythonResolver {
      */
     private collect(block: BlockStatement, scope?: PythonFunction): void {
         for (const statement of block.statements) {
-            if (statement instanceof Fn) {
+            if (statement instanceof ClassDefinition) {
+                if (scope !== undefined || this.classes.get(statement.name)?.userClass !== statement) {
+                    this.fail(statement, "クラスはモジュール先頭に宣言してください");
+                }
+            }
+            else if (statement instanceof Fn) {
                 if (!this.invalidDeclarations.has(statement)
                     && (scope !== undefined || this.functions.get(statement.name)?.node !== statement)) {
                     this.fail(statement, "関数定義はモジュール先頭だけに置けます");
@@ -956,6 +1066,7 @@ class PythonResolver {
             return false;
         }
         if (this.checking && actual !== undefined && !sameType(actual, expected)
+            && !(actual.kind === "none" && expected.kind === "object")
             && !(actual.kind === "int" && expected.kind === "float")) {
             this.fail(node, `${this.typeName(expected)}が必要です: ${this.typeName(actual)}`);
             return false;
@@ -1001,6 +1112,9 @@ class PythonResolver {
             return undefined;
         }
         const definition = owner.fields.find(item => item.name === member.name);
+        if (definition === undefined && owner.userClass && this.userFields.get(owner)?.has(member.name) && !this.checking) {
+            return undefined;
+        }
         if (owner.kind !== "record" || definition === undefined || !(write ? definition.writable : definition.readable)) {
             this.remember(app, this.fail(member, `${owner.name}.${member.name}は${write ? "代入" : "参照"}できるフィールドではありません`));
             return undefined;
@@ -1066,6 +1180,14 @@ class PythonResolver {
                 }
                 return this.types.get(attribute.args[0])?.kind === "error" ? errorType : undefined;
             }
+            if (owner.userClass) {
+                const method = owner.userMethods!.get(member.name);
+                if (method === undefined) {
+                    return this.fail(member, `${owner.name}に指定のメソッドがありません: ${member.name}`);
+                }
+                this.calls.set(app, { kind: "userMethod", owner, definition: method });
+                return this.userArguments(app, [attribute.args[0], ...app.args.slice(1)], method);
+            }
             const method = owner.methods.find(item => item.name === member.name);
             if (method === undefined) {
                 for (const argument of app.args.slice(1)) {
@@ -1079,6 +1201,19 @@ class PythonResolver {
         const binding = this.binding(app.fnc);
         if (binding.kind === "class") {
             const owner = binding.definition;
+            if (owner.userClass) {
+                const init = owner.userMethods!.get("__init__");
+                this.calls.set(app, { kind: "userConstructor", owner, definition: init });
+                if (init === undefined) {
+                    if (app.args.length !== 0) {
+                        return this.fail(app, `${owner.name}のコンストラクタは引数なしです`);
+                    }
+                }
+                else {
+                    this.userArguments(app, app.args, init, 1);
+                }
+                return { kind: "object", classId: owner.id };
+            }
             if (owner.constructor === null) {
                 for (const argument of app.args) {
                     this.expression(argument, true);
@@ -1189,6 +1324,11 @@ class PythonResolver {
             const types = app.args.map(term => this.expression(term));
             let valid = !types.some(type => type?.kind === "error");
             for (const [index, comparison] of app.comparisonOperators.entries()) {
+                if (["is", "is not"].includes(comparison) && [types[index], types[index + 1]]
+                    .some(type => type !== undefined && type.kind !== "object" && type.kind !== "none" && type.kind !== "error")) {
+                    this.fail(app, "is / is notはオブジェクトとNoneだけに使用できます");
+                    valid = false;
+                }
                 if (["in", "not in"].includes(comparison)) {
                     this.fail(app, "コンテナの比較には対応していません");
                     valid = false;
@@ -1230,13 +1370,14 @@ class PythonResolver {
 
     /**
      * 式を解析して型を記録する。クラス・関数・メソッドの値としての利用は拒否する。
-     * 通常文字列・f文字列はstr宣言の表示API引数だけに許し、通常の値には使えない。
+     * 通常文字列・f文字列を変数・フィールド・引数・戻り値へ格納できる。
+     * 数値APIが要求する位置では文字列を拒否する。実際の文字列本体の保持はVMが担当する。
      * エラー回復用にtext=trueで解析する場合も、f文字列内の独立した問題は検出する。
      * @param term 解析する式。
      * @param text 文字列を許す引数位置、またはエラー回復用の解析か。
      * @returns 記録した型。推論途中はundefined、意味エラーはerror。
      */
-    private expression(term: Term, text = false): PythonType | undefined {
+    private expression(term: Term, text = true): PythonType | undefined {
         let type: PythonType | undefined;
         if (term instanceof ConstNum) {
             type = /[.eE]/.test(term.text) ? floatType : intType;
@@ -1270,7 +1411,8 @@ class PythonResolver {
 
     /**
      * 単純代入・複合代入を解析し、変数の型または公開フィールドの型制約へ反映する。
-     * 変数は既存の型と統合し、フィールドは宣言型を変更せず適合性を検査する。
+     * 変数とユーザーフィールドは既存の型と統合し、APIフィールドは宣言型への適合性を検査する。
+     * ユーザーフィールド名は__init__のself属性代入で固定する。通常関数からの参照格納も許す。
      * 不正な変数宣言でも右辺の解析は続ける。累乗の複合代入には対応しない。
      * @param app 代入先と右辺を引数に持つ代入式。
      */
@@ -1312,6 +1454,30 @@ class PythonResolver {
             this.remember(target, binding.variable.type);
         }
         else if (target instanceof App && target.fncName === ".") {
+            const owner = this.owner(target.args[0]);
+            const member = target.args[1];
+            if (owner?.userClass && member instanceof RefVar && this.userFields.get(owner)?.has(member.name)) {
+                let definition = owner.fields.find(field => field.name === member.name);
+                if (type !== undefined && type.kind !== "error") {
+                    if (definition === undefined) {
+                        definition = { id: 0, name: member.name, type, readable: true, writable: true };
+                        owner.fields.push(definition);
+                        this.changed = true;
+                    }
+                    else {
+                        const merged = this.merge(definition.type, type, target);
+                        if (merged !== undefined && !sameType(merged, definition.type)) {
+                            definition.type = merged;
+                            this.changed = true;
+                        }
+                    }
+                }
+                if (definition !== undefined) {
+                    this.fields.set(target, { owner, definition });
+                    this.remember(target, definition.type);
+                }
+                return;
+            }
             const field = this.field(target, true);
             if (field !== undefined) {
                 this.compatible(type, field.type, right);
@@ -1351,7 +1517,6 @@ class PythonResolver {
      */
     private statement(statement: Statement): void {
         if (statement instanceof ClassDefinition) {
-            this.fail(statement, "ユーザークラスは構文解析のみ対応しています。生成・実行は第3段階で追加します");
             return;
         }
         if (statement.keyword === "import") {
@@ -1378,6 +1543,9 @@ class PythonResolver {
                 return;
             }
             this.update(this.scope, type, statement);
+            if (this.scope.owner && this.scope.node.name === "__init__" && type !== undefined && type.kind !== "none") {
+                this.fail(statement, "__init__は値を返せません");
+            }
         }
         else if (statement instanceof IfStatement) {
             this.expression(statement.condition);
@@ -1449,9 +1617,16 @@ class PythonResolver {
      */
     resolve(): PythonAnalysis {
         this.registerModuleImports();
+        this.registerClasses();
         let executable = false;
         for (const statement of this.module.block.statements) {
             if (statement instanceof GlobalStatement || statement.keyword === "import") {
+                continue;
+            }
+            if (statement instanceof ClassDefinition) {
+                if (executable) {
+                    this.fail(statement, "クラス定義は実行文より前に置いてください");
+                }
                 continue;
             }
             if (!(statement instanceof Fn)) {
@@ -1466,7 +1641,7 @@ class PythonResolver {
             const globalNames = collectScopeGlobals(statement.block, statement.args, (node, message) => {
                 this.fail(node, message);
             });
-            this.functions.set(statement.name, { node: statement, parameters: [], variables: new Map(), globalNames, type: undefined });
+            this.functions.set(statement.name, { name: statement.name, node: statement, parameters: [], variables: new Map(), globalNames, type: undefined });
         }
         collectScopeGlobals(this.module.block, [], (node, message) => {
             this.fail(node, message);
@@ -1486,6 +1661,9 @@ class PythonResolver {
                     declaration: parameter, type: errorType });
             }
             this.collect(fn.node.block, fn);
+            if (fn.owner && fn.parameters.length !== 0) {
+                fn.parameters[0].type = { kind: "object", classId: fn.owner.id };
+            }
         }
         const nodes: AbstractSyntaxNode[] = [];
         this.module.getAll(nodes);
@@ -1531,6 +1709,20 @@ class PythonResolver {
         }
         if (unresolved) {
             this.infer(limit);
+        }
+        for (const [owner, declarations] of this.userFields) {
+            const ordered: DeviceField[] = [];
+            for (const [name, node] of declarations) {
+                const field = owner.fields.find(item => item.name === name);
+                if (field === undefined) {
+                    this.fail(node, `フィールドの型を推論できません: ${owner.name}.${name}`);
+                }
+                else {
+                    field.id = ordered.length + 1;
+                    ordered.push(field);
+                }
+            }
+            owner.fields = ordered;
         }
         // 診断を含む結果のslotは全て-1のまま返し、部分的な配置を生成器へ渡さない。
         if (this.diagnostics.length === 0) {
