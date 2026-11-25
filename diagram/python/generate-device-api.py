@@ -314,14 +314,14 @@ class InterfaceParser:
         classId相当のidはクラス宣言順、functionId相当のidは関数宣言順で
         それぞれ1から付ける。各IDの上限は65535とする。
 
-        JSONのschemaVersion/callingConventionVersionは4、
+        JSONのschemaVersion/callingConventionVersionは5、
         stringPolicyVersionは2とし、classes/functionsを出力する。
         class numpyはクラスIDを持たない組込みモジュール宣言としてmodule_api.pyへ渡す。
         moduleDefinitionVersion=1とmodulesを追加し、引数番号・省略可否・型もABI指紋に含める。
         module定義の追加はnativeIdの採番を変更しない。
         module関数のIDはモジュール内だけの番号。NumPyはCALL_NUMPYからnumpy_native.cppへ渡し、
         既存CALL_NATIVEのnativeIdを割り当てない。dtype/rankはバイトコードの本体型表にも保持する。
-        呼出し規約version=4ではrecordとユーザー本体は1スロットのGC参照とし、
+        呼出し規約version=5ではrecordとユーザー本体は1スロットのGC参照とし、
         代入・引数・戻り値で共有する。deviceは従来の1スロットのハンドルを使う。
         C++バックエンドのrecord値型との変換は生成スタブが担当する。
         文字列は変数・メンバー・ユーザー関数の引数と戻り値にも保持できる。
@@ -367,8 +367,8 @@ class InterfaceParser:
             else:
                 functions.append(self.read_callable(node, len(functions) + 1))
         result = {
-            "schemaVersion": 4,
-            "callingConventionVersion": 4,
+            "schemaVersion": 5,
+            "callingConventionVersion": 5,
             "stringPolicyVersion": 2,
             "classes": classes,
             "functions": functions,

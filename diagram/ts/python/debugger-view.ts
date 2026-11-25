@@ -366,7 +366,8 @@ export class PythonDebuggerView {
         if (owner?.kind === "record" && slots[slot]?.tag === 8) {
             const id = Number(slots[slot].value);
             const body = snapshot.objects.get(id);
-            if (body === undefined || body.classId !== owner.id || body.fields.length !== owner.fields.length) {
+            if (body === undefined || body.classId !== owner.id
+                || (owner.array?.dtype === "object" ? body.fields.length !== body.array?.size : body.fields.length !== owner.fields.length)) {
                 throw new Error("停止データの本体型・フィールド数がコンパイル情報と一致しません。");
             }
             if (owner.array === undefined ? body.array !== undefined
@@ -377,6 +378,9 @@ export class PythonDebuggerView {
                 return textElement("div", `${name}: ${typeName} → 参照 #${id}`);
             }
             expanded.add(id);
+            if (body.array?.dtype === "object") {
+                return this.objectArrayVariable(name, id, body, owner.array!.elementType!, info, snapshot, expanded, depth);
+            }
             if (body.array) {
                 return this.arrayVariable(name, id, body.array);
             }
@@ -429,6 +433,51 @@ export class PythonDebuggerView {
         const content = textElement("pre", lines.join("\n"));
         Object.assign(content.style, { marginLeft: "18px", maxHeight: "320px", overflow: "auto" });
         details.append(content);
+        return details;
+    }
+
+    /**
+     * object配列の要素を同じ参照表示へ接続する。128要素・深さ64・共有IDの上限を維持する。
+     * @param name 変数またはメンバー名。
+     * @param id 配列本体ID。
+     * @param body 形状と要素Value列。
+     * @param elementType 推論後の単一要素型。格納元がなければNone。
+     * @param info 同じコンパイルのクラス情報。
+     * @param snapshot 同一停止の全本体と文字列。
+     * @param expanded この表示で展開済みのID。自分自身は既に登録済み。
+     * @param depth 現在の表示深さ。
+     * @returns 再帰表示するDOM。
+     * @throws {Error} 要素が宣言型と一致しない場合。
+     */
+    private objectArrayVariable(name: string, id: number, body: DebugObject, elementType: PythonType,
+        info: PythonDebugInfo, snapshot: DebugSnapshot, expanded: Set<number>, depth: number): HTMLElement {
+        const array = body.array!;
+        const owner = elementType.kind === "object" ? info.api.classes.find(item => item.id === elementType.classId) : undefined;
+        const tag = owner?.kind === "device" ? 7 : 8;
+        if (body.fields.some(value => value.tag !== 3 && (owner === undefined || value.tag !== tag || value.classId !== owner.id))) {
+            throw new Error("object配列の要素型がコンパイル情報と一致しません。");
+        }
+        const details = document.createElement("details");
+        details.open = true;
+        details.append(textElement("summary", `${name}: ndarray #${id}, dtype=object, shape=(${array.shape.join(", ")}), 要素=${owner?.name ?? "None"}`));
+        const children = document.createElement("div");
+        children.style.paddingLeft = "18px";
+        for (let index = 0; index < Math.min(array.size, 128); index++) {
+            let remainder = index;
+            const indices = new Array<number>(array.shape.length);
+            for (let axis = array.shape.length - 1; axis >= 0; axis--) {
+                indices[axis] = remainder % array.shape[axis];
+                remainder = Math.floor(remainder / array.shape[axis]);
+            }
+            children.append(this.variable(`[${indices.join(", ")}]`, elementType, index, body.fields, info, snapshot, expanded, depth + 1));
+        }
+        if (array.size > 128) {
+            children.append(textElement("div", `… 残り${array.size - 128}要素（表示は先頭128要素まで）`));
+        }
+        if (array.size === 0) {
+            children.textContent = "要素なし";
+        }
+        details.append(children);
         return details;
     }
 }

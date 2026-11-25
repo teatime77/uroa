@@ -3,9 +3,9 @@
  * parser.tsの同期構文解析とは分離し、構文木を入力として意味解析結果を返す。
  * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理から利用する。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
- * アセンブリ・version=5のバイトコード生成はbytecode.tsがこの結果を利用する。
+ * アセンブリ・version=6のバイトコード生成はbytecode.tsがこの結果を利用する。
  * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
- * ユーザークラス・record・数値ndarrayはGC本体を参照する。object配列は後続段階で扱う。
+ * ユーザークラス・record・数値／object ndarrayはGC本体を参照し、共有・循環を許す。
  * 新形式のBLE転送・受信形式検証はble-wifi側、参照共有と呼出しの実行はESP32の
  * bytecode_vm.cppが担当する。生成スタブはdevice_api.generated.cppからdevice_native.cppを呼ぶ。
  */
@@ -76,12 +76,14 @@ export interface DeviceField {
 
 /** APIとユーザークラスの定義。recordはGC本体、deviceは不透明な機器ハンドル。 */
 export interface DeviceClass {
-    /** 数値ndarrayの静的型。長さは型に含めず、各呼出しで実行時に決める。 */
+    /** ndarrayの静的型。長さは型に含めず、各呼出しで実行時に決める。 */
     array?: {
         /** 要素表現。 */
-        dtype: "float32" | "uint8";
+        dtype: "float32" | "uint8" | "object";
         /** 固定の次元数。 */
         rank: number;
+        /** object配列の単一要素型。推論中は未定、参照型とNoneだけを許す。 */
+        elementType?: PythonType;
     };
     /**
      * ユーザークラスの元宣言。API定義では設定しない。
@@ -249,7 +251,7 @@ export interface PythonDiagnostic {
  * 診断がある場合も部分的な解決情報を返すが、変数のslotはすべて-1とする。
  */
 export interface PythonAnalysis {
-    /** 数値NumPy呼出しの評価順・型と、省略しなかったoptionId/値の対応。 */
+    /** NumPy呼出しの評価順・型と、省略しなかったoptionId/値の対応。 */
     numpyCalls: ReadonlyMap<App, PythonNumpyCall>;
     /** 添字・配列属性・lenの静的な操作種別。 */
     arrayOperations: ReadonlyMap<App, PythonArrayOperation>;
@@ -289,7 +291,7 @@ export interface PythonNumpyCall {
     owner: DeviceClass;
     /** shape式を各軸へ分けた未評価式。 */
     shape: Term[];
-    /** dtype指定がある場合だけ使うVMコード。Noneは0、float32は1、uint8は2。 */
+    /** dtype指定がある場合だけ使うVMコード。None=0、float32=1、uint8=2、object=3。 */
     dtypeCode: number;
 }
 
@@ -297,7 +299,7 @@ export interface PythonNumpyCall {
 export interface PythonArrayOperation {
     /** 属性名または添字・長さ。 */
     kind: "item" | "shape" | "length" | "size" | "ndim" | "itemsize";
-    /** 対象の数値ndarray型。 */
+    /** 対象のndarray型。 */
     owner: DeviceClass;
 }
 
@@ -430,7 +432,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
 
 /**
  * 未検証のJSONから、名前解決に使う機器API定義を作る。
- * schemaVersion/callingConventionVersion=4、stringPolicyVersion=2とABI指紋の形式を検証する。
+ * schemaVersion/callingConventionVersion=5、stringPolicyVersion=2とABI指紋の形式を検証する。
  * ID・名前の重複、型参照、メンバーの公開権限、コンストラクターの結果型を検査する。
  * nativeIdは全呼出し定義で一意とし、文字列引数はprint・Display.printのtextだけに許す。
  * recordとdeviceのID参照を検証する。nativeのC++値型の循環は生成器が拒否する。指紋の再計算は行わない。
@@ -440,7 +442,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
  */
 function readDeviceApi(value: unknown): DeviceApi {
     const data = record(value, "$");
-    if (data.schemaVersion !== 4 || data.callingConventionVersion !== 4 || data.stringPolicyVersion !== 2
+    if (data.schemaVersion !== 5 || data.callingConventionVersion !== 5 || data.stringPolicyVersion !== 2
         || typeof data.abiHash !== "string" || !/^[0-9a-f]{64}$/.test(data.abiHash)) {
         invalidApi("version/abiHash");
     }
@@ -538,7 +540,7 @@ function readDeviceApi(value: unknown): DeviceApi {
         || functions.some(fn => fn.name === module.name))) {
         invalidApi("modules（既存API名と衝突）");
     }
-    const api = { schemaVersion: 4, callingConventionVersion: 4, stringPolicyVersion: 2,
+    const api = { schemaVersion: 5, callingConventionVersion: 5, stringPolicyVersion: 2,
         abiHash: data.abiHash, classes, functions, modules };
     for (const owner of classes) {
         valueSlotTypes({ kind: "object", classId: owner.id }, api);
@@ -678,13 +680,15 @@ class PythonResolver {
      */
     private readonly validImports = new Set<Statement>();
     /**
-     * 名前と引数番号の対応。数値NumPyの実行情報はnumpyCallsへ分ける。
+     * 名前と引数番号の対応。NumPyの実行情報はnumpyCallsへ分ける。
      */
     private readonly moduleCalls = new Map<App, ModuleCallBinding>();
     /** NumPy生成の型と引数式。反復中も同じノードへ上書きする。 */
     private readonly numpyCalls = new Map<App, PythonNumpyCall>();
     /** 添字・属性・lenをコード生成へ渡す表。 */
     private readonly arrayOperations = new Map<App, PythonArrayOperation>();
+    /** 同じ束縛へ合流したobject配列型の統合先。寿命や実体の所有表ではない。 */
+    private readonly arrayParents = new Map<number, number>();
     /**
      * importなしで解決するAPI関数名と定義の索引。
      */
@@ -737,8 +741,35 @@ class PythonResolver {
     }
 
     /**
+     * 合流したobject配列型の代表を得る。要素型の循環を展開せずIDだけで追跡する。
+     * @param owner 配列または通常クラス。
+     * @returns 型統合後の代表クラス。
+     */
+    private canonicalOwner(owner: DeviceClass): DeviceClass {
+        let id = owner.id;
+        while (this.arrayParents.has(id)) {
+            id = this.arrayParents.get(id)!;
+        }
+        return id === owner.id ? owner : this.api.classes.find(item => item.id === id)!;
+    }
+
+    /**
+     * 参照型のIDを代表へ置き換える。
+     * @param type 推論中または確定した型。
+     * @returns 同じ値種別を持つ正規化型。未定ならundefined。
+     */
+    private canonicalType(type: PythonType | undefined): PythonType | undefined {
+        if (type?.kind !== "object") {
+            return type;
+        }
+        const owner = this.canonicalOwner(this.api.classes.find(item => item.id === type.classId)!);
+        return owner.id === type.classId ? type : { kind: "object", classId: owner.id };
+    }
+
+    /**
      * 変数・式・戻り値に単一の型を割り当てるため、2つの推論結果を統合する。
      * 未定と具体型なら具体型、intとfloatならfloatとし、異なるクラスやNoneと数値は拒否する。
+     * 同じrankのobject配列が束縛へ合流した場合は型IDと要素型を統合する。Noneは参照型に統合できる。
      * errorを伝播し、その値に依存する未定型・型不一致の連鎖報告を抑える。
      * @param left 既存の型。undefinedは推論途中。
      * @param right 新しく得た型。undefinedは推論途中。
@@ -746,6 +777,8 @@ class PythonResolver {
      * @returns 統合した型。両方が未定ならundefined、不整合ならerror。
      */
     private merge(left: PythonType | undefined, right: PythonType | undefined, node: AbstractSyntaxNode): PythonType | undefined {
+        left = this.canonicalType(left);
+        right = this.canonicalType(right);
         if (left?.kind === "error" || right?.kind === "error") {
             return errorType;
         }
@@ -754,6 +787,19 @@ class PythonResolver {
         }
         if (sameType(left, right)) {
             return left;
+        }
+        if (left.kind === "object" && right.kind === "object") {
+            const first = this.api.classes.find(owner => owner.id === left.classId)!;
+            const second = this.api.classes.find(owner => owner.id === right.classId)!;
+            if (first.array?.dtype === "object" && second.array?.dtype === "object" && first.array.rank === second.array.rank) {
+                const root = first.id < second.id ? first : second;
+                const child = root === first ? second : first;
+                // 要素型を統合する前に代表を決め、自分自身や相互参照でも再帰を打ち切る。
+                this.arrayParents.set(child.id, root.id);
+                this.changed = true;
+                root.array!.elementType = this.merge(root.array!.elementType, child.array!.elementType, node);
+                return root.array!.elementType?.kind === "error" ? errorType : { kind: "object", classId: root.id };
+            }
         }
         if (left.kind === "none" && right.kind === "object" || right.kind === "none" && left.kind === "object") {
             return left.kind === "object" ? left : right;
@@ -797,10 +843,10 @@ class PythonResolver {
     /**
      * API名または組込み定数名との衝突を調べる。
      * @param name 宣言候補の名前。
-     * @returns True・False・None・len、クラス名、API関数名、import済み別名のいずれかならtrue。
+     * @returns True・False・None・len・object、クラス名、API関数名、import済み別名のいずれかならtrue。
      */
     private reserved(name: string): boolean {
-        return ["True", "False", "None", "len"].includes(name) || this.classes.has(name)
+        return ["True", "False", "None", "len", "object"].includes(name) || this.classes.has(name)
             || this.nativeFunctions.has(name) || this.moduleAliases.has(name);
     }
 
@@ -936,7 +982,9 @@ class PythonResolver {
 
     /**
      * 別名.関数をモジュール定義へ結び、引数をソース順に対応付ける。
-     * float32/uint8のzeros/emptyを解決する。dtypeは定数、shapeは整数または1～4軸のタプル。
+     * float32/uint8のzeros/emptyとobjectのemptyを解決する。dtypeは定数、shapeは整数または1～4軸のタプル。
+     * object配列は生成式ごとに型を持ち、格納値から単一の参照要素型を推論する。
+     * 変数・仮引数・戻り値・メンバーが合流する場合はmergeで統合する。格納元のない要素は最終的にNone専用。
      * 省略dtypeとNoneの静的結果はC++の既定契約float32と一致させ、値自体の補完はC++に任せる。
      * orderは文字列またはNone、device/likeはNoneだけを許す。実行時の詳細はnumpy_native.cppを参照。
      * @param app 呼出し式。
@@ -976,21 +1024,26 @@ class PythonResolver {
             for (const dimension of shape) {
                 this.requireNumeric(this.expression(dimension), dimension, true);
             }
-            let dtype: "float32" | "uint8" = "float32";
+            let dtype: "float32" | "uint8" | "object" = "float32";
             let dtypeCode = 0;
             for (const { parameter, value } of args) {
                 if (parameter.name === "dtype") {
+                    if (value instanceof RefVar && value.name === "object") {
+                        dtype = "object";
+                        dtypeCode = 3;
+                        continue;
+                    }
                     if (value instanceof RefVar && value.name === "None") {
                         continue;
                     }
                     if (value instanceof App && value.fncName === "." && value.args[0] instanceof RefVar
                         && this.moduleAliases.get(value.args[0].name) === module && value.args[1] instanceof RefVar
-                        && ["float32", "uint8"].includes(value.args[1].name)) {
-                        dtype = value.args[1].name as "float32" | "uint8";
-                        dtypeCode = dtype === "float32" ? 1 : 2;
+                        && ["float32", "uint8", "object_"].includes(value.args[1].name)) {
+                        dtype = value.args[1].name === "object_" ? "object" : value.args[1].name as "float32" | "uint8";
+                        dtypeCode = dtype === "float32" ? 1 : dtype === "uint8" ? 2 : 3;
                     }
                     else {
-                        this.fail(value, "dtypeはnp.float32・np.uint8・Noneだけに対応しています。object配列は第5段階です");
+                        this.fail(value, "dtypeはnp.float32・np.uint8・object・np.object_・Noneに対応しています");
                     }
                 }
                 else if (parameter.name === "order") {
@@ -1009,17 +1062,23 @@ class PythonResolver {
                 }
             }
             const className = `$ndarray.${dtype}.${shape.length}`;
-            let owner = this.classes.get(className);
+            if (dtype === "object" && name !== "empty") {
+                this.fail(app, "object配列の生成にはnp.emptyを使用してください");
+            }
+            let owner = dtype === "object" ? this.numpyCalls.get(app)?.owner : this.classes.get(className);
+            if (owner !== undefined) {
+                owner = this.canonicalOwner(owner);
+            }
             if (owner === undefined) {
                 const id = Math.max(0, ...this.api.classes.map(item => item.id)) + 1;
                 if (id > 65535) {
                     this.fail(app, "本体型の個数が上限を超えています");
                     return true;
                 }
-                owner = { id, name: className, kind: "record", constructor: null, methods: [], fields: [],
+                owner = { id, name: dtype === "object" ? `${className}.${id}` : className, kind: "record", constructor: null, methods: [], fields: [],
                     array: { dtype, rank: shape.length } };
                 this.api.classes.push(owner);
-                this.classes.set(className, owner);
+                this.classes.set(owner.name, owner);
                 this.changed = true;
             }
             this.numpyCalls.set(app, { binding, owner, shape, dtypeCode });
@@ -1159,6 +1218,8 @@ class PythonResolver {
      * @returns 保留中または適合ならtrue、errorまたは型不一致ならfalse。
      */
     private compatible(actual: PythonType | undefined, expected: PythonType, node: AbstractSyntaxNode): boolean {
+        actual = this.canonicalType(actual);
+        expected = this.canonicalType(expected)!;
         if (actual?.kind === "error" || expected.kind === "error") {
             return false;
         }
@@ -1185,11 +1246,11 @@ class PythonResolver {
             this.remember(term, this.fail(term, `属性の対象はAPIオブジェクトにしてください: ${this.typeName(type)}`));
             return undefined;
         }
-        return this.api.classes.find(item => item.id === type.classId);
+        return this.canonicalOwner(this.api.classes.find(item => item.id === type.classId)!);
     }
 
     /**
-     * 添字を数値ndarrayの要素またはshapeの軸として解決する。部分配列・スライスは作らない。
+     * 添字をndarrayの要素またはshapeの軸として解決する。部分配列・スライスは作らない。
      * @param app 配列と整数添字を保持するt[i]式。
      * @param write 代入先として検査するか。shapeは読取り専用。
      * @returns 要素型またはshapeのint。推論途中はundefined、不正ならerror。
@@ -1209,14 +1270,15 @@ class PythonResolver {
             return undefined;
         }
         if (owner.array === undefined) {
-            return this.fail(app, "添字は数値NumPy配列だけに対応しています");
+            return this.fail(app, "添字はNumPy配列だけに対応しています");
         }
         if (app.args.length - 1 !== (shape ? 1 : owner.array.rank) || shape && write) {
             return this.fail(app, shape ? "shapeは軸番号1個による読取りだけに対応しています"
                 : `添字は全${owner.array.rank}軸を指定してください。部分配列には対応していません`);
         }
         this.arrayOperations.set(app, { kind: shape ? "shape" : "item", owner });
-        return shape || owner.array.dtype === "uint8" ? intType : floatType;
+        return shape ? intType : owner.array.dtype === "object" ? this.canonicalType(owner.array.elementType)
+            : owner.array.dtype === "uint8" ? intType : floatType;
     }
 
     /**
@@ -1461,7 +1523,7 @@ class PythonResolver {
                 return undefined;
             }
             if (!owner.array) {
-                return this.fail(app, "lenは数値NumPy配列だけに対応しています");
+                return this.fail(app, "lenはNumPy配列だけに対応しています");
             }
             this.arrayOperations.set(app, { kind: "length", owner });
             return intType;
@@ -1617,6 +1679,23 @@ class PythonResolver {
         }
         if (target instanceof App && target.fncName === "t[i]") {
             const expected = this.arrayItem(target, true);
+            const array = this.arrayOperations.get(target)?.owner.array;
+            if (array?.dtype === "object") {
+                if (type !== undefined && type.kind !== "none" && type.kind !== "error") {
+                    if (type.kind !== "object") {
+                        this.fail(right, "object配列には同じクラスの参照とNoneだけを格納できます");
+                    }
+                    else {
+                        const merged = this.merge(array.elementType, type, right);
+                        if (merged !== undefined && (array.elementType === undefined || !sameType(array.elementType, merged))) {
+                            array.elementType = merged;
+                            this.changed = true;
+                        }
+                    }
+                }
+                this.remember(target, array.elementType);
+                return;
+            }
             this.remember(target, expected);
             // uint8への数値変換と0～255検査はC++が行う。float32には通常のint→float変換を使う。
             if (expected?.kind !== "error") {
@@ -1789,6 +1868,40 @@ class PythonResolver {
     }
 
     /**
+     * object配列の合流結果を全変数・式・メンバーと生成情報へ反映し、別名型を除く。
+     * 要素型はIDで保持し、配列・オブジェクトの相互参照を再帰展開しない。
+     */
+    private normalizeArrays(): void {
+        for (const [term, type] of this.types) {
+            this.types.set(term, this.canonicalType(type)!);
+        }
+        for (const variable of this.globals.values()) {
+            variable.type = this.canonicalType(variable.type);
+        }
+        for (const fn of this.functions.values()) {
+            fn.type = this.canonicalType(fn.type);
+            for (const variable of fn.variables.values()) {
+                variable.type = this.canonicalType(variable.type);
+            }
+        }
+        for (const owner of this.api.classes) {
+            for (const field of owner.fields) {
+                field.type = this.canonicalType(field.type)!;
+            }
+            if (owner.array?.dtype === "object") {
+                owner.array.elementType = this.canonicalType(this.canonicalOwner(owner).array!.elementType) ?? noneType;
+            }
+        }
+        for (const call of this.numpyCalls.values()) {
+            call.owner = this.canonicalOwner(call.owner);
+        }
+        for (const operation of this.arrayOperations.values()) {
+            operation.owner = this.canonicalOwner(operation.owner);
+        }
+        this.api.classes = this.api.classes.filter(owner => this.canonicalOwner(owner) === owner);
+    }
+
+    /**
      * 宣言収集・型推論・未定型の診断・スロット配置を行う。
      * 関数定義はモジュール先頭にまとめ、衝突・配置違反の定義は登録せず本体も解析しない。
      * global-scope.tsで関数全体のglobal名と宣言順を先に検査し、引数との衝突・宣言前の
@@ -1853,6 +1966,17 @@ class PythonResolver {
         const variableCount = this.globals.size + [...this.functions.values()].reduce((count, fn) => count + fn.variables.size + 1, 0);
         const limit = 3 * (nodes.length + variableCount) + 3;
         this.infer(limit);
+        // 参照の格納元が全くないobject配列はNone専用とする。長さ・Noneの読出しも使用できる。
+        let defaulted = false;
+        for (const owner of this.api.classes) {
+            if (owner.array?.dtype === "object" && this.canonicalOwner(owner) === owner && owner.array.elementType === undefined) {
+                owner.array.elementType = noneType;
+                defaulted = true;
+            }
+        }
+        if (defaulted) {
+            this.infer(limit);
+        }
         // 個数不一致の呼出ししかない関数では、未定の仮引数を二次的な推論エラーとして報告しない。
         // 正しい個数の呼出しが1つでもあれば、その呼出しから得た型を引き続き使用する。
         let blocked = false;
@@ -1906,6 +2030,7 @@ class PythonResolver {
             }
             owner.fields = ordered;
         }
+        this.normalizeArrays();
         // 診断を含む結果のslotは全て-1のまま返し、部分的な配置を生成器へ渡さない。
         if (this.diagnostics.length === 0) {
             for (const [variables, start] of [

@@ -10,7 +10,7 @@ import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
  * デバッグ通信の版・上限・結果名と状態番号を共有する定義。
  */
 export const debugProtocol = {
-    version: 1, eventVersion: 2, snapshotVersion: 4, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
+    version: 1, eventVersion: 2, snapshotVersion: 5, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
     errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
         "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
 } as const;
@@ -136,15 +136,15 @@ export interface DebugValue {
 
 /** Snapshotで受け取るGC本体。フィールドは宣言順のValue列。 */
 export interface DebugObject {
-    /** 数値ndarrayだけが持つ形状・dtypeと、同一停止の全要素バイト列。 */
+    /** ndarrayの形状・dtype。object要素はfields、数値要素はdataで保持する。 */
     array?: {
         /** 要素表現。 */
-        dtype: "float32" | "uint8";
+        dtype: "float32" | "uint8" | "object";
         /** 各軸の長さ。 */
         shape: readonly number[];
         /** 全要素数。 */
         size: number;
-        /** C順・little endianの全数値データ。停止データと寿命を共有し、変更しない。 */
+        /** C順・little endianの全数値データ。objectの場合は空。停止データと寿命を共有し、変更しない。 */
         data: Uint8Array;
     };
     /** 本体型ID。コンパイル情報のクラスへ対応する。 */
@@ -213,7 +213,7 @@ type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
  * Pausedでは@3=0、@4=stopId、@12=Snapshot長、@16=Snapshot CRC32として扱う。
  * 非Pausedでは@12=実行命令数（native再試行を含む）、@16=現在PC。Errorだけ@3=VMエラー番号、@4=失敗PC。
  * 非Error・非Pausedの@3/@4は0。SnapshotのcodeとVMエラー番号は別の名前空間。
- * VMエラーは0～22。20=配列添字・uint8範囲、21=shape・サイズ、22=未対応の配列オプション。
+ * VMエラーは0～23。20=配列添字・uint8範囲、21=shape・サイズ、22=未対応の配列オプション、23=Noneへのアクセス。
  * RunningのPC・命令数は最大1秒に1回、状態・世代変更は即時公開する。実行中のSnapshot取得は行わない。
  * PythonBlockが実行状態とPC・命令数を表示し、DeviceConnectionが[Python VM]へ同じ情報を出力する。
  * Eventはversion=2だけを受理し、旧版は形式エラーとする。Control/Resultのversion=1は現行のまま。
@@ -231,7 +231,7 @@ function parseEvent(view: DataView): DebugEvent {
     const paused = state === 5;
     const progress = !paused;
     const vmError = view.getUint8(3);
-    if ((!progress && vmError !== 0) || (progress && (vmError > 22 || state !== 4 && vmError !== 0))
+    if ((!progress && vmError !== 0) || (progress && (vmError > 23 || state !== 4 && vmError !== 0))
         || (progress && state !== 4 && view.getUint32(4, true) !== 0)) {
         throw new Error("デバッグ通知のVMエラー情報が不正です。");
     }
@@ -256,7 +256,7 @@ function parseEvent(view: DataView): DebugEvent {
 /**
  * 全体CRCとスロットのタグ・範囲を検証してから利用者へ返す。
  *
- * Snapshotヘッダー24バイト: version:u8@0=4、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
+ * Snapshotヘッダー24バイト: version:u8@0=5、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
  * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
  * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
  * classId:u16@2(tag7/8以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
@@ -265,12 +265,14 @@ function parseEvent(view: DataView): DebugEvent {
  * 大域→スタック→本体フィールド順のString IDを1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
  * 定数と動的文字列の両方を含む。メモリ不足では明示エラーとし、切り詰めない。
  * 文字列列の後に本体数:u32。各本体のヘッダー16バイトはID:u32@0・型ID:u16@4・フィールド数:u16@6、
- * kind:u8@8（0=通常、1=float32、2=uint8）、rank:u8@9、予約0:u16@10、数値バイト数:u32@12。
+ * kind:u8@8（0=通常、1=float32、2=uint8、3=object配列）、rank:u8@9、予約0:u16@10、数値バイト数:u32@12。
  * 通常本体はrank/数値バイト数=0、続いて8バイトValue列。数値配列はフィールド数=0・rank=1～4、
  * 続いてshape:u32[rank]、C順の全要素バイト列。float32はlittle endian・有限値だけを受理する。
+ * object配列は数値バイト数=0、フィールド数=要素数で、Value要素列の後にshapeを送る。
+ * 全要素は同じタグ・クラスの参照＋Noneに統一する。object配列自身や別配列への参照もIDで検証する。
  * 軸長は非負int32、0軸を含めば要素数0。積・dtypeの幅とバイト数を全件照合する。切詰め送信は行わない。
  * 同一IDは同じ本体を表し、全参照先の存在と型を全件検証する。確保一覧の未回収本体も含み、
- * アドレスは送らない。表示は同一IDの重複展開を止める。Snapshotはversion=4だけを受理する。
+ * アドレスは送らない。表示は同一IDの重複展開を止める。Snapshotはversion=5だけを受理する。
  * 専用フレーム表は送らず、BP+0(ReturnPc)、BP+1(SavedBp)と同一ビルドのCALL PC/関数範囲で復元する。
  * モジュールと最初の関数のBPがともに0でも、所属関数とCALL対応で区別する。
  * 名前・型・行・変数配置はpython/bytecode.tsが同一コンパイルで作り、python/debugger-view.tsが表示する。
@@ -368,8 +370,9 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         const reserved = view.getUint16(offset + 10, true);
         const dataLength = view.getUint32(offset + 12, true);
         offset += 16;
-        if (id === 0 || classId === 0 || objects.has(id) || kind > 2 || reserved !== 0
-            || (kind === 0 ? rank !== 0 || dataLength !== 0 : fields !== 0 || rank < 1 || rank > 4)
+        if (id === 0 || classId === 0 || objects.has(id) || kind > 3 || reserved !== 0
+            || (kind === 0 ? rank !== 0 || dataLength !== 0 : (kind !== 3 && fields !== 0) || rank < 1 || rank > 4)
+            || kind === 3 && dataLength !== 0
             || fields > Math.floor((bytes.length - offset) / 8)) {
             throw new Error("停止データの本体ID・型・フィールド数が不正です。");
         }
@@ -393,8 +396,15 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
                 shape.push(dimension);
             }
             const size = shape.includes(0) ? 0 : shape.reduce((product, dimension) => product * dimension, 1);
-            if (!Number.isSafeInteger(size) || size * (kind === 1 ? 4 : 1) !== dataLength) {
+            if (!Number.isSafeInteger(size) || (kind === 3 ? size !== fields : size * (kind === 1 ? 4 : 1) !== dataLength)) {
                 throw new Error("停止データのshapeとバイト数が一致しません。");
+            }
+            if (kind === 3) {
+                const first = members.find(value => value.tag !== 3);
+                if (members.some(value => value.tag !== 3 && ((value.tag !== 7 && value.tag !== 8)
+                    || value.tag !== first?.tag || value.classId !== first?.classId))) {
+                    throw new Error("object配列の要素型が統一されていません。");
+                }
             }
             const data = bytes.subarray(offset, offset + dataLength);
             if (kind === 1) {
@@ -405,7 +415,7 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
                 }
             }
             offset += dataLength;
-            object.array = { dtype: kind === 1 ? "float32" : "uint8", shape, size, data };
+            object.array = { dtype: kind === 1 ? "float32" : kind === 2 ? "uint8" : "object", shape, size, data };
         }
         objects.set(id, object);
     }

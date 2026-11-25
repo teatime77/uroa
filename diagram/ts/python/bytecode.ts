@@ -1,5 +1,5 @@
 /**
- * PythonAnalysisを入力とするversion=5専用のアセンブリ・バイナリ生成器。
+ * PythonAnalysisを入力とするversion=6専用のアセンブリ・バイナリ生成器。
  * 名前・型・変数配置はsemantic.tsを使用し、意味解析なしの旧生成経路と版1/2は扱わない。
  * 形式の仕様はencodeBinary、参照共有とCALL/RETはcompileTypedと関連メソッドを参照する。
  * BLE/Wi-Fiの形式検査はbytecode-transfer.ts、実行はESP32のbytecode_vm.cppが担当する。
@@ -14,13 +14,15 @@ import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 import type { PythonDebugBuild, PythonDebugInfo } from "./debug-info";
 
 /**
- * opcodeは0x01〜0x25。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
+ * opcodeは0x01〜0x26。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
  * NEW_OBJECTは型ID、GET_FIELD/SET_FIELDは0始まりのフィールド位置をu16で指定する。
  * NEW_OBJECTは未初期化Value列の本体参照を積み、DUPで構築途中のselfを根として保持する。
  * GET_FIELDは対象を値へ置換し、SET_FIELDは右辺・対象の順の2値を取り出して格納する。
  * CALL_NUMPYはtypedNumpyのスタック規約でnumpy_native.cppを呼ぶ。GET_ITEM/SET_ITEMのu16は軸数。
  * GET_ITEMは対象→各添字、SET_ITEMは右辺→対象→各添字。ARRAY_ATTRは0=len、1=size、2=ndim、
  * 3=itemsize、4=shape[軸]で、4だけ対象の後に整数の軸番号を積む。部分配列は返さない。
+ * CHECK_REFは先頭の受信対象を取り除かず、u16のクラスIDと有効性を検査する。Noneはエラー23。
+ * メソッドの明示引数を評価する前に検査し、Noneのメソッド本体を実行しない。
  * 命令番号・長さと元イメージのCRCを維持する。通信の正本はdebug-protocol.ts。
  */
 export enum BytecodeOpcode {
@@ -60,28 +62,32 @@ export enum BytecodeOpcode {
     CALL_NUMPY = 0x22,
     GET_ITEM = 0x23,
     SET_ITEM = 0x24,
-    ARRAY_ATTR = 0x25
+    ARRAY_ATTR = 0x25,
+    CHECK_REF = 0x26
 }
 
 /** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
 export const bytecodeSignature = 0xB1C0;
 /**
- * バイナリversion=5の固定配置。呼出し規約/API schemaは4。旧版は生成しない。
+ * バイナリversion=6の固定配置。呼出し規約/API schemaは5。旧版は生成しない。
  */
-export const bytecodeVersion = 5;
+export const bytecodeVersion = 6;
 /**
- * version=5のバイナリヘッダー長（64バイト）。
+ * version=6のバイナリヘッダー長（64バイト）。
  */
 export const bytecodeHeaderLength = 64;
 /**
- * 本体型レコードはid:u16@0、fieldCount:u16@2、fieldOffset:u32@4、kind:u8@8、rank:u8@9、予約0:u16@10。
- * 計12バイト。kind=0は通常本体（rank=0）、1=float32配列、2=uint8配列（rank=1～4・fieldCount=0）。
+ * 本体型レコードはid:u16@0、fieldCount:u16@2、fieldOffset:u32@4、kind:u8@8、rank:u8@9、
+ * elementTag:u8@10、予約0:u8@11、elementClassId:u16@12、予約0:u16@14の16バイト。
+ * kind=0は通常本体（rank=0）、1=float32、2=uint8、3=object配列（rank=1～4・fieldCount=0）。
+ * kind=3だけelementTag=3(None専用)/7(機器)/8(GC本体)とし、タグ3ならelementClassId=0、タグ7/8なら非0。
+ * ほかのkindのelementTag/ClassIdは0。object配列の参照先型は自己・相互参照も許す。
  * フィールドはkind:uint8、権限:uint8（読取1・書込2）、classId:uint16の4バイト。
  * classIdは機器7／GC本体8で非0とし、GC本体の型だけ型表へ登録する。
  */
-export const bytecodeTypeRecordLength = 12;
+export const bytecodeTypeRecordLength = 16;
 /**
- * version=5の関数表1件の長さ（12バイト）。
+ * version=6の関数表1件の長さ（12バイト）。
  */
 export const bytecodeFunctionRecordLength = 12;
 /**
@@ -118,7 +124,8 @@ const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> 
     CALL_NUMPY: "u16",
     GET_ITEM: "u16",
     SET_ITEM: "u16",
-    ARRAY_ATTR: "u16"
+    ARRAY_ATTR: "u16",
+    CHECK_REF: "u16"
 };
 
 /** 生成器が対応する四則演算。その他の数値演算は意味解析で受理しても生成時に拒否する。 */
@@ -678,9 +685,9 @@ class BytecodeGenerator {
     /**
      * ソース順に引数を評価し、shape・指定済みoptionId/値だけをC++へ渡す。
      * CALL_NUMPYのu16は戻り値型ID。スタックは各軸、optionId/値の組、組数、モジュール関数IDの順。
-     * 省略引数を追加しない。dtypeコードは0=None・1=float32・2=uint8で、既定値はC++が設定する。
+     * 省略引数を追加しない。dtypeコードは0=None・1=float32・2=uint8・3=objectで、既定値はC++が設定する。
      * 一時値を最後に積み直してから根を解除し、入れ子の呼出しでも評価順と生存を保つ。
-     * @param app 意味解析で数値NumPy呼出しとして解決済みの式。
+     * @param app 意味解析でNumPy呼出しとして解決済みの式。
      */
     private typedNumpy(app: App): void {
         const call = this.analysis.numpyCalls.get(app)!;
@@ -737,6 +744,8 @@ class BytecodeGenerator {
         const operation = this.analysis.arrayOperations.get(app)!;
         if (operation.kind === "shape") {
             this.expression((app.args[0] as App).args[0]);
+            // shape属性の対象を、軸番号の式を評価する前に検査する。
+            this.emit("CHECK_REF", app, String(operation.owner.id));
             this.expression(app.args[1]);
             this.emit("ARRAY_ATTR", app, "4");
         }
@@ -785,6 +794,7 @@ class BytecodeGenerator {
             }
             else {
                 this.expression((app.args[0] as App).args[0]);
+                this.emit("CHECK_REF", app, String(call.owner.id));
             }
             const args = call.kind === "userConstructor" ? app.args : app.args.slice(1);
             for (const [index, argument] of args.entries()) {
@@ -810,6 +820,7 @@ class BytecodeGenerator {
         if (call.kind === "method") {
             const attribute = app.args[0] as App;
             this.expression(attribute.args[0]);
+            this.emit("CHECK_REF", app, String(call.owner.id));
         }
         for (const [index, argument] of args.entries()) {
             this.expressionAs(argument, call.definition.parameters[index].type);
@@ -1477,6 +1488,7 @@ class BytecodeGenerator {
             case "GET_ITEM":
             case "SET_ITEM":
             case "ARRAY_ATTR":
+            case "CHECK_REF":
                 value = Number(name);
                 break;
             case "CALL":
@@ -1504,15 +1516,15 @@ class BytecodeGenerator {
     }
 
     /**
-     * version=5だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
-     * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=5、大域数:u16@4、関数数:u16@6、
-     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=4、文字列数:u16@16、
-     * schema:u16@18=4、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
+     * version=6だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
+     * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=6、大域数:u16@4、関数数:u16@6、
+     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=5、文字列数:u16@16、
+     * schema:u16@18=5、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
      * 本体型数:u16@56、予約0:u16@58、本体型表とフィールド表の合計長:u32@60。
      * 関数表は12バイト/件: 入口PC・命令長・引数幅・追加局所幅・戻り値幅・予約0を各u16。
      * 戻り値はNoneも1スロット以上。管理領域2個は追加局所幅に含めず、一時領域は含める。
      * 関数表→本体型表・フィールド表→命令列→文字列表→UTF-8の順でパディングなし。
-     * 型レコード12バイトとフィールド4バイトの詳細はbytecodeTypeRecordLengthのコメントを参照する。
+     * 型レコード16バイトとフィールド4バイトの詳細はbytecodeTypeRecordLengthのコメントを参照する。
      * 型IDは非0昇順、フィールド表は型の宣言順で隙間なく配置する。空の本体型・型の循環を許す。
      * 文字列レコードはoffset:u32と
      * byteLength:u32の8バイトで、ID順に隙間なく連結する。NUL終端・正規化は行わない。
@@ -1525,9 +1537,9 @@ class BytecodeGenerator {
         const api = this.analysis.api;
         const headerLength = bytecodeHeaderLength;
         const functionRecordLength = bytecodeFunctionRecordLength;
-        if (api.schemaVersion !== 4 || api.callingConventionVersion !== 4
+        if (api.schemaVersion !== 5 || api.callingConventionVersion !== 5
             || api.stringPolicyVersion !== 2 || !/^[0-9a-f]{64}$/.test(api.abiHash)) {
-            this.binaryError(this.location(this.module), "バイナリversion=5に対応するAPI定義・ABI指紋ではありません");
+            this.binaryError(this.location(this.module), "バイナリversion=6に対応するAPI定義・ABI指紋ではありません");
         }
         const labels = new Map<string, LabelAddress>();
         const functions: FunctionEntry[] = [];
@@ -1599,8 +1611,18 @@ class BytecodeGenerator {
             view.setUint16(offset, owner.id, true);
             view.setUint16(offset + 2, this.uint16(owner.fields.length, moduleLocation, "フィールド数"), true);
             view.setUint32(offset + 4, fieldOffset, true);
-            view.setUint8(offset + 8, owner.array === undefined ? 0 : owner.array.dtype === "float32" ? 1 : 2);
+            view.setUint8(offset + 8, owner.array === undefined ? 0 : owner.array.dtype === "float32" ? 1 : owner.array.dtype === "uint8" ? 2 : 3);
             view.setUint8(offset + 9, owner.array?.rank ?? 0);
+            if (owner.array?.dtype === "object") {
+                const element = owner.array.elementType!;
+                if (element.kind !== "none" && element.kind !== "object") {
+                    this.binaryError(moduleLocation, "object配列の要素型が確定していません");
+                }
+                const elementClassId = element.kind === "object" ? element.classId : 0;
+                view.setUint8(offset + 10, elementClassId === 0 ? 3
+                    : api.classes.find(item => item.id === elementClassId)!.kind === "device" ? 7 : 8);
+                view.setUint16(offset + 12, elementClassId, true);
+            }
             for (const field of owner.fields) {
                 const type = field.type;
                 const kind = type.kind === "object" ? (api.classes.find(item => item.id === type.classId)!.kind === "device" ? 7 : 8)
@@ -1677,7 +1699,7 @@ class BytecodeGenerator {
     /**
      * この生成器で内部命令列を1回生成し、共通の命令・定数表からバイナリへ符号化する。
      *
-     * @returns 意味解析済みのversion=5バイナリ。
+     * @returns 意味解析済みのversion=6バイナリ。
      */
     generateBytecode(): Uint8Array {
         this.compileTyped();
@@ -1690,7 +1712,7 @@ class BytecodeGenerator {
      * 文の先頭・関数入口・暗黙returnの最終PCを停止候補へ対応付ける。
      * 複数スロットのSTOREの途中やCALLからの継続には行ブレークポイントを作らない。
      *
-     * @returns 同じ命令列から作ったversion=5のbytesと、元ソース・変数配置・停止位置のinfo。
+     * @returns 同じ命令列から作ったversion=6のbytesと、元ソース・変数配置・停止位置のinfo。
      * @throws Error 元ソースまたは意味解析結果がない場合。
      */
     generateDebugBytecode(): PythonDebugBuild {
@@ -1748,7 +1770,7 @@ export function generateAssembly(analysis: PythonAnalysis): string {
 }
 
 /**
- * version=5のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
+ * version=6のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
  * bytecode-transfer.tsとESP32受信器は形式を検証し、VMが実行する。
  * 転送成功・開始ACKは正常終了や実機動作の確認を意味しない。
  * @param analysis 型・配置を確定した解析結果。
@@ -1759,7 +1781,7 @@ export function generateBytecode(analysis: PythonAnalysis): Uint8Array {
 }
 
 /**
- * 同じコンパイルからversion=5のバイナリとデバッグ情報を返す。
+ * 同じコンパイルからversion=6のバイナリとデバッグ情報を返す。
  * @param analysis 元ソースを持つ意味解析結果。
  * @returns 転送バイナリ・最終PC・名前と型・停止点。
  */

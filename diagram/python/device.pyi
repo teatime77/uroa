@@ -88,6 +88,7 @@ class numpy:
 
     float32: DType
     uint8: DType
+    object_: DType  # dtype=objectと同じ参照配列型。emptyだけに対応する。
 
     @staticmethod
     def zeros(shape: Shape, dtype: DType = ..., order: str = ..., *,

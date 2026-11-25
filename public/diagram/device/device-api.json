@@ -1,6 +1,6 @@
 {
-    "schemaVersion": 4,
-    "callingConventionVersion": 4,
+    "schemaVersion": 5,
+    "callingConventionVersion": 5,
     "stringPolicyVersion": 2,
     "classes": [
         {
@@ -733,6 +733,10 @@
                 {
                     "name": "uint8",
                     "type": "dtype"
+                },
+                {
+                    "name": "object_",
+                    "type": "dtype"
                 }
             ],
             "functions": [
@@ -823,5 +827,5 @@
             ]
         }
     ],
-    "abiHash": "7f12fe43918d6300234cc3fc570ce1de900e7236f80963d45938562c66fd93a7"
+    "abiHash": "f14d3f0a3e651b9c628776ad013818c189f236cca77219970081b8ee1d99c608"
 }

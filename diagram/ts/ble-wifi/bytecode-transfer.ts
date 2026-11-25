@@ -1,5 +1,5 @@
 /**
- * Python一括転送version=2の中心契約。バイナリversion=5だけを扱う。形式はpython/bytecode.tsを参照する。
+ * Python一括転送version=2の中心契約。バイナリversion=6だけを扱う。形式はpython/bytecode.tsを参照する。
  * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
  * python-block.tsが同一生成のコードとPC一覧、ESP32のbytecode_receiver.cppが検証、main.cppが開始を担当する。
  */
@@ -102,7 +102,7 @@ export function bytecodeCrc32(bytes: Uint8Array): number {
 }
 
 /**
- * 転送上限・version=5ヘッダー・本体型表・文字列領域を検査する。全命令の検証は受信側で行う。
+ * 転送上限・version=6ヘッダー・本体型表・文字列領域を検査する。全命令の検証は受信側で行う。
  * @param bytes 生成済みのイメージ。
  * @throws {Error} 形式・型・長さが不正な場合。
  */
@@ -112,7 +112,7 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (view.getUint16(2, true) !== bytecodeVersion) {
-        throw new Error("バイトコードはversion=5だけに対応しています。");
+        throw new Error("バイトコードはversion=6だけに対応しています。");
     }
     const headerLength = bytecodeHeaderLength;
     const functionRecordLength = bytecodeFunctionRecordLength;
@@ -127,8 +127,8 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     const tableOffset = codeOffset + codeLength;
     const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
     if (view.getUint16(0, true) !== bytecodeSignature
-        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 4
-        || view.getUint16(18, true) !== 4 || view.getUint16(58, true) !== 0
+        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 5
+        || view.getUint16(18, true) !== 5 || view.getUint16(58, true) !== 0
         || typeLength < typeCount * bytecodeTypeRecordLength
         || codeLength < 1 || codeLength > 65536
         || bytes.byteLength !== dataOffset + dataLength) {
@@ -144,7 +144,7 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
         const kind = view.getUint8(record + 8);
         const rank = view.getUint8(record + 9);
         if (id <= previousId || view.getUint32(record + 4, true) !== fieldOffset || bytes > typeLength - fieldOffset
-            || view.getUint16(record + 10, true) !== 0 || kind > 2
+            || view.getUint8(record + 11) !== 0 || view.getUint16(record + 14, true) !== 0 || kind > 3
             || (kind === 0 ? rank !== 0 : rank < 1 || rank > 4 || bytes !== 0)) {
             throw new Error("本体型表のID・配置・長さが不正です。");
         }
@@ -154,6 +154,16 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     }
     if (fieldOffset !== typeLength) {
         throw new Error("本体フィールド表の長さが一致しません。");
+    }
+    for (let index = 0; index < typeCount; index++) {
+        const record = typeOffset + index * bytecodeTypeRecordLength;
+        const tag = view.getUint8(record + 10);
+        const id = view.getUint16(record + 12, true);
+        if (view.getUint8(record + 8) === 3
+            ? ![3, 7, 8].includes(tag) || (tag === 3 ? id !== 0 : id === 0) || tag === 8 && !typeIds.has(id)
+            : tag !== 0 || id !== 0) {
+            throw new Error("object配列の要素型・参照先が不正です。");
+        }
     }
     for (let offset = typeCount * bytecodeTypeRecordLength; offset < typeLength; offset += 4) {
         const kind = view.getUint8(typeOffset + offset);
