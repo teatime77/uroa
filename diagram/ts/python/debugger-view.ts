@@ -2,7 +2,7 @@
  * PythonBlockの停止時専用表示。通信はせず、同一ビルドのDebugInfoと検証済みSnapshotだけを使う。
  * DOMはtextContentで構築し、値をHTMLとして解釈しない。
  */
-import type { DebugSnapshot, DebugValue, DebugAction, DebugObject } from "../ble-wifi/debug-protocol";
+import type { DebugSnapshot, DebugValue, DebugAction } from "../ble-wifi/debug-protocol";
 import type { PythonDebugFunction, PythonDebugInfo } from "./debug-info";
 import { valueSlotTypes, type PythonType, type PythonVariable } from "./semantic";
 
@@ -286,7 +286,7 @@ export class PythonDebuggerView {
     }
 
     /**
-     * 全スロットに共通する値表記。GC本体はIDを表示する。
+     * 全スロットに共通する値表記。GC本体はclassIdだけを表示し、展開しない。
      * @param value 表示する値。
      * @param snapshot 同一停止の文字列・本体。
      * @returns 文字列化した値。int・PC・BP・IDには小数点を付けない。
@@ -310,7 +310,7 @@ export class PythonDebuggerView {
             case 7:
                 return `handle=${value.value} (classId=${value.classId})`;
             case 8:
-                return `参照 #${value.value} (classId=${value.classId})`;
+                return `参照 (classId=${value.classId})`;
             default:
                 return String(value.value);
         }
@@ -325,14 +325,13 @@ export class PythonDebuggerView {
      * @param base フレームの先頭。
      * @param limit フレーム領域の末尾直後。
      * @param info 同一コンパイルの情報。
-     * @param snapshot 同一停止の本体・文字列。
+     * @param snapshot 同一停止の値スロット・文字列。
      * @returns 変数欄のDOM。
      * @throws {Error} スロット範囲や本体型が不正な場合。
      */
     private variables(variables: readonly PythonVariable[], slots: readonly DebugValue[], base: number, limit: number,
         info: PythonDebugInfo, snapshot: DebugSnapshot): HTMLElement {
         const result = document.createElement("div");
-        const expanded = new Set<number>();
         if (variables.length === 0) {
             result.textContent = "変数なし";
         }
@@ -342,142 +341,27 @@ export class PythonDebuggerView {
             if (variable.slot < 0 || slot + valueSlotTypes(type, info.api).length > limit) {
                 throw new Error(`変数 ${variable.name} のスロット範囲が一致しません。`);
             }
-            result.append(this.variable(variable.name, type, slot, slots, info, snapshot, expanded));
+            result.append(this.variable(variable.name, type, slot, slots, info, snapshot));
         }
         return result;
     }
 
     /**
-     * 本体IDをたどってフィールドを表示する。共有・循環は参照行にして重複展開しない。
-     * @param name 変数またはフィールド名。
+     * 本体を展開せず、変数の型と値だけを表示する。
+     * @param name 変数名。
      * @param type コンパイル時の型。
-     * @param slot 対象Valueの位置。
-     * @param slots 対象のValue列。
-     * @param info 同一コンパイルの名前・型情報。
-     * @param snapshot 同一停止の本体と文字列。
-     * @param expanded この表示内で展開済みの本体ID。
-     * @param depth 表示の入れ子深さ。64段で参照行へ切り替える。
-     * @returns 表示用DOM。
+     * @param slot Valueの位置。
+     * @param slots フレームのValue列。
+     * @param info 同一コンパイルの型情報。
+     * @param snapshot 同一停止の値と文字列。
+     * @returns 表示行。
      */
     private variable(name: string, type: PythonType, slot: number, slots: readonly DebugValue[],
-        info: PythonDebugInfo, snapshot: DebugSnapshot, expanded: Set<number>, depth = 0): HTMLElement {
+        info: PythonDebugInfo, snapshot: DebugSnapshot): HTMLElement {
         const owner = type.kind === "object" ? info.api.classes.find(item => item.id === type.classId) : undefined;
         const typeName = owner?.array ? `ndarray(${owner.array.dtype}, ${owner.array.rank}次元)` : owner?.name ?? type.kind;
-        if (owner?.kind === "record" && slots[slot]?.tag === 8) {
-            const id = Number(slots[slot].value);
-            const body = snapshot.objects.get(id);
-            if (body === undefined || body.classId !== owner.id
-                || (owner.array?.dtype === "object" ? body.fields.length !== body.array?.size : body.fields.length !== owner.fields.length)) {
-                throw new Error("停止データの本体型・フィールド数がコンパイル情報と一致しません。");
-            }
-            if (owner.array === undefined ? body.array !== undefined
-                : body.array?.dtype !== owner.array.dtype || body.array.shape.length !== owner.array.rank) {
-                throw new Error("停止データの配列型がコンパイル情報と一致しません。");
-            }
-            if (expanded.has(id) || depth >= 64) {
-                return textElement("div", `${name}: ${typeName} → 参照 #${id}`);
-            }
-            expanded.add(id);
-            if (body.array?.dtype === "object") {
-                return this.objectArrayVariable(name, id, body, owner.array!.elementType!, info, snapshot, expanded, depth);
-            }
-            if (body.array) {
-                return this.arrayVariable(name, id, body.array);
-            }
-            const details = document.createElement("details");
-            details.open = true;
-            details.append(textElement("summary", `${name}: ${typeName} #${id}`));
-            const children = document.createElement("div");
-            children.style.paddingLeft = "18px";
-            for (const [index, field] of owner.fields.entries()) {
-                children.append(this.variable(field.name, field.type, index, body.fields, info, snapshot, expanded, depth + 1));
-            }
-            if (owner.fields.length === 0) {
-                children.textContent = "メンバーなし";
-            }
-            details.append(children);
-            return details;
-        }
         const row = textElement("div", `${name}: ${typeName} = ${this.value(slots[slot], snapshot)}`);
         Object.assign(row.style, { whiteSpace: "pre-wrap", overflowWrap: "anywhere", padding: "3px 0" });
         return row;
-    }
-
-    /**
-     * dtype・shapeと先頭128要素を表示する。Snapshotは全要素を保持し、DOMだけを制限する。
-     * @param name 変数またはメンバー名。
-     * @param id 同一停止の本体ID。
-     * @param array 復号時に長さと有限性を検証した配列。
-     * @returns 展開可能な配列表示。
-     */
-    private arrayVariable(name: string, id: number, array: NonNullable<DebugObject["array"]>): HTMLElement {
-        const details = document.createElement("details");
-        details.open = true;
-        details.append(textElement("summary", `${name}: ndarray #${id}, dtype=${array.dtype}, shape=(${array.shape.join(", ")})`));
-        const data = new DataView(array.data.buffer, array.data.byteOffset, array.data.byteLength);
-        const lines = [`size=${array.size}, ndim=${array.shape.length}, itemsize=${array.dtype === "float32" ? 4 : 1}`];
-        const count = Math.min(array.size, 128);
-        for (let offset = 0; offset < count; offset++) {
-            let remainder = offset;
-            const indices = new Array<number>(array.shape.length);
-            for (let axis = array.shape.length - 1; axis >= 0; axis--) {
-                indices[axis] = remainder % array.shape[axis];
-                remainder = Math.floor(remainder / array.shape[axis]);
-            }
-            const value = array.dtype === "float32" ? data.getFloat32(offset * 4, true) : data.getUint8(offset);
-            lines.push(`[${indices.join(", ")}] = ${value}`);
-        }
-        if (count < array.size) {
-            lines.push(`… 残り${array.size - count}要素（表示は先頭128要素まで）`);
-        }
-        const content = textElement("pre", lines.join("\n"));
-        Object.assign(content.style, { marginLeft: "18px", maxHeight: "320px", overflow: "auto" });
-        details.append(content);
-        return details;
-    }
-
-    /**
-     * object配列の要素を同じ参照表示へ接続する。128要素・深さ64・共有IDの上限を維持する。
-     * @param name 変数またはメンバー名。
-     * @param id 配列本体ID。
-     * @param body 形状と要素Value列。
-     * @param elementType 推論後の単一要素型。格納元がなければNone。
-     * @param info 同じコンパイルのクラス情報。
-     * @param snapshot 同一停止の全本体と文字列。
-     * @param expanded この表示で展開済みのID。自分自身は既に登録済み。
-     * @param depth 現在の表示深さ。
-     * @returns 再帰表示するDOM。
-     * @throws {Error} 要素が宣言型と一致しない場合。
-     */
-    private objectArrayVariable(name: string, id: number, body: DebugObject, elementType: PythonType,
-        info: PythonDebugInfo, snapshot: DebugSnapshot, expanded: Set<number>, depth: number): HTMLElement {
-        const array = body.array!;
-        const owner = elementType.kind === "object" ? info.api.classes.find(item => item.id === elementType.classId) : undefined;
-        const tag = owner?.kind === "device" ? 7 : 8;
-        if (body.fields.some(value => value.tag !== 3 && (owner === undefined || value.tag !== tag || value.classId !== owner.id))) {
-            throw new Error("object配列の要素型がコンパイル情報と一致しません。");
-        }
-        const details = document.createElement("details");
-        details.open = true;
-        details.append(textElement("summary", `${name}: ndarray #${id}, dtype=object, shape=(${array.shape.join(", ")}), 要素=${owner?.name ?? "None"}`));
-        const children = document.createElement("div");
-        children.style.paddingLeft = "18px";
-        for (let index = 0; index < Math.min(array.size, 128); index++) {
-            let remainder = index;
-            const indices = new Array<number>(array.shape.length);
-            for (let axis = array.shape.length - 1; axis >= 0; axis--) {
-                indices[axis] = remainder % array.shape[axis];
-                remainder = Math.floor(remainder / array.shape[axis]);
-            }
-            children.append(this.variable(`[${indices.join(", ")}]`, elementType, index, body.fields, info, snapshot, expanded, depth + 1));
-        }
-        if (array.size > 128) {
-            children.append(textElement("div", `… 残り${array.size - 128}要素（表示は先頭128要素まで）`));
-        }
-        if (array.size === 0) {
-            children.textContent = "要素なし";
-        }
-        details.append(children);
-        return details;
     }
 }

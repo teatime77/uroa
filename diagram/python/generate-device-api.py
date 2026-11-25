@@ -314,16 +314,18 @@ class InterfaceParser:
         classId相当のidはクラス宣言順、functionId相当のidは関数宣言順で
         それぞれ1から付ける。各IDの上限は65535とする。
 
-        JSONのschemaVersion/callingConventionVersionは5、
-        stringPolicyVersionは2とし、classes/functionsを出力する。
+        JSONのschemaVersion/callingConventionVersionは6、
+        stringPolicyVersionは3とし、classes/functionsを出力する。
         class numpyはクラスIDを持たない組込みモジュール宣言としてmodule_api.pyへ渡す。
         moduleDefinitionVersion=1とmodulesを追加し、引数番号・省略可否・型もABI指紋に含める。
         module定義の追加はnativeIdの採番を変更しない。
         module関数のIDはモジュール内だけの番号。NumPyはCALL_NUMPYからnumpy_native.cppへ渡し、
         既存CALL_NATIVEのnativeIdを割り当てない。dtype/rankはバイトコードの本体型表にも保持する。
-        呼出し規約version=5ではrecordとユーザー本体は1スロットのGC参照とし、
+        呼出し規約version=6ではrecordとユーザー本体は1スロットのGC参照とし、
         代入・引数・戻り値で共有する。deviceは従来の1スロットのハンドルを使う。
         C++バックエンドのrecord値型との変換は生成スタブが担当する。
+        C++構築中はGCを行わず、結果をVMへ返してGC対象の参照をC++へ持ち越さない。
+        文字列を含む回収点はGC_LOOPだけとし、確保中の回収・再試行は行わない。
         文字列は変数・メンバー・ユーザー関数の引数と戻り値にも保持できる。
         ネイティブAPIの文字列引数・戻り値の宣言制限はread_callableで検査する。
 
@@ -367,9 +369,9 @@ class InterfaceParser:
             else:
                 functions.append(self.read_callable(node, len(functions) + 1))
         result = {
-            "schemaVersion": 5,
-            "callingConventionVersion": 5,
-            "stringPolicyVersion": 2,
+            "schemaVersion": 6,
+            "callingConventionVersion": 6,
+            "stringPolicyVersion": 3,
             "classes": classes,
             "functions": functions,
             "moduleDefinitionVersion": 1,

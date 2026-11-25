@@ -1,5 +1,5 @@
 /**
- * PythonAnalysisを入力とするversion=6専用のアセンブリ・バイナリ生成器。
+ * PythonAnalysisを入力とするversion=7専用のアセンブリ・バイナリ生成器。
  * 名前・型・変数配置はsemantic.tsを使用し、意味解析なしの旧生成経路と版1/2は扱わない。
  * 形式の仕様はencodeBinary、参照共有とCALL/RETはcompileTypedと関連メソッドを参照する。
  * BLE/Wi-Fiの形式検査はbytecode-transfer.ts、実行はESP32のbytecode_vm.cppが担当する。
@@ -14,9 +14,9 @@ import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 import type { PythonDebugBuild, PythonDebugInfo } from "./debug-info";
 
 /**
- * opcodeは0x01〜0x26。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
+ * opcodeは0x01〜0x27。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
  * NEW_OBJECTは型ID、GET_FIELD/SET_FIELDは0始まりのフィールド位置をu16で指定する。
- * NEW_OBJECTは未初期化Value列の本体参照を積み、DUPで構築途中のselfを根として保持する。
+ * NEW_OBJECTは未初期化Value列の本体参照を積み、DUPで構築途中のselfを値スタックに保持する。構築中はGCを行わない。
  * GET_FIELDは対象を値へ置換し、SET_FIELDは右辺・対象の順の2値を取り出して格納する。
  * CALL_NUMPYはtypedNumpyのスタック規約でnumpy_native.cppを呼ぶ。GET_ITEM/SET_ITEMのu16は軸数。
  * GET_ITEMは対象→各添字、SET_ITEMは右辺→対象→各添字。ARRAY_ATTRは0=len、1=size、2=ndim、
@@ -63,17 +63,18 @@ export enum BytecodeOpcode {
     GET_ITEM = 0x23,
     SET_ITEM = 0x24,
     ARRAY_ATTR = 0x25,
-    CHECK_REF = 0x26
+    CHECK_REF = 0x26,
+    GC_LOOP = 0x27
 }
 
 /** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
 export const bytecodeSignature = 0xB1C0;
 /**
- * バイナリversion=6の固定配置。呼出し規約/API schemaは5。旧版は生成しない。
+ * バイナリversion=7の固定配置。呼出し規約/API schemaは6。旧版は生成しない。
  */
-export const bytecodeVersion = 6;
+export const bytecodeVersion = 7;
 /**
- * version=6のバイナリヘッダー長（64バイト）。
+ * version=7のバイナリヘッダー長（64バイト）。
  */
 export const bytecodeHeaderLength = 64;
 /**
@@ -87,7 +88,7 @@ export const bytecodeHeaderLength = 64;
  */
 export const bytecodeTypeRecordLength = 16;
 /**
- * version=6の関数表1件の長さ（12バイト）。
+ * version=7の関数表1件の長さ（12バイト）。
  */
 export const bytecodeFunctionRecordLength = 12;
 /**
@@ -125,7 +126,8 @@ const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> 
     GET_ITEM: "u16",
     SET_ITEM: "u16",
     ARRAY_ATTR: "u16",
-    CHECK_REF: "u16"
+    CHECK_REF: "u16",
+    GC_LOOP: "u16"
 };
 
 /** 生成器が対応する四則演算。その他の数値演算は意味解析で受理しても生成時に拒否する。 */
@@ -181,7 +183,7 @@ type AssemblyEntry = SourceLocation & (
     { /** この共用型の要素を区別する種別。 */ kind: "instruction"; /** 内部命令列で扱う命令名。 */ opcode: Opcode; /** 命令に付くオペランドの文字列表現。オペランドなしではundefined。 */ operand: string | undefined }
     | { /** この共用型の要素を区別する種別。 */ kind: "label"; /** 表示・保存・名前解決に使用する名前。 */ name: string }
     | { /** この共用型の要素を区別する種別。 */ kind: "globals"; /** 大域領域として確保するスロット数。一時領域を含む。 */ count: number }
-    | { /** この共用型の要素を区別する種別。 */ kind: "function"; /** 表示・保存・名前解決に使用する名前。 */ name: string; /** 引数のスロット数。各引数は1スロット。 */ args: number; /** 引数と管理領域を除く、追加局所変数と一時領域のスロット数。 */ locals: number; /** 戻り値のスロット数。Noneも参照も1個を使う。 */ returns: number }
+    | { /** この共用型の要素を区別する種別。 */ kind: "function"; /** 表示・保存・名前解決に使用する名前。 */ name: string; /** 引数のスロット数。各引数は1スロット。 */ args: number; /** 引数と管理領域を除く、追加局所変数と一時領域のスロット数。 */ locals: number; /** 戻り値のスロット数。Noneも参照も1個を使う。 */ returns: number; /** 引数・局所変数の根のスロット数。一時領域と管理値を除く。 */ roots: number }
 );
 
 /** PCを進める実行命令。疑似指示とラベルは含まない。 */
@@ -239,6 +241,8 @@ class BytecodeGenerator {
     private readonly entries: AssemblyEntry[] = [];
     /** 入れ子のwhileの分岐先。末尾が現在のbreak/continueの対象。 */
     private readonly loops: { /** 現在の繰返し条件へ戻るための内部ラベル。 */ start: string; /** 現在の繰返しから抜けるための内部ラベル。 */ end: string }[] = [];
+    /** モジュールにwhileがない場合に、モジュールの式文から直接呼ぶ入口関数の名前。 */
+    private readonly mainLoops = new Set<string>();
     /** 元の文字列ノードからエスケープ解釈済みの値へのキャッシュ。 */
     private readonly stringValues = new Map<Str, string>();
     /** モジュールと全関数で共有する、文字列値から初出順のIDへの対応。 */
@@ -339,13 +343,31 @@ class BytecodeGenerator {
     }
 
     /**
-     * 意味解析で検証済みの関数とモジュール本体を生成用スコープへ分ける。
+     * 意味解析で検証済みの関数とモジュール本体を生成用スコープへ分け、メインループの候補を選ぶ。
+     * モジュール本体にwhileがあれば、その外側のwhileだけを対象とする。なければ、モジュールの
+     * 呼出し文から直接呼ぶユーザー関数・メソッドを入口候補とし、その外側のwhileを対象とする。
+     * 代入・引数・式の途中からの呼出しは候補にしない。実際のフレーム深さと評価値の不在はVMが検査する。
+     * 候補となるwhileがないプログラムは実行中にGCせず、Stop・再開始で全解放する。
      */
     private collectFunctions(): void {
         this.globalScope.block = new BlockStatement(this.module.block.statements.filter(statement =>
             !(statement instanceof Fn) && !(statement instanceof ClassDefinition) && statement.keyword !== "import"));
         for (const fn of this.analysis.functions.values()) {
             this.functions.set(fn.name, { name: fn.name, fn: fn.node, block: fn.node.block });
+        }
+        const nodes: AbstractSyntaxNode[] = [];
+        this.globalScope.block.getAll(nodes);
+        if (!nodes.some(node => node instanceof WhileStatement)) {
+            for (const node of nodes) {
+                if (node instanceof CallStatement && node.app instanceof App) {
+                    const call = this.analysis.calls.get(node.app);
+                    if (call?.kind === "function" || call?.kind === "userMethod") {
+                        if (call.definition !== undefined) {
+                            this.mainLoops.add(call.definition.name);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1145,6 +1167,9 @@ class BytecodeGenerator {
             const start = this.newLabel("while_test");
             const end = this.newLabel("while_end");
             this.label(start, statement);
+            if (this.loops.length === 0 && (this.scope.fn === undefined || this.mainLoops.has(this.scope.name!))) {
+                this.emit("GC_LOOP", statement, this.scope.name ?? "0");
+            }
             this.condition(statement.condition);
             this.emit("JUMP_IF_FALSE", statement, end);
             this.loops.push({ start, end });
@@ -1343,7 +1368,8 @@ class BytecodeGenerator {
             const fn = this.analysis.functions.get(scope.name!)!;
             const args = fn.parameters.reduce((count, parameter) => count + this.valueWidth(parameter.type!), 0);
             const entry: FunctionEntry = { kind: "function", name: fn.name, args, locals: 0,
-                returns: this.valueWidth(fn.type!), charPos: fn.node.charPos, owner: fn.name };
+                returns: this.valueWidth(fn.type!), roots: this.allocations.get(scope)!.variablesEnd - 2,
+                charPos: fn.node.charPos, owner: fn.name };
             records.set(scope, entry);
             this.entries.push(entry);
         }
@@ -1491,6 +1517,9 @@ class BytecodeGenerator {
             case "CHECK_REF":
                 value = Number(name);
                 break;
+            case "GC_LOOP":
+                value = entry.owner === undefined ? 0 : this.labelAddress(entry.owner, labels, entry).pc;
+                break;
             case "CALL":
                 if (name === undefined || !this.functions.has(name)) {
                     this.binaryError(entry, "CALL先の関数情報がありません");
@@ -1516,13 +1545,19 @@ class BytecodeGenerator {
     }
 
     /**
-     * version=6だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
-     * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=6、大域数:u16@4、関数数:u16@6、
-     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=5、文字列数:u16@16、
-     * schema:u16@18=5、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
-     * 本体型数:u16@56、予約0:u16@58、本体型表とフィールド表の合計長:u32@60。
-     * 関数表は12バイト/件: 入口PC・命令長・引数幅・追加局所幅・戻り値幅・予約0を各u16。
+     * version=7だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
+     * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=7、大域数:u16@4、関数数:u16@6、
+     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=6、文字列数:u16@16、
+     * schema:u16@18=6、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
+     * 本体型数:u16@56、大域の根の数:u16@58、本体型表とフィールド表の合計長:u32@60。
+     * 関数表は12バイト/件: 入口PC・命令長・引数幅・追加局所幅・戻り値幅・根の数を各u16。
      * 戻り値はNoneも1スロット以上。管理領域2個は追加局所幅に含めず、一時領域は含める。
+     * 大域の根は先頭からソースの大域変数の数。関数の根はBP+2から引数とソースの局所変数の数。
+     * いずれもコンパイラーの一時領域を含めない。回収点でVMが一時領域を消去して古い参照を残さない。
+     * GC_LOOP(0x27,u16)は候補の外側whileの先頭に置き、continueもこの位置へ戻す。
+     * operand=0はモジュール、非0は所属する入口関数の絶対PC。VMは呼出し先がすべて戻り、
+     * 評価スタックが空のときだけ実行する。詳細な安全条件とC++の参照規則はbytecode_vm.cppのcollectHeap()。
+     * bytecode-transfer.tsとESP32のbytecode_format.cpp・bytecode_receiver.cppが配置・命令を検証する。
      * 関数表→本体型表・フィールド表→命令列→文字列表→UTF-8の順でパディングなし。
      * 型レコード16バイトとフィールド4バイトの詳細はbytecodeTypeRecordLengthのコメントを参照する。
      * 型IDは非0昇順、フィールド表は型の宣言順で隙間なく配置する。空の本体型・型の循環を許す。
@@ -1537,9 +1572,9 @@ class BytecodeGenerator {
         const api = this.analysis.api;
         const headerLength = bytecodeHeaderLength;
         const functionRecordLength = bytecodeFunctionRecordLength;
-        if (api.schemaVersion !== 5 || api.callingConventionVersion !== 5
-            || api.stringPolicyVersion !== 2 || !/^[0-9a-f]{64}$/.test(api.abiHash)) {
-            this.binaryError(this.location(this.module), "バイナリversion=6に対応するAPI定義・ABI指紋ではありません");
+        if (api.schemaVersion !== 6 || api.callingConventionVersion !== 6
+            || api.stringPolicyVersion !== 3 || !/^[0-9a-f]{64}$/.test(api.abiHash)) {
+            this.binaryError(this.location(this.module), "バイナリversion=7に対応するAPI定義・ABI指紋ではありません");
         }
         const labels = new Map<string, LabelAddress>();
         const functions: FunctionEntry[] = [];
@@ -1601,6 +1636,7 @@ class BytecodeGenerator {
         view.setUint16(18, api.schemaVersion, true);
         view.setUint32(20, stringDataLength, true);
         view.setUint16(56, typeCount, true);
+        view.setUint16(58, this.uint16(this.analysis.globals.size, moduleLocation, "大域の根の数"), true);
         view.setUint32(60, typeLength, true);
         for (let index = 0; index < 32; index++) {
             view.setUint8(24 + index, Number.parseInt(api.abiHash.slice(index * 2, index * 2 + 2), 16));
@@ -1648,7 +1684,7 @@ class BytecodeGenerator {
                 this.binaryError(fn, "戻り値にはNoneを含めて1スロット以上が必要です");
             }
             view.setUint16(offset + 8, returns, true);
-            view.setUint16(offset + 10, 0, true);
+            view.setUint16(offset + 10, fn.roots, true);
         }
 
         let offset = codeOffset;
@@ -1699,7 +1735,7 @@ class BytecodeGenerator {
     /**
      * この生成器で内部命令列を1回生成し、共通の命令・定数表からバイナリへ符号化する。
      *
-     * @returns 意味解析済みのversion=6バイナリ。
+     * @returns 意味解析済みのversion=7バイナリ。
      */
     generateBytecode(): Uint8Array {
         this.compileTyped();
@@ -1712,7 +1748,7 @@ class BytecodeGenerator {
      * 文の先頭・関数入口・暗黙returnの最終PCを停止候補へ対応付ける。
      * 複数スロットのSTOREの途中やCALLからの継続には行ブレークポイントを作らない。
      *
-     * @returns 同じ命令列から作ったversion=6のbytesと、元ソース・変数配置・停止位置のinfo。
+     * @returns 同じ命令列から作ったversion=7のbytesと、元ソース・変数配置・停止位置のinfo。
      * @throws Error 元ソースまたは意味解析結果がない場合。
      */
     generateDebugBytecode(): PythonDebugBuild {
@@ -1770,7 +1806,7 @@ export function generateAssembly(analysis: PythonAnalysis): string {
 }
 
 /**
- * version=6のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
+ * version=7のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
  * bytecode-transfer.tsとESP32受信器は形式を検証し、VMが実行する。
  * 転送成功・開始ACKは正常終了や実機動作の確認を意味しない。
  * @param analysis 型・配置を確定した解析結果。
@@ -1781,7 +1817,7 @@ export function generateBytecode(analysis: PythonAnalysis): Uint8Array {
 }
 
 /**
- * 同じコンパイルからversion=6のバイナリとデバッグ情報を返す。
+ * 同じコンパイルからversion=7のバイナリとデバッグ情報を返す。
  * @param analysis 元ソースを持つ意味解析結果。
  * @returns 転送バイナリ・最終PC・名前と型・停止点。
  */

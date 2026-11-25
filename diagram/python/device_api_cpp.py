@@ -117,9 +117,9 @@ class CppGenerator:
                           "         * @brief C++の{}を入れ子も含めてGC本体へコピーする。".format(name),
                           "         * @param vm 確保先のVM。", "         * @param input バックエンドの結果。",
                           "         * @param value 成功時だけ設定する参照。", "         * @return 確保と変換の成功時true。",
-                          "         * @details 構築途中の親をHeapRootで保持し、子の確保中のGCから保護する。", "         */",
+                          "         * @details C++の構築中にGCを行わない。結果はVMへ返し、C++側へ参照を持ち越さない。", "         */",
                           "        inline bool write_{}(BytecodeVM &vm, const {} &input, BytecodeVM::Value &value) {{".format(name, name),
-                          "            BytecodeVM::Value holder;", "            BytecodeVM::HeapRoot root(vm, holder);",
+                          "            BytecodeVM::Value holder;",
                           "            if (!vm.allocateHeapValue({}, {}, 0, holder)) {{".format(item["id"], count),
                           "                return false;", "            }",
                           "            auto *fields = static_cast<BytecodeVM::Value *>(holder.reference->data);"])

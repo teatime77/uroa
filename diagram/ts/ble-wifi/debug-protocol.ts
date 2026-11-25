@@ -10,7 +10,7 @@ import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
  * デバッグ通信の版・上限・結果名と状態番号を共有する定義。
  */
 export const debugProtocol = {
-    version: 1, eventVersion: 2, snapshotVersion: 5, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
+    version: 1, eventVersion: 2, snapshotVersion: 6, maxBreakpoints: 4096, maxSnapshotLength: 256 * 1024, paused: 5, timeoutMs: 2500,
     errors: ["成功", "形式不正", "順序不正", "範囲外", "メモリ不足", "CRC不一致", "不正なブレークポイント",
         "VM実行中または通信混雑", "プログラムまたは停止情報が失効", "受信期限切れ"]
 } as const;
@@ -129,36 +129,15 @@ export interface DebugValue {
      */
     classId: number;
     /**
-     * 通信応答の操作別の値。
+     * 復号済み数値、文字列ID、機器ハンドル。未初期化はundefined、Noneはnull、GC参照は0。
      */
     value: number | null | undefined;
-}
-
-/** Snapshotで受け取るGC本体。フィールドは宣言順のValue列。 */
-export interface DebugObject {
-    /** ndarrayの形状・dtype。object要素はfields、数値要素はdataで保持する。 */
-    array?: {
-        /** 要素表現。 */
-        dtype: "float32" | "uint8" | "object";
-        /** 各軸の長さ。 */
-        shape: readonly number[];
-        /** 全要素数。 */
-        size: number;
-        /** C順・little endianの全数値データ。objectの場合は空。停止データと寿命を共有し、変更しない。 */
-        data: Uint8Array;
-    };
-    /** 本体型ID。コンパイル情報のクラスへ対応する。 */
-    classId: number;
-    /** 宣言順の値。tag=8の本体IDで共有・循環を表す。 */
-    fields: readonly DebugValue[];
 }
 
 /**
  * 同一停止に属するPC・フレーム・全値スロットと文字列本体。
  */
 export interface DebugSnapshot {
-    /** 本体IDと、型ID・宣言順フィールドの対応。生アドレスは保持しない。 */
-    objects: ReadonlyMap<number, DebugObject>;
     /**
      * ESP32稼働中に再利用しない停止ID。同じ停止の要求とデータを照合する。
      */
@@ -246,7 +225,7 @@ function parseEvent(view: DataView): DebugEvent {
         errorPc: progress && state === 4 ? view.getUint32(4, true) : undefined,
     };
     if (paused && event.code === 0 && (event.stopId === 0 || event.revision === 0
-        || event.byteLength < 32 || event.byteLength > debugProtocol.maxSnapshotLength)
+        || event.byteLength < 28 || event.byteLength > debugProtocol.maxSnapshotLength)
         || !paused && (event.stopId !== 0 || event.byteLength !== 0 || event.crc32 !== 0)) {
         throw new Error("デバッグ停止通知の範囲が不正です。");
     }
@@ -254,35 +233,24 @@ function parseEvent(view: DataView): DebugEvent {
 }
 
 /**
- * 全体CRCとスロットのタグ・範囲を検証してから利用者へ返す。
- *
- * Snapshotヘッダー24バイト: version:u8@0=5、reason:u8@1=1(ブレークポイント)/2(ステップ)、slotBytes:u16@2=8、
- * PC:u32@4、BP:u32@8、SP:u32@12、大域個数:u32@16、スタック個数:u32@20(=SP)。
- * 続いて大域[0,count)、スタック[0,SP)。各スロット8バイト: tag:u8@0、予約:u8@1=0、
- * classId:u16@2(tag7/8以外0)、payload:u32@4。tagは0未初期化、1int32、2binary32、3None、
- * 4ReturnPc、5SavedBp、6String ID、7Object handle、8GC本体ID。未初期化/Noneのpayloadは0。
- * スロット列の後に文字列数:u32、続いて各文字列のID:u32、UTF-8バイト長:u32、本体（終端・パディングなし）。
- * 大域→スタック→本体フィールド順のString IDを1回だけ送り、未参照ID・欠落・重複・不正UTF-8は拒否する。
- * 定数と動的文字列の両方を含む。メモリ不足では明示エラーとし、切り詰めない。
- * 文字列列の後に本体数:u32。各本体のヘッダー16バイトはID:u32@0・型ID:u16@4・フィールド数:u16@6、
- * kind:u8@8（0=通常、1=float32、2=uint8、3=object配列）、rank:u8@9、予約0:u16@10、数値バイト数:u32@12。
- * 通常本体はrank/数値バイト数=0、続いて8バイトValue列。数値配列はフィールド数=0・rank=1～4、
- * 続いてshape:u32[rank]、C順の全要素バイト列。float32はlittle endian・有限値だけを受理する。
- * object配列は数値バイト数=0、フィールド数=要素数で、Value要素列の後にshapeを送る。
- * 全要素は同じタグ・クラスの参照＋Noneに統一する。object配列自身や別配列への参照もIDで検証する。
- * 軸長は非負int32、0軸を含めば要素数0。積・dtypeの幅とバイト数を全件照合する。切詰め送信は行わない。
- * 同一IDは同じ本体を表し、全参照先の存在と型を全件検証する。確保一覧の未回収本体も含み、
- * アドレスは送らない。表示は同一IDの重複展開を止める。Snapshotはversion=5だけを受理する。
- * 専用フレーム表は送らず、BP+0(ReturnPc)、BP+1(SavedBp)と同一ビルドのCALL PC/関数範囲で復元する。
- * モジュールと最初の関数のBPがともに0でも、所属関数とCALL対応で区別する。
- * 名前・型・行・変数配置はpython/bytecode.tsが同一コンパイルで作り、python/debugger-view.tsが表示する。
- * @param bytes 同一停止に属する全Snapshot。
- * @param event 直前の停止通知。長さとCRCを照合する。
- * @returns 検証済みのスロット・本体・文字列。
- * @throws {Error} 形式・参照・型・CRCが不正な場合。
+ * Snapshot version=6の値スロットと直接参照する文字列だけを復号する。
+ * ヘッダー24バイトはversion:u8@0=6、reason:u8@1、slotBytes:u16@2=8、
+ * PC:u32@4、BP:u32@8、SP:u32@12、大域数:u32@16、スタック数:u32@20(=SP)。reasonは1=行停止、2=ステップ。
+ * 続いて大域・スタックの8バイトValue、文字列数:u32、各ID:u32・長さ:u32・UTF-8を置く。
+ * Valueはtag:u8@0、予約0:u8@1、classId:u16@2、payload:u32@4。tagは0=未初期化、1=int32、
+ * 2=float32、3=None、4=ReturnPc、5=SavedBp、6=String ID、7=機器ハンドル、8=GC参照。
+ * classIdはtag7/8だけ非0。tag0/3のpayloadは0。大域に管理値を含めず、浮動小数は有限値だけを許す。
+ * 直接参照する定数・動的文字列の各IDを1回だけ送り、欠落・重複・未参照ID・不正UTF-8は拒否する。
+ * tag=8はGC本体への不透明な参照でclassIdだけを送り、payload=0。本体ID・フィールド・配列要素は送らない。
+ * 既存の数値・文字列・フレーム表示は維持し、GC用のデバッグデータを保持しない。
+ * BPチェーンと同一ビルドのCALL・関数範囲からフレームを復元する。最小長28バイト、上限256KiB。
+ * @param bytes 同一停止の全データ。
+ * @param event 長さとCRCを照合する停止通知。
+ * @returns 検証済みの値スロットと文字列。
+ * @throws {Error} 版・タグ・型・範囲・CRCが不正な場合。
  */
 function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
-    if (bytes.length < 32 || bytes.length !== event.byteLength || bytecodeCrc32(bytes) !== event.crc32) {
+    if (bytes.length < 28 || bytes.length !== event.byteLength || bytecodeCrc32(bytes) !== event.crc32) {
         throw new Error("デバッグ停止データのCRCが一致しません。");
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -299,7 +267,7 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         throw new Error("デバッグ停止データのヘッダーが不正です。");
     }
     /**
-     * スロットまたはフィールドの8バイトを検証する。
+     * 値スロットの8バイトを検証する。
      * @param offset レコード先頭。
      * @param management スタック管理値を許可するか。
      * @returns 検証済みの値。
@@ -310,7 +278,7 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         const classId = view.getUint16(offset + 2, true);
         const payload = view.getUint32(offset + 4, true);
         if (tag > 8 || view.getUint8(offset + 1) !== 0 || (tag === 7 || tag === 8 ? classId === 0 : classId !== 0)
-            || tag === 8 && payload === 0
+            || tag === 8 && payload !== 0
             || (tag === 0 || tag === 3) && payload !== 0 || !management && (tag === 4 || tag === 5)
             || tag === 4 && payload > 65535 || tag === 5 && payload > sp) {
             throw new Error("デバッグ停止データの値が不正です。");
@@ -349,88 +317,16 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         strings.set(id, decoder.decode(bytes.subarray(offset, offset + length)));
         offset += length;
     }
-    const objects = new Map<number, DebugObject>();
-    if (offset + 4 > bytes.length) {
-        throw new Error("停止データの本体数がありません。");
-    }
-    const objectCount = view.getUint32(offset, true);
-    offset += 4;
-    if (objectCount > Math.floor((bytes.length - offset) / 16)) {
-        throw new Error("停止データの本体数が不正です。");
-    }
-    for (let index = 0; index < objectCount; index++) {
-        if (offset + 16 > bytes.length) {
-            throw new Error("停止データの本体レコードが短すぎます。");
-        }
-        const id = view.getUint32(offset, true);
-        const classId = view.getUint16(offset + 4, true);
-        const fields = view.getUint16(offset + 6, true);
-        const kind = view.getUint8(offset + 8);
-        const rank = view.getUint8(offset + 9);
-        const reserved = view.getUint16(offset + 10, true);
-        const dataLength = view.getUint32(offset + 12, true);
-        offset += 16;
-        if (id === 0 || classId === 0 || objects.has(id) || kind > 3 || reserved !== 0
-            || (kind === 0 ? rank !== 0 || dataLength !== 0 : (kind !== 3 && fields !== 0) || rank < 1 || rank > 4)
-            || kind === 3 && dataLength !== 0
-            || fields > Math.floor((bytes.length - offset) / 8)) {
-            throw new Error("停止データの本体ID・型・フィールド数が不正です。");
-        }
-        const members: DebugValue[] = [];
-        for (let field = 0; field < fields; field++) {
-            members.push(readValue(offset, false));
-            offset += 8;
-        }
-        const object: DebugObject = { classId, fields: members };
-        if (kind !== 0) {
-            if (rank * 4 + dataLength > bytes.length - offset) {
-                throw new Error("停止データの配列長が不正です。");
-            }
-            const shape: number[] = [];
-            for (let axis = 0; axis < rank; axis++) {
-                const dimension = view.getUint32(offset, true);
-                offset += 4;
-                if (dimension > 0x7fffffff) {
-                    throw new Error("停止データの軸長が不正です。");
-                }
-                shape.push(dimension);
-            }
-            const size = shape.includes(0) ? 0 : shape.reduce((product, dimension) => product * dimension, 1);
-            if (!Number.isSafeInteger(size) || (kind === 3 ? size !== fields : size * (kind === 1 ? 4 : 1) !== dataLength)) {
-                throw new Error("停止データのshapeとバイト数が一致しません。");
-            }
-            if (kind === 3) {
-                const first = members.find(value => value.tag !== 3);
-                if (members.some(value => value.tag !== 3 && ((value.tag !== 7 && value.tag !== 8)
-                    || value.tag !== first?.tag || value.classId !== first?.classId))) {
-                    throw new Error("object配列の要素型が統一されていません。");
-                }
-            }
-            const data = bytes.subarray(offset, offset + dataLength);
-            if (kind === 1) {
-                for (let element = 0; element < size; element++) {
-                    if (!Number.isFinite(view.getFloat32(offset + element * 4, true))) {
-                        throw new Error("停止データの配列に非有限値があります。");
-                    }
-                }
-            }
-            offset += dataLength;
-            object.array = { dtype: kind === 1 ? "float32" : kind === 2 ? "uint8" : "object", shape, size, data };
-        }
-        objects.set(id, object);
-    }
-    const allValues = [...values, ...[...objects.values()].flatMap(object => object.fields)];
-    const ids = new Set(allValues.filter(value => value.tag === 6).map(value => Number(value.value)));
-    if (strings.size !== ids.size || [...ids].some(id => !strings.has(id)) || allValues.some(value =>
-        value.tag === 8 && objects.get(Number(value.value))?.classId !== value.classId)) {
-        throw new Error("停止データの参照先が存在しないか、型が一致しません。");
+    const ids = new Set(values.filter(value => value.tag === 6).map(value => Number(value.value)));
+    if (strings.size !== ids.size || [...ids].some(id => !strings.has(id))) {
+        throw new Error("停止データの文字列が一致しません。");
     }
     if (offset !== bytes.length) {
         throw new Error("停止データの末尾に余分なデータがあります。");
     }
 
     return { stopId: event.stopId, revision: event.revision, reason, pc, bp, sp,
-        globals: values.slice(0, globals), stack: values.slice(globals), strings, objects };
+        globals: values.slice(0, globals), stack: values.slice(globals), strings };
 }
 
 /** 接続単位の通信。GATTオブジェクト・Snapshotは保存せず、dispose()後の結果は破棄する。 */

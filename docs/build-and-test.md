@@ -1,5 +1,13 @@
 # ビルドと回帰テスト
 
+## Python VMのGC簡略化（2026-11-25）
+
+[コンパイラー](../diagram/ts/python/bytecode.ts)へメインループの回収点と根の範囲を追加し、[VM](../../esp32/app/diagram-control/src/bytecode_vm.cpp)の再帰マークと[ヒープ](../../esp32/app/diagram-control/src/bytecode_heap.cpp)のスイープへ整理した。C++の根登録、確保中のGC・再試行、GC統計と本体IDを削除した。本体のSnapshot転送・展開を削除し、既存のスカラー・文字列・フレーム表示は維持する。仕様の正本と変更先は[共有文書](diagram/python/object-array-change-map.md)から参照する。
+
+API生成器を実行し、JSON・C++の`--check`一致確認に成功した。`npm.cmd run verify`の型・公開ビルド・成果物の静的確認は成功。既存gameのimport混在警告2件は残る。ESP32は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)のとおりsupermini_esp32s3だけでビルドした。
+
+バイトコードversion=7、API schema・呼出し規約=6、stringPolicyVersion=3、Snapshot=6とABI指紋へ更新した。Webとファームウェアを更新し、Pythonバイトコードを再生成・再送信する。文書リンク・コメント・差分を確認した。テストは作成・実行せず、ブラウザー、Upload、通信、VM実行、回収・GC時間の実機確認は未実施。commit・pushは行っていない。
+
 ## オブジェクト・NumPy対応 第5段階：object配列（2026-11-25）
 
 `np.empty(..., dtype=object)`と`np.object_`を[意味解析](../diagram/ts/python/semantic.ts)・[コード生成](../diagram/ts/python/bytecode.ts)から[NumPyのC++実装](../../esp32/app/diagram-control/src/numpy_native.cpp)へ接続した。要素型の推論と統合、None初期化、参照格納・GC探索、共有・循環・配列要素を含むSnapshotと表示を更新した。Noneの属性・メソッド呼出し前の検査も追加した。実装範囲と正本の参照先は[段階一覧](diagram/python/object-array-change-map.md)にまとめた。

@@ -1,7 +1,7 @@
 {
-    "schemaVersion": 5,
-    "callingConventionVersion": 5,
-    "stringPolicyVersion": 2,
+    "schemaVersion": 6,
+    "callingConventionVersion": 6,
+    "stringPolicyVersion": 3,
     "classes": [
         {
             "id": 1,
@@ -827,5 +827,5 @@
             ]
         }
     ],
-    "abiHash": "f14d3f0a3e651b9c628776ad013818c189f236cca77219970081b8ee1d99c608"
+    "abiHash": "476aa95d89233d21c384573b7785a4e0484ea6eb77ba5dcc1646ba86a6182a9e"
 }

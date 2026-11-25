@@ -12,19 +12,20 @@
 |---|---|
 | 事前整理 | 旧生成経路・バイトコード版1/2・旧Event/Snapshotを削除し、C++の形式解釈を共通化済み。 |
 | 第1段階 | クラス・キーワード引数・複数添字の構文と、NumPyの共通宣言・引数番号対応を実装済み。 |
-| 第2段階 | ヒープ確保・非再帰マーク＆スイープ・VMの根登録を実装済み。 |
-| 第3段階 | ユーザークラス・コンストラクタ・メソッド・属性アクセス・既存recordの参照化・Snapshot表示を実装済み。 |
-| 第4段階 | float32・uint8のzeros/empty、実行時shape、全軸添字・属性・len、参照共有と配列Snapshotを実装済み。 |
-| 第5段階 | 今回、object配列のNone初期化・参照格納・要素型推論・GC探索・Snapshotと表示を接続。全5段階の実装を完了。 |
+| 第2段階 | ヒープ確保・マーク＆スイープ・VMの根登録を実装済み。探索は浅い参照構造を前提とする再帰方式へ簡略化した。 |
+| 第3段階 | ユーザークラス・コンストラクタ・メソッド・属性アクセス・既存recordの参照化を実装済み。 |
+| 第4段階 | float32・uint8のzeros/empty、実行時shape、全軸添字・属性・len、参照共有を実装済み。 |
+| 第5段階 | object配列のNone初期化・参照格納・要素型推論・GC探索を接続。全5段階の実装を完了。 |
+| GC簡略化 | メインループの回収点を追加。再帰マークとスイープに整理し、C++の根・確保中のGC・GC統計・本体のデバッグ転送と展開を削除した。 |
 | 採用方式 | ヒープに確保する、移動しない単純なマーク＆スイープGC。旧6段階を第10節の5段階へ再編した。 |
 
-現行形式と変更点の正本はソースコメントを参照する。第5段階でバイトコードversion=6、API schema・呼出し規約=5、Snapshot=5へ更新した。stringPolicyVersion=2、moduleDefinitionVersion=1、Control=1、Event=2、転送フレーム=2は維持する。既存nativeIdは維持し、NumPyは共有のモジュール関数IDで呼ぶ。ABI指紋は変更したため、Web・ファームウェアの両方を更新し、バイトコードを再生成・再送信する。
+現行形式と変更点の正本はソースコメントを参照する。GC簡略化でバイトコードversion=7、API schema・呼出し規約=6、stringPolicyVersion=3、Snapshot=6へ更新した。moduleDefinitionVersion=1、Control=1、Event=2、転送フレーム=2は維持する。既存nativeIdは維持し、NumPyは共有のモジュール関数IDで呼ぶ。ABI指紋は変更したため、Web・ファームウェアの両方を更新し、バイトコードを再生成・再送信する。
 
 ### 1.2 GC採用後のメモリー規則
 
 - 通常の変数・引数・一時値は値スタック、本体はヒープに置く。値スタックには型情報と本体ポインターを置き、整数の機器ハンドルや文字列IDと区別する。
 - 代入・引数・戻り値は参照共有とする。複数の変数・メンバー・要素が同じ本体を指し、本体を暗黙にはコピーしない。
-- 関数終了時は局所参照を根から外すだけで本体を解放しない。値スタック・大域・C++側の登録済み参照から到達不能になった本体をGCで回収する。
+- 関数終了時は局所参照を根から外すだけで本体を解放しない。大域変数とメインループの引数・局所変数から到達不能になった本体を回収点でGC回収する。
 - 入れ子・共有・循環を許可する。数値配列の生データは参照探索から除外し、参照メンバーとobject配列の要素をたどる。
 - コンストラクタの所有フレーム継承、フレーム別の本体解放、コンパイル時寿命解析は廃止する。参照カウント・弱参照・スタック確保・増分GCは当初追加しない。
 - 型・添字・未初期化・サイズ計算の検査は維持する。通常関数でも生成した本体をメンバーやobject配列へ格納できる。寿命を理由とする従来の禁止は撤回する。
@@ -46,7 +47,7 @@ def set_member(dst):
 - 戻り値は参照をそのままcallerへ渡す。引数をreturnする場合も同じ本体を共有する。従来の「戻り値本体はコピーする」という仕様は変更する。
 - calleeで生成した本体や、内部から参照する別の本体も返せる。所有先変更・本体移動・内部参照の付替えは不要。
 - 配列サイズは実行時に決まってよい。「CALL前にサイズ既知」「戻り値の内部へcallee生成本体を格納禁止」という制限は撤回済み。
-- コンストラクタと子孫コンストラクタも通常のGCヒープへ確保する。構築途中のselfや子をGCの根・到達可能なメンバーで保持する。
+- コンストラクタと子孫コンストラクタも通常のGCヒープへ確保する。構築処理中にはGCを行わない。
 
 ### 1.4 NumPyとキーワード引数
 
@@ -64,19 +65,19 @@ def set_member(dst):
 
 ### 1.5 第5段階までの実装境界
 
-実装の詳細は[bytecode_vm.h](../../../../esp32/app/diagram-control/include/bytecode_vm.h)の`allocateHeapValue()`・`collectHeap()`・`HeapRoot`と、上記GCソースのコメントを参照する。
+実装の詳細は[bytecode_vm.h](../../../../esp32/app/diagram-control/include/bytecode_vm.h)の`allocateHeapValue()`・`markValues()`・`collectHeap()`と、上記GCソースのコメントを参照する。
 
-- `BytecodeHeap`が確保一覧・探索待ちリンク・マーク・回収を管理する。GC自身は追加確保やC++再帰を使わない。
+- `BytecodeHeap`は確保一覧・確保・スイープ・全解放を担当する。VMがValue列を再帰マークする。詳細はbytecode_vm.cppのmarkValues()・collectHeap()を参照する。
 - 本体先頭のValue列と後続の数値バイト列を区別する。GCがたどるのはValue列内の本体参照だけ。
-- VMの値スタック・大域・同期ネイティブ処理中の結果と、C++の`HeapRoot`を根にする。未登録のC++生ポインターは自動探索しない。
-- 累積確保量に応じたGC要求は命令境界で処理する。確保失敗時は登録済みの根でGCを行い、一度だけ再試行する。命令数budgetはGC時間を含む経過時間上限ではない。
-- Stop・再開始で全解放し、Paused・Halted・Errorの診断値は保持する。使用量・回収量・GC最大時間を記録するが、60fpsや数ms以内の完了は未計測。
+- 根・回収点・C++の参照規則の正本はbytecode_vm.cppのcollectHeap()とcallNative()。C++の根登録は削除した。
+- コンパイラーの回収点選定とGC_LOOPの形式はbytecode.tsのcollectFunctions()・encodeBinary()を参照する。確保中のGC・再試行は削除した。命令数budgetはGC時間を含む経過時間上限ではない。
+- Stop・再開始で全解放する。GC統計・診断用本体ID・探索待ちリンクは保持しない。60fpsや数ms以内の完了は未計測。
 - Pythonのユーザークラスと既存recordを1スロットのHeapReferenceで扱う。型表・生成命令・属性アクセス・self・メソッドを接続した。詳細はsemantic.tsのregisterClasses()とbytecode.tsのtypedCall()を参照する。
 - フィールド名は__init__のself属性代入から収集し、型を静的に推論する。通常関数でも宣言済みフィールドへ格納できる。継承・動的な属性追加・入れ子のクラス・第一級関数は対象外。
 - ユーザークラスの文字列フィールドを保持し、C++側のrecord値型との変換は生成スタブで行う。既存APIの読取り専用フィールドを維持する。
-- Snapshotは生アドレスを本体IDへ置き換え、フィールドを送る。共有参照・循環・深い入れ子の表示に上限を設ける。詳細はdebug-protocol.tsとdebugger-view.tsを参照する。
+- Snapshotは既存のスカラー・文字列・フレーム表示だけを維持し、GC参照はclassIdだけを表示する。本体ID・メンバー・配列内容の転送と展開は削除した。詳細はdebug-protocol.tsとdebugger-view.tsを参照する。
 - 数値配列の生成・スカラー読書き・全軸添字・属性・lenを接続した。対応範囲と診断はsemantic.tsのresolveModuleCall()・arrayItem()・operation()、命令と評価順はbytecode.tsのtypedNumpy()・typedArray()を参照する。
-- 配列のshape・全数値データまたはobjectの全参照要素をSnapshotへ含め、表示DOMの要素数だけを制限する。配列の本体参照を、通常関数・メンバー・引数・戻り値でも共有する。配列全体の演算・真偽変換・要素ごとの比較は追加しない。
+- 配列の本体参照を、通常関数・メンバー・引数・戻り値でも共有する。配列全体の演算・真偽変換・要素ごとの比較は追加しない。
 - object配列へ通常関数で生成した参照を格納できる。数値配列・object配列も要素になり、入れ子・共有・循環を許す。単一参照要素型の推論・合流と、格納元がない場合のNone専用型はsemantic.tsのmerge()・normalizeArrays()・resolve()を参照する。
 - Noneの属性・配列操作は実行時に検査し、メソッドはCHECK_REFで引数評価前に対象を検査する。命令はbytecode.ts、実行はbytecode_vm.cpp、エラー番号はdebug-protocol.tsを参照する。
 
@@ -145,7 +146,7 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 |---|---|---|---|
 | [diagram/python/module_api.py](../../../diagram/python/module_api.py) | `ModuleParser.parse()`、`function()`、`type_name()` | 第1段階で追加済み | 組込みモジュールの型・関数・必須引数・optionIdを構築する。実行対応する型と関数を追加する際も、この定義から共有する。 |
 | [diagram/python/generate-device-api.py](../../../diagram/python/generate-device-api.py) | `InterfaceParser.read_type()`、`read_callable()`、`read_class()`、`parse()`、`main()` | 第3段階で拡張済み | recordの参照化と文字列保持に伴う共通版・ABIを更新した。 |
-| [diagram/python/device_api_cpp.py](../../../diagram/python/device_api_cpp.py) | `CppGenerator.module_enums()`、`record()`、`cpp_type()`、`record_helpers()`、`arguments()`、`result_type()`、`generate()`、`generate_cpp()` | 第3段階で拡張済み | leaves()を削除し、GC本体とC++ recordの変換とHeapRootを生成する。NumPy登録は後続段階。 |
+| [diagram/python/device_api_cpp.py](../../../diagram/python/device_api_cpp.py) | `CppGenerator.module_enums()`、`record()`、`cpp_type()`、`record_helpers()`、`arguments()`、`result_type()`、`generate()`、`generate_cpp()` | 第3段階で拡張済み | leaves()を削除し、GC本体とC++ recordの変換を生成する。HeapRootの生成は削除済み。 |
 | [diagram/python/device.pyi](../../../diagram/python/device.pyi) | `numpy`・`zeros()`・`empty()`・`object_`、`Vec3`・`IMUValue`等のrecord宣言 | 第1〜5段階で拡張済み | NumPy名前空間・共有シグネチャ・object_のdtype宣言を生成定義へ接続した。 |
 | [public/diagram/device/device-api.json](../../../public/diagram/device/device-api.json) | `schemaVersion`、`callingConventionVersion`、`abiHash`、型・呼出し情報 | 再生成 | 生成元から更新する。JSONを手編集しない。 |
 | [ESP32/include/device_api.generated.h](../../../../esp32/app/diagram-control/include/device_api.generated.h) | `device_api::Vec3`、`IMUValue`、`Backend`、`makeNativeApi()` | 第3段階で再生成済み | C++側のrecord値型・Backend署名を維持した。直接編集しない。 |
@@ -157,18 +158,18 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 
 | ファイル | 関数／メソッド・宣言 | 区分 | 変更内容 |
 |---|---|---|---|
-| [include/bytecode_vm.h](../../../../esp32/app/diagram-control/include/bytecode_vm.h) | `BytecodeVM::Type`、`Value`、`HeapRoot`、`heapStatistics` | 第2〜3段階で拡張済み | 機器ハンドルとGC本体ポインター、C++の根、診断を追加し、Pythonの本体型・命令へ接続した。 |
-| 同上 | `NativeCall`、`NativeEntry`、`NativeApi` | 第2段階で契約を拡張 | C++確保APIと根登録を追加した。確保をまたぐC++の一時本体参照はHeapRootへ登録する。 |
+| [include/bytecode_vm.h](../../../../esp32/app/diagram-control/include/bytecode_vm.h) | `BytecodeVM::Type`、`Value` | 第2〜3段階で拡張済み | 機器ハンドルとGC本体ポインターを区別する。C++の根・GC統計は削除した。 |
+| 同上 | `NativeCall`、`NativeEntry`、`NativeApi` | 第2段階で契約を拡張 | C++確保APIを使う。同期構築を完了して結果をVMへ返し、C++側へGC対象の参照を持ち越さない。 |
 | [src/bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp) | `BytecodeVM::start()`、`stop()`、`bindNativeApi()` | 第2〜3段階で拡張済み | Stop・再開始で根を失効させ全本体を解放し、共通形式検証済みの本体型表を借用する。 |
 | 同上 | `BytecodeVM::call()`、`ret()` | 第3段階まで接続済み | 局所スロットを根から外し、Pythonの戻り値参照を共有する。本体のコピー・所有先変更は不要。 |
 | 同上 | `BytecodeVM::step()` | 既存 | 本体確保、属性、添字、dtype別の読書き、配列長、コンストラクタ用命令等を実行する。`None`要素のメンバー参照、添字範囲、未初期化フィールド、バイト数計算のoverflowを検査する。 |
 | 同上 | `BytecodeVM::validValue()`、`truth()`、`calculate()` | 既存 | VM参照と機器ハンドルを区別して検査する。配列・オブジェクトを数値として扱わず、未対応の演算を明示的に拒否する。 |
 | 同上 | `BytecodeVM::push()`、`pop()` | 条件付き | 参照1個のpush／popでは本体を解放しない。現在の固定スロット・一時値下限の方式を利用できるか確認する。 |
-| 同上 | `BytecodeVM::callNative()` | 第2段階で拡張済み | 同期コールバック中だけ設定途中の結果を根にする。NativePendingでの保持・再試行は根の登録規約を守り、失敗した結果を公開しない。 |
-| 同上 | `BytecodeVM::allocateText()`、`firstDebugString()`、`debugValueCount()`、`debugValueAt()` | 第3段階で拡張済み | 大域・値スタック・C++の根・本体内のStringを保持し、Snapshotへ文字列を含める。 |
+| 同上 | `BytecodeVM::callNative()` | 第2段階で拡張済み | コールバック中にはGCを行わない。成功・待機・失敗のすべてでC++の結果領域を消去する。 |
+| 同上 | `BytecodeVM::allocateText()`、`firstDebugString()`、`debugValueCount()`、`debugValueAt()` | 第3段階で拡張済み | 文字列の回収をGC_LOOPだけに限定し、Snapshotは大域・値スタックの直接の文字列だけを含める。 |
 | 同上 | `BytecodeVM::heapFields()`、`fieldValue()` | 第3段階で追加済み | 型表・本体・フィールド値を照合し、属性操作と生成スタブの変換を検査する。 |
-| [include/bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)・[src/bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp) | `BytecodeHeap::Block`、`allocate()`、`collect()`、`mark()`、`clear()`、`visit()` | 第2〜4段階で拡張済み | 確保・非再帰探索・到達不能本体の回収・全解放。本体種別で通常オブジェクトと数値配列を区別する。 |
-| VMヘッダー・実装 | `allocateHeapValue()`、`collectHeap()`、`traceHeapRoots()`、`traceHeapValues()` | 第2段階で追加済み | VMとC++側の根を接続し、本体先頭のValue列だけを探索する。 |
+| [include/bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)・[src/bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp) | `BytecodeHeap::Block`、`blocks`、`allocate()`、`contains()`、`sweep()`、`clear()` | 第2〜4段階で拡張済み／探索を簡略化済み | 確保一覧・確保・到達不能本体のスイープ・全解放。本体種別で通常オブジェクトと配列を区別する。 |
+| VMヘッダー・実装 | `allocateHeapValue()`、`markValues()`、`collectHeap()` | 第2段階で追加済み | メインループの安全な位置だけで、大域とメインの局所値から本体先頭のValue列を再帰探索する。 |
 | [include/numpy_native.h](../../../../esp32/app/diagram-control/include/numpy_native.h)・[src/numpy_native.cpp](../../../../esp32/app/diagram-control/src/numpy_native.cpp) | `numpy_native::Option`、`create()`、`item()`、`attribute()` | 第4段階で追加済み | 共有enumの関数ID・引数番号でzeros/emptyを実行する。既定値・対応オプション・数値変換・添字をC++で扱う。 |
 | VMヘッダー・実装 | `Array`、`allocateArray()`、`arrayData()`、`arrayElementValue()`、`callNumpy()`、`arrayItem()`、`arrayAttribute()` | 第4〜5段階で追加・変更済み | 数値本体のサイズ・型・shapeを検証し、object配列のValue要素列をNoneで初期化してGCへ接続する。数値データは探索しない。旧NumericArray系の名前は共通名へ変更した。 |
 | [include/device_native.h](../../../../esp32/app/diagram-control/include/device_native.h)・[src/device_native.cpp](../../../../esp32/app/diagram-control/src/device_native.cpp) | `DeviceNative::IMU_get_value()`、`reset()`、既存の`create()`と機器管理用`Object` | 条件付き | 生成BackendのC++署名を保つならIMU本体の変更は不要で、変換は生成スタブへ置ける。機器ハンドルの管理とVM本体領域の解放を混ぜない。 |
@@ -185,12 +186,12 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 | [ESP32/src/bytecode_receiver.cpp](../../../../esp32/app/diagram-control/src/bytecode_receiver.cpp) | `BytecodeReceiver::validate()`、`validatePcs()` | 既存 | 新形式・命令・型情報・オペランドと、新しい命令先頭PCを検証する。共通の配置・命令長を使い、受信時固有の検証を更新する。 |
 | [ESP32/include/bytecode_receiver.h](../../../../esp32/app/diagram-control/include/bytecode_receiver.h) | `MaxLength`、`MaxBundle`、受信コードの公開宣言 | 条件付き | 上限や公開情報を変える場合のみ修正する。ndarrayの要素データは実行時に作るため、通常はbytecode転送へ配列本体を追加しない。 |
 | [ESP32/src/bytecode_debugger.cpp](../../../../esp32/app/diagram-control/src/bytecode_debugger.cpp) | `BytecodeDebugger::code()`、`clearFlags()`、`applyBreakpoints()`、`installDeployment()` | 既存 | 共通の形式解釈を使って命令範囲を取得する。新しい型表の位置を命令列と混同せず、bit7の設定・解除を命令先頭だけに行う。 |
-| 同上＋[include/bytecode_debugger.h](../../../../esp32/app/diagram-control/include/bytecode_debugger.h) | `BytecodeDebugger::publishState()`、`handle()`、Snapshot保持メンバー | 既存／一部条件付き | データ領域込みのSnapshot長・上限・取得失敗を扱い、Pausedの同じ停止状態から取得する。 |
-| [ESP32/src/bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp) | `configureDebugPoints()`、`debugSnapshotLength()`、`copyDebugSnapshot()` | 第3段階で拡張済み | GC本体をSnapshot内のIDとフィールド列へ変換し、生ポインターを送らない。 |
-| [diagram/ts/ble-wifi/debug-protocol.ts](../../../diagram/ts/ble-wifi/debug-protocol.ts) | `DebugValue`、`DebugSnapshot`、`decodeSnapshot()`、`debugProtocol` | 既存 | 新しい値タグ、データ領域、型・shape・参照位置を復号・全件検証する。Snapshot形式版と上限をC++側とそろえる。Control／Eventまで無条件に版変更しない。 |
+| 同上＋[include/bytecode_debugger.h](../../../../esp32/app/diagram-control/include/bytecode_debugger.h) | `BytecodeDebugger::publishState()`、`handle()`、Snapshot保持メンバー | 既存／一部条件付き | 値スロットと文字列のSnapshot長・上限・取得失敗を扱い、Pausedの同じ停止状態から取得する。 |
+| [ESP32/src/bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp) | `configureDebugPoints()`、`debugSnapshotLength()`、`copyDebugSnapshot()` | 第3段階で拡張済み | GC参照はclassIdだけを送り、メンバーや配列を列挙しない。 |
+| [diagram/ts/ble-wifi/debug-protocol.ts](../../../diagram/ts/ble-wifi/debug-protocol.ts) | `DebugValue`、`DebugSnapshot`、`decodeSnapshot()`、`debugProtocol` | 既存 | 値タグ・スロット・文字列を復号し、GC参照の不透明な表現を検証する。Snapshot形式版と上限をC++側とそろえる。Control／Eventまで無条件に版変更しない。 |
 | 同上 | `PythonDebugTransport.download()`、`accept()`、`invalidateSnapshot()` | 条件付き | 既存のチャンク受信・CRC・世代照合で新Snapshotを扱えるか確認する。必要な箇所だけ変更する。 |
 | [diagram/ts/python/debug-info.ts](../../../diagram/ts/python/debug-info.ts) | `PythonDebugFunction`、`PythonDebugInfo` | 既存 | API表だけでなくユーザークラス・ndarray型、メソッド名・所属と参照スロットを表示できる情報を追加する。 |
-| [diagram/ts/python/debugger-view.ts](../../../diagram/ts/python/debugger-view.ts) | `restoreFrames()`、`PythonDebuggerView.show()`、`value()`、`variables()`、`variable()`、`arrayVariable()`、`objectArrayVariable()` | 第3〜5段階で拡張済み | フィールド・dtype・shape・数値／参照要素を表示する。共有・循環の重複展開を止め、要素型を検査して表示のDOM要素数を制限する。 |
+| [diagram/ts/python/debugger-view.ts](../../../diagram/ts/python/debugger-view.ts) | `restoreFrames()`、`PythonDebuggerView.show()`、`value()`、`variables()`、`variable()` | 第3〜5段階で拡張済み | 既存のフレーム・スカラー・文字列と参照のclassIdを表示する。本体の展開は削除した。 |
 
 ## 8. 既存入口・UIの確認箇所
 
@@ -206,11 +207,11 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 
 ## 9. 実装後に残る事項
 
-全5段階の実装は接続済み。object要素型・配列要素・None初期化とSnapshotの扱いはソースコメントを参照する。残る実運用上の事項はGCの起動位置・上限・閾値の調整と、実機の処理時間・メモリー量・60fps成立の確認。イテレーター・yield・マルチスレッド等は第1〜5段階の対象外とする。
+全5段階の実装は接続済み。object要素型・配列要素・None初期化とSnapshotの扱いはソースコメントを参照する。GC簡略化を追加した。残る実運用上の事項は確保上限の調整と、実機の処理時間・メモリー量・60fps成立の確認。イテレーター・yield・マルチスレッド等は第1〜5段階の対象外とする。
 
 ## 10. GC採用後の段階別修正内容
 
-各段階で修正内容を提示して停止し、ユーザーが確認・commit・pushした後に次へ進む。旧6段階の所有管理・寿命解析・戻り値移送は撤回し、次の5段階へ置き換える。
+以下は全5段階で行った作業の履歴。GC・Snapshotの現在の変更先は第1・6・7節を参照する。各段階で修正内容を提示して停止し、ユーザーが確認・commit・pushした後に次へ進む。旧6段階の所有管理・寿命解析・戻り値移送は撤回した。
 
 ### 第1段階：共通定義・構文解析（実装済み）
 
@@ -227,9 +228,9 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 対象：bytecode_heap.h/.cpp、bytecode_vm.h/.cpp。
 
 - malloc/freeを使う本体管理、上限・整列・サイズ検査を追加する。
-- 本体を移動せず、追加確保やC++再帰を使わないマーク＆スイープを実装する。
-- 値スタック・大域・ネイティブ結果・HeapRootを根として接続する。
-- 命令境界のGC要求と、確保失敗時の回収・再試行を追加する。
+- 本体を移動せず、追加確保を行わないマーク＆スイープを実装する。実装後に浅い参照構造を前提とする再帰探索へ変更し、pendingを削除した。
+- 当初は値スタック・大域・ネイティブ結果・HeapRootを根として接続した。後述のGC簡略化で変更した。
+- 当初は命令境界のGC要求と確保失敗時の回収・再試行を追加した。GC簡略化で削除した。
 - Stop・再開始で全解放し、Paused・Halted・Errorの診断値は保持する。使用量・GC時間・回収数を記録する。
 - 既存形式とABIを維持し、新しい参照をSnapshotで未対応として拒否する。Pythonの生成命令・型表・文字列フィールドは後続段階。
 
@@ -258,7 +259,7 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 
 完了条件：実行時サイズの数値配列を、コンストラクタ以外でも生成・メンバー格納・返却する実装へ接続する。ビルド・生成物の確認結果は両リポジトリーの検証記録を参照し、実行確認とは区別する。
 
-### 第5段階：object配列（今回実装）
+### 第5段階：object配列（実装済み）
 
 対象：device.pyiと生成器、module-api.ts、意味解析・コード生成、NumPy C++処理、VM、デバッガー。
 
@@ -268,6 +269,10 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 - Noneアクセスの診断、共有・循環を含むSnapshotと表示を整える。
 
 完了条件：数値配列とobject配列を区別し、入れ子・共有・循環を含む参照構造をGC・型検査・Snapshotへ接続した。実装・生成物・ビルドの確認と、未実施の実行確認は両リポジトリーの検証記録で区別する。
+
+### GC簡略化（2026-11-25）
+
+コンパイラーの回収点選定・GC_LOOPと根の範囲を追加し、VMの再帰マークとヒープのスイープに整理した。C++の根登録、確保失敗時のGC・再試行、GC統計、本体IDと本体のSnapshot転送・表示を削除した。詳細な規則は[bytecode.ts](../../../diagram/ts/python/bytecode.ts)と[bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)の仕様コメントを参照する。
 
 ### 共通の作業・確認条件
 

@@ -3,7 +3,7 @@
  * parser.tsの同期構文解析とは分離し、構文木を入力として意味解析結果を返す。
  * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理から利用する。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
- * アセンブリ・version=6のバイトコード生成はbytecode.tsがこの結果を利用する。
+ * アセンブリ・version=7のバイトコード生成はbytecode.tsがこの結果を利用する。
  * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
  * ユーザークラス・record・数値／object ndarrayはGC本体を参照し、共有・循環を許す。
  * 新形式のBLE転送・受信形式検証はble-wifi側、参照共有と呼出しの実行はESP32の
@@ -432,7 +432,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
 
 /**
  * 未検証のJSONから、名前解決に使う機器API定義を作る。
- * schemaVersion/callingConventionVersion=5、stringPolicyVersion=2とABI指紋の形式を検証する。
+ * schemaVersion/callingConventionVersion=6、stringPolicyVersion=3とABI指紋の形式を検証する。
  * ID・名前の重複、型参照、メンバーの公開権限、コンストラクターの結果型を検査する。
  * nativeIdは全呼出し定義で一意とし、文字列引数はprint・Display.printのtextだけに許す。
  * recordとdeviceのID参照を検証する。nativeのC++値型の循環は生成器が拒否する。指紋の再計算は行わない。
@@ -442,7 +442,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
  */
 function readDeviceApi(value: unknown): DeviceApi {
     const data = record(value, "$");
-    if (data.schemaVersion !== 5 || data.callingConventionVersion !== 5 || data.stringPolicyVersion !== 2
+    if (data.schemaVersion !== 6 || data.callingConventionVersion !== 6 || data.stringPolicyVersion !== 3
         || typeof data.abiHash !== "string" || !/^[0-9a-f]{64}$/.test(data.abiHash)) {
         invalidApi("version/abiHash");
     }
@@ -540,7 +540,7 @@ function readDeviceApi(value: unknown): DeviceApi {
         || functions.some(fn => fn.name === module.name))) {
         invalidApi("modules（既存API名と衝突）");
     }
-    const api = { schemaVersion: 5, callingConventionVersion: 5, stringPolicyVersion: 2,
+    const api = { schemaVersion: 6, callingConventionVersion: 6, stringPolicyVersion: 3,
         abiHash: data.abiHash, classes, functions, modules };
     for (const owner of classes) {
         valueSlotTypes({ kind: "object", classId: owner.id }, api);

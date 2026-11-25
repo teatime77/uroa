@@ -1,5 +1,5 @@
 /**
- * Python一括転送version=2の中心契約。バイナリversion=6だけを扱う。形式はpython/bytecode.tsを参照する。
+ * Python一括転送version=2の中心契約。バイナリversion=7だけを扱う。形式はpython/bytecode.tsを参照する。
  * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
  * python-block.tsが同一生成のコードとPC一覧、ESP32のbytecode_receiver.cppが検証、main.cppが開始を担当する。
  */
@@ -102,7 +102,7 @@ export function bytecodeCrc32(bytes: Uint8Array): number {
 }
 
 /**
- * 転送上限・version=6ヘッダー・本体型表・文字列領域を検査する。全命令の検証は受信側で行う。
+ * 転送上限・version=7ヘッダー・本体型表・文字列領域を検査する。全命令の検証は受信側で行う。
  * @param bytes 生成済みのイメージ。
  * @throws {Error} 形式・型・長さが不正な場合。
  */
@@ -112,7 +112,7 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (view.getUint16(2, true) !== bytecodeVersion) {
-        throw new Error("バイトコードはversion=6だけに対応しています。");
+        throw new Error("バイトコードはversion=7だけに対応しています。");
     }
     const headerLength = bytecodeHeaderLength;
     const functionRecordLength = bytecodeFunctionRecordLength;
@@ -127,8 +127,8 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     const tableOffset = codeOffset + codeLength;
     const dataOffset = tableOffset + stringCount * bytecodeStringRecordLength;
     if (view.getUint16(0, true) !== bytecodeSignature
-        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 5
-        || view.getUint16(18, true) !== 5 || view.getUint16(58, true) !== 0
+        || view.getUint16(12, true) !== 0 || view.getUint16(14, true) !== 6
+        || view.getUint16(18, true) !== 6 || view.getUint16(58, true) > view.getUint16(4, true)
         || typeLength < typeCount * bytecodeTypeRecordLength
         || codeLength < 1 || codeLength > 65536
         || bytes.byteLength !== dataOffset + dataLength) {
@@ -176,8 +176,11 @@ export function checkBytecodeTransfer(bytes: Uint8Array): void {
     }
     for (let index = 0; index < functionCount; index++) {
         const recordOffset = headerLength + index * functionRecordLength;
-        if (view.getUint16(recordOffset + 8, true) === 0 || view.getUint16(recordOffset + 10, true) !== 0) {
-            throw new Error("バイトコードの関数表の戻り値スロット数または予約領域が不正です。");
+        const args = view.getUint16(recordOffset + 4, true);
+        const locals = view.getUint16(recordOffset + 6, true);
+        const roots = view.getUint16(recordOffset + 10, true);
+        if (view.getUint16(recordOffset + 8, true) === 0 || roots < args || roots > args + locals) {
+            throw new Error("バイトコードの関数表の戻り値スロット数または根の数が不正です。");
         }
     }
     const decoder = new TextDecoder("utf-8", { fatal: true });
