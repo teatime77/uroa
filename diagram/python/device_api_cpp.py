@@ -266,7 +266,7 @@ class CppGenerator:
 """.splitlines() + [""]
 
     def module_enums(self) -> List[str]:
-        """モジュール定義から共有の番号だけを生成する。実行用スタブはまだ登録しない。
+        """モジュール定義から共有番号を生成する。実行処理はnumpy_native.cppへ接続する。
 
         Functionの番号はモジュール内の宣言順で、CALL_NATIVEのnativeIdとは異なる。
         必須位置引数は各関数のArgument、optionalはOptionの独立したenumにする。
@@ -284,7 +284,7 @@ class CppGenerator:
             "     */", "    constexpr uint16_t ModuleDefinitionVersion = {};".format(self.interface["moduleDefinitionVersion"]),
         ]
         for module in self.interface["modules"]:
-            lines.extend(["", "    /**", "     * @brief {}の引数番号。実行処理は第1段階では未登録。".format(module["name"]),
+            lines.extend(["", "    /**", "     * @brief {}の引数番号。実行処理はnumpy_native.cppが使用する。".format(module["name"]),
                           "     */", "    namespace " + module["name"] + " {",
                           "        /**", "         * @brief モジュール内の関数ID。nativeIdとは異なる。",
                           "         */", "        enum class Function : uint16_t {"])

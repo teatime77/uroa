@@ -77,7 +77,8 @@ def abs(value: float) -> float: ...
 
 # 組込みモジュールの共通定義。ここでのclass numpyは機器クラスではなく名前空間。
 # 省略可能な項目は= ...で示し、実際の既定値はC++実装が設定する。
-# 引数の宣言順からJSONとC++の引数番号を同時生成する。第1段階では実行未対応。
+# 引数の宣言順からJSONとC++の引数番号を同時生成する。
+# 対応dtype・shape・オプション・初期化の仕様はESP32のnumpy_native.cppを参照する。
 class numpy:
     class Shape: ...
     class DType: ...
@@ -91,7 +92,7 @@ class numpy:
     @staticmethod
     def zeros(shape: Shape, dtype: DType = ..., order: str = ..., *,
               device: Device = ..., like: ArrayLike = ...) -> ndarray:
-        """ゼロ初期化配列を作る関数のシグネチャを共通定義する。実行処理は未登録。
+        """ゼロ初期化配列の共通シグネチャ。実行処理はESP32のnumpy_native.cpp。
 
         Args:
             shape: 確保する配列の形状。
@@ -101,14 +102,14 @@ class numpy:
             like: 配列生成の基準を指定するキーワード専用の項目。
 
         Returns:
-            宣言上の配列型。各オプションの対応範囲は実行処理の追加時に定める。
+            数値ndarray。対応するdtype・オプションはC++側の仕様コメントを参照する。
         """
         ...
 
     @staticmethod
     def empty(shape: Shape, dtype: DType = ..., order: str = ..., *,
               device: Device = ..., like: ArrayLike = ...) -> ndarray:
-        """配列領域を確保する関数のシグネチャを共通定義する。実行処理は未登録。
+        """配列領域を確保する共通シグネチャ。実行処理はESP32のnumpy_native.cpp。
 
         Args:
             shape: 確保する配列の形状。
@@ -118,6 +119,6 @@ class numpy:
             like: 配列生成の基準を指定するキーワード専用の項目。
 
         Returns:
-            宣言上の配列型。初期化と各オプションの対応範囲は実行処理の追加時に定める。
+            数値ndarray。初期化と対応オプションはC++側の仕様コメントを参照する。
         """
         ...

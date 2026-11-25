@@ -775,7 +775,7 @@ export function parsePython(text: string): Module {
     return module;
 }
 
-/** 開発用入口は意味解析付きアセンブリとversion=4のバイト列を表示する。通信は行わない。 */
+/** 開発用入口は意味解析付きアセンブリとversion=5のバイト列を表示する。通信は行わない。 */
 export async function testPython(){
     const text = await fetchText("/diagram/python/a.py")
     msg(`python:${text}`)

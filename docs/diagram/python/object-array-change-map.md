@@ -1,6 +1,6 @@
 # Python VMのオブジェクト・NumPy配列対応：仕様共有・変更箇所・段階別計画
 
-最終更新：2026-11-24。ブラウザーのChatGPTへ渡して議論を継続できるよう、合意した仕様・現行実装・今後の修正段階をまとめる。対象はuroaでコンパイルし、ESP32上の独自C++ VMで実行するPythonサブセット。CPythonやMicroPythonの移植ではない。
+最終更新：2026-11-25。ブラウザーのChatGPTへ渡して議論を継続できるよう、合意した仕様・現行実装・今後の修正段階をまとめる。対象はuroaでコンパイルし、ESP32上の独自C++ VMで実行するPythonサブセット。CPythonやMicroPythonの移植ではない。
 
 実装済み仕様の正本はソースのコメントとする。形式・呼出し規約は[bytecode.ts](../../../diagram/ts/python/bytecode.ts)、型は[semantic.ts](../../../diagram/ts/python/semantic.ts)、実行は[bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)、GCは[bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)と[bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp)を参照する。本書の未実装項目は設計共有用であり、実装時にソースへ仕様コメントを記述する。
 
@@ -13,11 +13,12 @@
 | 事前整理 | 旧生成経路・バイトコード版1/2・旧Event/Snapshotを削除し、C++の形式解釈を共通化済み。 |
 | 第1段階 | クラス・キーワード引数・複数添字の構文と、NumPyの共通宣言・引数番号対応を実装済み。 |
 | 第2段階 | ヒープ確保・非再帰マーク＆スイープ・VMの根登録を実装済み。 |
-| 第3段階 | 今回、ユーザークラス・コンストラクタ・メソッド・属性アクセス・既存recordの参照化・Snapshot表示を実装。 |
-| 第4〜5段階 | 未着手。NumPy呼出しは引き続き意味診断で拒否する。 |
+| 第3段階 | ユーザークラス・コンストラクタ・メソッド・属性アクセス・既存recordの参照化・Snapshot表示を実装済み。 |
+| 第4段階 | 今回、float32・uint8のzeros/empty、実行時shape、全軸添字・属性・len、参照共有と配列Snapshotを実装。 |
+| 第5段階 | 未着手。object配列は引き続き意味診断で拒否する。 |
 | 採用方式 | ヒープに確保する、移動しない単純なマーク＆スイープGC。旧6段階を第10節の5段階へ再編した。 |
 
-現行形式と変更点の正本はソースコメントを参照する。第3段階でバイトコードversion=4、API schema・呼出し規約=3、stringPolicyVersion=2、Snapshot=3へ更新した。moduleDefinitionVersion=1、Control=1、Event=2、転送フレーム=2は維持する。既存nativeIdは維持し、ABI指紋は変更した。Web・ファームウェアの両方を更新し、バイトコードを再生成・再送信する。
+現行形式と変更点の正本はソースコメントを参照する。第4段階でバイトコードversion=5、API schema・呼出し規約=4、Snapshot=4へ更新した。stringPolicyVersion=2、moduleDefinitionVersion=1、Control=1、Event=2、転送フレーム=2は維持する。既存nativeIdは維持し、NumPyは共有のモジュール関数IDで呼ぶ。ABI指紋は変更したため、Web・ファームウェアの両方を更新し、バイトコードを再生成・再送信する。
 
 ### 1.2 GC採用後のメモリー規則
 
@@ -38,7 +39,7 @@ def set_member(dst):
     dst.data = x  # 関数終了後もdstから到達できるため保持される。
 ```
 
-通常関数で生成したユーザーオブジェクトのメンバー格納は第3段階で接続した。上のNumPy配列の例は第4〜5段階で接続する。
+通常関数で生成したユーザーオブジェクトのメンバー格納は第3段階、数値配列のメンバー格納は第4段階で接続した。上のset_itemのような配列を要素へ格納する操作は第5段階で型の範囲を具体化する。
 
 ### 1.3 戻り値とコンストラクタ
 
@@ -49,19 +50,19 @@ def set_member(dst):
 
 ### 1.4 NumPyとキーワード引数
 
-- NumPyサブセットの処理本体をC++で実装する。float32・uint8の`zeros`・`empty`、実行時shape、`np.empty(n, dtype=object)`を対象とする。
+- NumPyサブセットの処理本体をC++で実装する。float32・uint8の`zeros`・`empty`と実行時shapeは第4段階で接続した。`np.empty(n, dtype=object)`は第5段階。
 - object配列は初期値`None`、同じクラスの参照へ型を統一する方針。異種Python値の自由な混在は追加しない。配列を要素とする場合の型の範囲は第5段階で具体化する。
 - リストリテラル、`array(float, n)`、確保後の長さ変更は対象外。形状指定のタプルと汎用タプルを区別し、スライス・ビュー・broadcast等は暗黙に追加しない。
-- 既定dtypeはfloat32を推奨する。数値emptyの初期化・uint8変換・負の添字・属性の範囲は数値配列実装時に具体化する。
+- 既定dtype・emptyの初期化・uint8変換・負の添字・対応オプションは[numpy_native.cpp](../../../../esp32/app/diagram-control/src/numpy_native.cpp)、次元数・shape・確保上限は[VM](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)の仕様コメントを参照する。
 - `diagram/python/device.pyi`を共通宣言元とし、コンパイラー用JSONとC++ enumを生成する。`class numpy`は名前空間でありユーザークラスではない。省略可能な項目は`= ...`とし、既定値はC++実装で設定する。
 
 | 関数 | 必須位置引数 | 省略可能な引数のoptionId |
 |---|---|---|
 | `numpy.zeros`・`numpy.empty` | `shape=0` | `dtype=0`、`order=1`、`device=2`、`like=3` |
 
-キーワード名はコンパイル時に番号へ変換し、実行時は指定された番号と値のペアを渡す。値の評価順はソース順とし、呼出しごとの文字列辞書検索は行わない。第1段階は対応付けまでで、実行時のペア形式は第4段階で接続する。device・like等の宣言が存在することは機能の実行対応を意味しない。
+キーワード名はコンパイル時に番号へ変換し、実行時は指定された番号と値のペアを渡す。値の評価順はソース順とし、呼出しごとの文字列辞書検索は行わない。第4段階で実行まで接続した。省略した値はC++が設定する。device・like等の宣言が存在することは任意の値の実行対応を意味しない。
 
-### 1.5 第3段階までの実装境界
+### 1.5 第4段階までの実装境界
 
 実装の詳細は[bytecode_vm.h](../../../../esp32/app/diagram-control/include/bytecode_vm.h)の`allocateHeapValue()`・`collectHeap()`・`HeapRoot`と、上記GCソースのコメントを参照する。
 
@@ -74,6 +75,8 @@ def set_member(dst):
 - フィールド名は__init__のself属性代入から収集し、型を静的に推論する。通常関数でも宣言済みフィールドへ格納できる。継承・動的な属性追加・入れ子のクラス・第一級関数は対象外。
 - ユーザークラスの文字列フィールドを保持し、C++側のrecord値型との変換は生成スタブで行う。既存APIの読取り専用フィールドを維持する。
 - Snapshotは生アドレスを本体IDへ置き換え、フィールドを送る。共有参照・循環・深い入れ子の表示に上限を設ける。詳細はdebug-protocol.tsとdebugger-view.tsを参照する。
+- 数値配列の生成・スカラー読書き・全軸添字・属性・lenを接続した。対応範囲と診断はsemantic.tsのresolveModuleCall()・arrayItem()・operation()、命令と評価順はbytecode.tsのtypedNumpy()・typedArray()を参照する。
+- 配列のshape・全数値データをSnapshotへ含め、表示DOMの要素数だけを制限する。配列の本体参照を、通常関数・メンバー・引数・戻り値でも共有する。配列全体の演算・真偽変換・要素比較・object配列は今回追加しない。
 
 ### 1.6 将来拡張
 
@@ -106,6 +109,7 @@ def set_member(dst):
 | 同上 | `PythonResolver.reserved()`、`addVariable()`、`collect()`、`binding()`、`resolve()` | 既存 | クラス・メソッド・NumPy別名・dtype名を登録する。クラス所属ごとの名前を区別し、変数スロットを参照幅に合わせる。 |
 | 同上 | `PythonResolver.owner()`、`field()`、`call()`、`nativeArguments()` | 既存 | ユーザークラスと機器クラスを区別し、self、NumPy、配列属性、引数、コンストラクタとGC本体生成を解決する。 |
 | 同上 | `PythonResolver.registerClasses()`、`userArguments()` | 第3段階で追加済み | クラスID・固定フィールド名・Class.methodの関数名を登録し、selfを含む引数型を推論する。 |
+| 同上 | `PythonNumpyCall`、`PythonArrayOperation`、`DeviceClass.array`、`PythonResolver.resolveModuleCall()`、`arrayItem()`、`truthExpression()` | 第4段階で追加・変更済み | dtype・rankと実行時shapeを分け、生成・添字・属性を解決する。配列全体の真偽変換を診断する。 |
 | 同上 | `PythonResolver.operation()`、`expression()`、`assignment()` | 既存 | 添字・要素・lenと参照格納の型を検査する。通常関数の参照格納を許可し、リスト等の未対応操作は診断する。 |
 | 同上 | `PythonResolver.statement()`、`block()`、`fallsThrough()`、`infer()` | 既存 | 再帰・相互再帰を含む型推論、return型、コンストラクタと通常メソッドの区別を扱う。本体内部の参照を寿命を理由に拒否しない。 |
 | 同上 | `readType()`、`readCallable()`、`readDeviceApi()`、`loadDeviceApi()` | 既存 | ネイティブAPIの参照型・呼出し規約・ABI変更を検証する。ユーザークラスの型IDを機器クラスのIDと混同しない。 |
@@ -124,6 +128,7 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 | 同上 | `BytecodeGenerator.constructor()` | 既存 | `PythonAnalysis`を唯一の入力として型・未対応機能の診断を検査する。意味解析なしの旧経路は事前整理で削除済み。 |
 | 同上 | `valueWidth()`、`loadValue()`、`storeValue()`、`temporary()`、`address()` | 既存 | recordの全葉コピーから、参照と本体アクセスを区別する処理へ変更する。属性の固定スロット加算を見直す。一時参照が生存中の本体を再利用・解放しない。 |
 | 同上 | `expressionAs()`、`typedCall()`、`typedExpression()`、`typedAssignment()` | 既存 | オブジェクト生成、メソッドの`self`、NumPy呼出し、dtype・shape、添字アクセスを生成する。右辺・対象・添字の評価順と1回だけの評価を守る。 |
+| 同上 | `typedNumpy()`、`typedArray()` | 第4段階で追加済み | 評価済み引数を一時スロットから指定順に積み直し、CALL_NUMPYと要素・属性命令を出す。省略引数を追加しない。 |
 | 同上 | `statement()`、`compileTyped()` | 既存 | CALL／RETとGC本体生成を接続し、戻り値参照を共有する。クラス宣言・NumPy import自体は実行文として出力しない。 |
 | 同上 | `format()`、`formatAssembly()` | 既存 | 型・本体配置・新命令・メソッド名・呼出し規約をアセンブリで確認できるようにする。 |
 | 同上 | `instructionLength()`、`addressOperand()`、`encodeBinary()` | 既存 | 新命令と新しい型／クラス情報を符号化し、PC・長さ・オペランド上限を検証する。文字列・関数表の位置計算も更新する。 |
@@ -159,9 +164,10 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 | 同上 | `BytecodeVM::callNative()` | 第2段階で拡張済み | 同期コールバック中だけ設定途中の結果を根にする。NativePendingでの保持・再試行は根の登録規約を守り、失敗した結果を公開しない。 |
 | 同上 | `BytecodeVM::allocateText()`、`firstDebugString()`、`debugValueCount()`、`debugValueAt()` | 第3段階で拡張済み | 大域・値スタック・C++の根・本体内のStringを保持し、Snapshotへ文字列を含める。 |
 | 同上 | `BytecodeVM::heapFields()`、`fieldValue()` | 第3段階で追加済み | 型表・本体・フィールド値を照合し、属性操作と生成スタブの変換を検査する。 |
-| [include/bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)・[src/bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp) | `BytecodeHeap::allocate()`、`collect()`、`mark()`、`clear()` | 第2段階で追加済み | 確保・非再帰探索・到達不能本体の回収・全解放。 |
+| [include/bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)・[src/bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp) | `BytecodeHeap::Block`、`allocate()`、`collect()`、`mark()`、`clear()`、`visit()` | 第2〜4段階で拡張済み | 確保・非再帰探索・到達不能本体の回収・全解放。本体種別で通常オブジェクトと数値配列を区別する。 |
 | VMヘッダー・実装 | `allocateHeapValue()`、`collectHeap()`、`traceHeapRoots()`、`traceHeapValues()` | 第2段階で追加済み | VMとC++側の根を接続し、本体先頭のValue列だけを探索する。 |
-| `include/numpy_native.h`・`src/numpy_native.cpp` | `numpy_native::zeros()`、`empty()`、登録表の作成処理 | 新規候補・ファイル未作成 | NumPyサブセットのC++処理を置く候補。`zeros`の初期化、objectの`None`初期化、対応dtypeを実装する。VM管理の領域を使い、C++関数終了時に結果を解放しない。 |
+| [include/numpy_native.h](../../../../esp32/app/diagram-control/include/numpy_native.h)・[src/numpy_native.cpp](../../../../esp32/app/diagram-control/src/numpy_native.cpp) | `numpy_native::Option`、`create()`、`item()`、`attribute()` | 第4段階で追加済み | 共有enumの関数ID・引数番号でzeros/emptyを実行する。既定値・対応オプション・数値変換・添字をC++で扱う。 |
+| VMヘッダー・実装 | `NumericArray`、`allocateNumericArray()`、`numericArray()`、`callNumpy()`、`arrayItem()`、`arrayAttribute()` | 第4段階で追加済み | 数値本体のサイズ・型・shapeを検証し、専用命令からNumPy実装へ接続する。数値データはGCの探索対象にしない。 |
 | [include/device_native.h](../../../../esp32/app/diagram-control/include/device_native.h)・[src/device_native.cpp](../../../../esp32/app/diagram-control/src/device_native.cpp) | `DeviceNative::IMU_get_value()`、`reset()`、既存の`create()`と機器管理用`Object` | 条件付き | 生成BackendのC++署名を保つならIMU本体の変更は不要で、変換は生成スタブへ置ける。機器ハンドルの管理とVM本体領域の解放を混ぜない。 |
 | [src/main.cpp](../../../../esp32/app/diagram-control/src/main.cpp) | `nativeApi`初期化、`setup()`、`runBytecode()`、`handle()`、`loop()` | 必須／一部条件付き | NumPy登録をVMへ接続し、終了後の診断表示を新しい参照型へ対応させる。既存の開始・停止・世代変更経路でデータ領域が解放されることを確認する。VMは引き続き`loop()`だけで操作する。 |
 
@@ -181,7 +187,7 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 | [diagram/ts/ble-wifi/debug-protocol.ts](../../../diagram/ts/ble-wifi/debug-protocol.ts) | `DebugValue`、`DebugSnapshot`、`decodeSnapshot()`、`debugProtocol` | 既存 | 新しい値タグ、データ領域、型・shape・参照位置を復号・全件検証する。Snapshot形式版と上限をC++側とそろえる。Control／Eventまで無条件に版変更しない。 |
 | 同上 | `PythonDebugTransport.download()`、`accept()`、`invalidateSnapshot()` | 条件付き | 既存のチャンク受信・CRC・世代照合で新Snapshotを扱えるか確認する。必要な箇所だけ変更する。 |
 | [diagram/ts/python/debug-info.ts](../../../diagram/ts/python/debug-info.ts) | `PythonDebugFunction`、`PythonDebugInfo` | 既存 | API表だけでなくユーザークラス・ndarray型、メソッド名・所属と参照スロットを表示できる情報を追加する。 |
-| [diagram/ts/python/debugger-view.ts](../../../diagram/ts/python/debugger-view.ts) | `restoreFrames()`、`PythonDebuggerView.show()`、`value()`、`variables()`、`variable()` | 既存 | recordの平坦スロット復元から、参照先のフィールド・shape・要素表示へ対応する。共有参照・循環があっても表示が無限再帰しないようにする。新しいCALL表現でもフレームを復元する。 |
+| [diagram/ts/python/debugger-view.ts](../../../diagram/ts/python/debugger-view.ts) | `restoreFrames()`、`PythonDebuggerView.show()`、`value()`、`variables()`、`variable()`、`arrayVariable()` | 第3〜4段階で拡張済み | 参照先のフィールド・dtype・shape・要素を表示する。共有参照・循環の重複展開を止め、配列表示のDOM要素数を制限する。 |
 
 ## 8. 既存入口・UIの確認箇所
 
@@ -197,11 +203,9 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 
 ## 9. 後続段階で具体化する事項
 
-1. ndarrayの本体情報・命令とSnapshot拡張。オブジェクトの型表・命令・形式版は第3段階で実装済み。
-2. ユーザークラスの型推論・フィールド配置・既存record変換・文字列保持は第3段階で実装済み。ネイティブrecord宣言の文字列対応は対象外。
-3. NumPyの実行登録、対応オプション、最大次元数・要素数、uint8変換、負の添字、空配列、数値emptyの初期化、shape属性。
-4. object要素型が推論不能な場合や、配列を要素として扱う型の範囲。
-5. GCの起動位置・上限・閾値の実運用上の調整。実機のGC時間と60fps成立は未確認。
+1. object要素型が推論不能な場合や、配列を要素として扱う型の範囲。
+2. object配列の本体情報・命令とSnapshot拡張。数値配列は第4段階で実装済み。
+3. GCの起動位置・上限・閾値の実運用上の調整。実機のGC時間と60fps成立は未確認。
 
 ## 10. GC採用後の段階別修正内容
 
@@ -230,7 +234,7 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 
 完了条件：共通の確保・回収・根登録・停止時解放をVMへ接続し、指定環境でビルドできる。テスト・実機GC動作・処理時間は未確認とする。
 
-### 第3段階：オブジェクト・コンストラクタ・メソッド（今回実装）
+### 第3段階：オブジェクト・コンストラクタ・メソッド（実装済み）
 
 対象：semantic.ts、bytecode.ts、VM、API生成器、debug-info.ts、debugger-view.ts、関連する形式・Snapshot検証。
 
@@ -242,16 +246,16 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 
 完了条件：配列以外の本体生成、メンバー・メソッド・引数・戻り値の共有を実装へ接続した。所有フレーム・寿命解析は追加しない。型・公開ビルド・生成物一致と指定ESP32環境のビルドを確認し、テスト・VM実行・実機は未確認。
 
-### 第4段階：数値NumPy配列（未着手）
+### 第4段階：数値NumPy配列（今回実装）
 
-対象：NumPy定義・生成器、意味解析・コード生成、VM、新規候補numpy_native.h/.cpp、main.cpp、配列のデバッグ表示。
+対象：NumPy定義・生成器、意味解析・コード生成、VM、新規numpy_native.h/.cpp、共通形式検証、配列のデバッグ表示。
 
 - zeros・empty、float32・uint8、実行時shape、添字・属性・lenの対応範囲を実装する。
 - 引数番号と値のペアをC++へ渡し、既定値をC++で設定する。
 - 数値バイト列をGC探索から除外し、型・範囲・サイズ計算を検査する。
 - 通常関数・メンバー・引数・戻り値で配列を共有し、Snapshotと表示を追加する。
 
-完了条件：実行時サイズの数値配列を、コンストラクタ以外でも生成・格納・返却できる。
+完了条件：実行時サイズの数値配列を、コンストラクタ以外でも生成・メンバー格納・返却する実装へ接続する。ビルド・生成物の確認結果は両リポジトリーの検証記録を参照し、実行確認とは区別する。
 
 ### 第5段階：object配列（未着手）
 
@@ -271,4 +275,4 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 - API生成を変更したらJSONとC++を同時再生成し、--checkで確認する。ABI変更時はWebとファームウェアをそろえ、バイトコードを再生成・再送信する。
 - ESP32のビルドはsupermini_esp32s3のみ。platformio.iniのdefault_envsを確認する。各段階で止め、ユーザーが確認・commit・pushする。
 - テストは作成・実行しない。生成物・ビルド・ソース確認と、ブラウザー・通信・VM実行・実機確認を区別する。
-- コマンドと結果は[uroa](../../build-and-test.md)・[ESP32](../../../../esp32/docs/build-and-test.md)の記録を参照する。第3段階はWeb・C++・生成APIを同時更新する。
+- コマンドと結果は[uroa](../../build-and-test.md)・[ESP32](../../../../esp32/docs/build-and-test.md)の記録を参照する。第4段階はWeb・C++・生成APIを同時更新する。

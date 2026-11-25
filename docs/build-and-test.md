@@ -1,5 +1,15 @@
 # ビルドと回帰テスト
 
+## オブジェクト・NumPy対応 第4段階：数値NumPy配列（2026-11-25）
+
+float32・uint8のzeros/emptyと、実行時shape・全軸添字・属性・lenを[意味解析](../diagram/ts/python/semantic.ts)・[コード生成](../diagram/ts/python/bytecode.ts)から[NumPyのC++処理](../../esp32/app/diagram-control/src/numpy_native.cpp)へ接続した。GCから数値データを探索せず、関数・引数・戻り値・メンバーで本体を共有する。対応範囲・既定値・初期化・変換の正本は各ソースコメント、現在地は[段階一覧](diagram/python/object-array-change-map.md)を参照する。
+
+uroaルートで`C:\Users\hamad\.platformio\penv\Scripts\python.exe -B diagram/python/generate-device-api.py`を実行し、JSON・C++を再生成した。`--check`の一致確認と、`npm.cmd run verify`の型・公開ビルド・成果物の静的確認は成功。既存gameのimport混在警告2件は残る。ESP32の確認は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)のとおりsupermini_esp32s3だけで行った。
+
+バイトコードversion=5・本体型表・API schema/呼出し規約=4・Snapshot=4とABI指紋を更新した。文字列規約・モジュール定義・Control/Event・転送フレームの版は維持する。Webとファームウェアを更新し、Pythonバイトコードを再生成・再送信する。
+
+文書リンク・ソースコメント・差分を確認した。ユーザー指定によりテストは作成・実行していない。構文・意味診断の実行試験、ブラウザー、Upload、転送、VM実行、配列・GCの実機動作と時間は未確認。object配列の第5段階へは進めず、commit・pushはユーザーが行う。
+
 ## オブジェクト・NumPy対応 第3段階：オブジェクト・メソッド（2026-11-24）
 
 ユーザークラス・コンストラクタ・メソッド・属性アクセスを[意味解析](../diagram/ts/python/semantic.ts)と[コード生成](../diagram/ts/python/bytecode.ts)からESP32 VMへ接続した。既存recordのGC参照化、文字列保持、共有・循環を含むSnapshotと表示も更新した。変更箇所と残りの段階は[共有文書](diagram/python/object-array-change-map.md)、仕様の正本は各ソースのコメントを参照する。

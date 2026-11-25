@@ -3,9 +3,9 @@
  * parser.tsの同期構文解析とは分離し、構文木を入力として意味解析結果を返す。
  * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理から利用する。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
- * アセンブリ・version=4のバイトコード生成はbytecode.tsがこの結果を利用する。
+ * アセンブリ・version=5のバイトコード生成はbytecode.tsがこの結果を利用する。
  * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
- * ユーザークラスとrecordはGC本体を参照する。NumPyの実行は後続段階まで拒否する。
+ * ユーザークラス・record・数値ndarrayはGC本体を参照する。object配列は後続段階で扱う。
  * 新形式のBLE転送・受信形式検証はble-wifi側、参照共有と呼出しの実行はESP32の
  * bytecode_vm.cppが担当する。生成スタブはdevice_api.generated.cppからdevice_native.cppを呼ぶ。
  */
@@ -76,6 +76,13 @@ export interface DeviceField {
 
 /** APIとユーザークラスの定義。recordはGC本体、deviceは不透明な機器ハンドル。 */
 export interface DeviceClass {
+    /** 数値ndarrayの静的型。長さは型に含めず、各呼出しで実行時に決める。 */
+    array?: {
+        /** 要素表現。 */
+        dtype: "float32" | "uint8";
+        /** 固定の次元数。 */
+        rank: number;
+    };
     /**
      * ユーザークラスの元宣言。API定義では設定しない。
      */
@@ -242,8 +249,12 @@ export interface PythonDiagnostic {
  * 診断がある場合も部分的な解決情報を返すが、変数のslotはすべて-1とする。
  */
 export interface PythonAnalysis {
+    /** 数値NumPy呼出しの評価順・型と、省略しなかったoptionId/値の対応。 */
+    numpyCalls: ReadonlyMap<App, PythonNumpyCall>;
+    /** 添字・配列属性・lenの静的な操作種別。 */
+    arrayOperations: ReadonlyMap<App, PythonArrayOperation>;
     /**
-     * NumPy呼出しの名前・引数番号の対応。第1段階では診断付きで返し、生成は拒否する。
+     * NumPy呼出しの名前・引数番号の対応。省略した引数の値は補わない。
      */
     moduleCalls: ReadonlyMap<App, ModuleCallBinding>;
     /** 同じノード・メッセージの重複を除き、ソース位置順で返す。1件以上ならコード生成禁止。 */
@@ -268,6 +279,26 @@ export interface PythonAnalysis {
     calls: ReadonlyMap<App, PythonCall>;
     /** 属性式から所有クラスと公開フィールド定義への対応。 */
     fields: ReadonlyMap<App, { /** 解決したメソッドまたはフィールドを所有するAPIクラス。 */ owner: DeviceClass; /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: DeviceField }>;
+}
+
+/** NumPy生成の静的情報。既定引数の値は命令列へ追加せず、C++が設定する。 */
+export interface PythonNumpyCall {
+    /** 共有宣言から得た関数と引数番号。 */
+    binding: ModuleCallBinding;
+    /** 戻り値のdtype・rankを持つ内部クラス。 */
+    owner: DeviceClass;
+    /** shape式を各軸へ分けた未評価式。 */
+    shape: Term[];
+    /** dtype指定がある場合だけ使うVMコード。Noneは0、float32は1、uint8は2。 */
+    dtypeCode: number;
+}
+
+/** 実行時には本体を検証し、静的rankと操作を照合する。shapeは軸の整数を返す操作だけ。 */
+export interface PythonArrayOperation {
+    /** 属性名または添字・長さ。 */
+    kind: "item" | "shape" | "length" | "size" | "ndim" | "itemsize";
+    /** 対象の数値ndarray型。 */
+    owner: DeviceClass;
 }
 
 /**
@@ -399,7 +430,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
 
 /**
  * 未検証のJSONから、名前解決に使う機器API定義を作る。
- * schemaVersion/callingConventionVersion=3、stringPolicyVersion=2とABI指紋の形式を検証する。
+ * schemaVersion/callingConventionVersion=4、stringPolicyVersion=2とABI指紋の形式を検証する。
  * ID・名前の重複、型参照、メンバーの公開権限、コンストラクターの結果型を検査する。
  * nativeIdは全呼出し定義で一意とし、文字列引数はprint・Display.printのtextだけに許す。
  * recordとdeviceのID参照を検証する。nativeのC++値型の循環は生成器が拒否する。指紋の再計算は行わない。
@@ -409,7 +440,7 @@ function readCallable(value: unknown, path: string, constructor = false): Device
  */
 function readDeviceApi(value: unknown): DeviceApi {
     const data = record(value, "$");
-    if (data.schemaVersion !== 3 || data.callingConventionVersion !== 3 || data.stringPolicyVersion !== 2
+    if (data.schemaVersion !== 4 || data.callingConventionVersion !== 4 || data.stringPolicyVersion !== 2
         || typeof data.abiHash !== "string" || !/^[0-9a-f]{64}$/.test(data.abiHash)) {
         invalidApi("version/abiHash");
     }
@@ -507,7 +538,7 @@ function readDeviceApi(value: unknown): DeviceApi {
         || functions.some(fn => fn.name === module.name))) {
         invalidApi("modules（既存API名と衝突）");
     }
-    const api = { schemaVersion: 3, callingConventionVersion: 3, stringPolicyVersion: 2,
+    const api = { schemaVersion: 4, callingConventionVersion: 4, stringPolicyVersion: 2,
         abiHash: data.abiHash, classes, functions, modules };
     for (const owner of classes) {
         valueSlotTypes({ kind: "object", classId: owner.id }, api);
@@ -647,9 +678,13 @@ class PythonResolver {
      */
     private readonly validImports = new Set<Statement>();
     /**
-     * 名前と引数番号だけを解決した呼出し。実行命令はまだ生成しない。
+     * 名前と引数番号の対応。数値NumPyの実行情報はnumpyCallsへ分ける。
      */
     private readonly moduleCalls = new Map<App, ModuleCallBinding>();
+    /** NumPy生成の型と引数式。反復中も同じノードへ上書きする。 */
+    private readonly numpyCalls = new Map<App, PythonNumpyCall>();
+    /** 添字・属性・lenをコード生成へ渡す表。 */
+    private readonly arrayOperations = new Map<App, PythonArrayOperation>();
     /**
      * importなしで解決するAPI関数名と定義の索引。
      */
@@ -762,10 +797,10 @@ class PythonResolver {
     /**
      * API名または組込み定数名との衝突を調べる。
      * @param name 宣言候補の名前。
-     * @returns True・False・None、APIクラス名、API関数名、import済み別名のいずれかならtrue。
+     * @returns True・False・None・len、クラス名、API関数名、import済み別名のいずれかならtrue。
      */
     private reserved(name: string): boolean {
-        return ["True", "False", "None"].includes(name) || this.classes.has(name)
+        return ["True", "False", "None", "len"].includes(name) || this.classes.has(name)
             || this.nativeFunctions.has(name) || this.moduleAliases.has(name);
     }
 
@@ -901,7 +936,9 @@ class PythonResolver {
 
     /**
      * 別名.関数をモジュール定義へ結び、引数をソース順に対応付ける。
-     * 第1段階では値の型推論・本体確保・ネイティブ実行を行わず、明示的に診断する。
+     * float32/uint8のzeros/emptyを解決する。dtypeは定数、shapeは整数または1～4軸のタプル。
+     * 省略dtypeとNoneの静的結果はC++の既定契約float32と一致させ、値自体の補完はC++に任せる。
+     * orderは文字列またはNone、device/likeはNoneだけを許す。実行時の詳細はnumpy_native.cppを参照。
      * @param app 呼出し式。
      * @returns モジュール呼出しとして処理した場合はtrue。
      */
@@ -924,8 +961,68 @@ class PythonResolver {
             const args = bindModuleArguments(definition, app.args.slice(1), app, (node, message) => {
                 this.fail(node, message);
             });
-            this.moduleCalls.set(app, { module, definition, arguments: args });
-            this.fail(app, `${module.name}.${name}は宣言・引数番号の解析のみ対応しています。配列の生成・実行は第4段階で追加します`);
+            const binding = { module, definition, arguments: args };
+            this.moduleCalls.set(app, binding);
+            if (module.name !== "numpy" || !["zeros", "empty"].includes(name)) {
+                this.fail(app, "このモジュール関数の実行には対応していません");
+                return true;
+            }
+            const shapeValue = args.find(argument => argument.parameter.name === "shape")?.value;
+            const shape = shapeValue instanceof App && shapeValue.fncName === "," ? shapeValue.args
+                : shapeValue === undefined ? [] : [shapeValue];
+            if (shape.length < 1 || shape.length > 4) {
+                this.fail(app, "shapeは整数、または1～4軸の整数タプルにしてください");
+            }
+            for (const dimension of shape) {
+                this.requireNumeric(this.expression(dimension), dimension, true);
+            }
+            let dtype: "float32" | "uint8" = "float32";
+            let dtypeCode = 0;
+            for (const { parameter, value } of args) {
+                if (parameter.name === "dtype") {
+                    if (value instanceof RefVar && value.name === "None") {
+                        continue;
+                    }
+                    if (value instanceof App && value.fncName === "." && value.args[0] instanceof RefVar
+                        && this.moduleAliases.get(value.args[0].name) === module && value.args[1] instanceof RefVar
+                        && ["float32", "uint8"].includes(value.args[1].name)) {
+                        dtype = value.args[1].name as "float32" | "uint8";
+                        dtypeCode = dtype === "float32" ? 1 : 2;
+                    }
+                    else {
+                        this.fail(value, "dtypeはnp.float32・np.uint8・Noneだけに対応しています。object配列は第5段階です");
+                    }
+                }
+                else if (parameter.name === "order") {
+                    const type = this.expression(value);
+                    if (type !== undefined && type.kind !== "str" && type.kind !== "none" && type.kind !== "error") {
+                        this.fail(value, "orderは文字列またはNoneにしてください。対応する配置はCだけです");
+                    }
+                }
+                else if (parameter.name !== "shape") {
+                    if (!(value instanceof RefVar && value.name === "None")) {
+                        this.fail(value, `${parameter.name}はNoneだけに対応しています`);
+                    }
+                    else {
+                        this.expression(value);
+                    }
+                }
+            }
+            const className = `$ndarray.${dtype}.${shape.length}`;
+            let owner = this.classes.get(className);
+            if (owner === undefined) {
+                const id = Math.max(0, ...this.api.classes.map(item => item.id)) + 1;
+                if (id > 65535) {
+                    this.fail(app, "本体型の個数が上限を超えています");
+                    return true;
+                }
+                owner = { id, name: className, kind: "record", constructor: null, methods: [], fields: [],
+                    array: { dtype, rank: shape.length } };
+                this.api.classes.push(owner);
+                this.classes.set(className, owner);
+                this.changed = true;
+            }
+            this.numpyCalls.set(app, { binding, owner, shape, dtypeCode });
         }
         return true;
     }
@@ -1092,6 +1189,50 @@ class PythonResolver {
     }
 
     /**
+     * 添字を数値ndarrayの要素またはshapeの軸として解決する。部分配列・スライスは作らない。
+     * @param app 配列と整数添字を保持するt[i]式。
+     * @param write 代入先として検査するか。shapeは読取り専用。
+     * @returns 要素型またはshapeのint。推論途中はundefined、不正ならerror。
+     */
+    private arrayItem(app: App, write = false): PythonType | undefined {
+        const base = app.args[0];
+        const shapeAttribute = base instanceof App && base.fncName === "." && base.args[1] instanceof RefVar
+            && base.args[1].name === "shape";
+        const receiver = shapeAttribute ? this.owner(base.args[0]) : undefined;
+        const shape = shapeAttribute && receiver?.array !== undefined;
+        // shapeという名前のユーザーフィールドと、ndarrayのshape属性を対象の型で区別する。
+        const owner = shape ? receiver : shapeAttribute && receiver === undefined ? undefined : this.owner(base);
+        for (const index of app.args.slice(1)) {
+            this.requireNumeric(this.expression(index), index, true);
+        }
+        if (owner === undefined) {
+            return undefined;
+        }
+        if (owner.array === undefined) {
+            return this.fail(app, "添字は数値NumPy配列だけに対応しています");
+        }
+        if (app.args.length - 1 !== (shape ? 1 : owner.array.rank) || shape && write) {
+            return this.fail(app, shape ? "shapeは軸番号1個による読取りだけに対応しています"
+                : `添字は全${owner.array.rank}軸を指定してください。部分配列には対応していません`);
+        }
+        this.arrayOperations.set(app, { kind: shape ? "shape" : "item", owner });
+        return shape || owner.array.dtype === "uint8" ? intType : floatType;
+    }
+
+    /**
+     * 条件式を解析する。数値配列全体の真偽は定義せず、長さや要素を明示させる。
+     * @param term if/whileまたは論理演算の条件側。
+     * @returns 推論した型。不正な真偽変換ではerror。
+     */
+    private truthExpression(term: Term): PythonType | undefined {
+        const type = this.expression(term);
+        if (type?.kind === "object" && this.api.classes.find(owner => owner.id === type.classId)?.array) {
+            return this.fail(term, "配列全体の真偽変換は未対応です。lenや要素で条件を指定してください");
+        }
+        return type;
+    }
+
+    /**
      * recordの公開フィールドを解決し、属性式の型と定義を記録する。
      * deviceのフィールド参照・代入や、メソッドを値として取得する操作は受理しない。
      * @param app 対象式と属性名を引数に持つ「.」式。
@@ -1158,7 +1299,8 @@ class PythonResolver {
      */
     private call(app: App): PythonType | undefined {
         if (this.resolveModuleCall(app)) {
-            return errorType;
+            const owner = this.numpyCalls.get(app)?.owner;
+            return owner === undefined ? errorType : { kind: "object", classId: owner.id };
         }
         const keyword = app.args.find(argument => argument instanceof KeywordArgument);
         if (keyword !== undefined) {
@@ -1310,7 +1452,33 @@ class PythonResolver {
      */
     private operation(app: App): PythonType | undefined {
         const operator = app.fncName;
+        if (operator === "len") {
+            if (app.args.length !== 1) {
+                return this.fail(app, "lenの引数は数値配列1個にしてください");
+            }
+            const owner = this.owner(app.args[0]);
+            if (owner === undefined) {
+                return undefined;
+            }
+            if (!owner.array) {
+                return this.fail(app, "lenは数値NumPy配列だけに対応しています");
+            }
+            this.arrayOperations.set(app, { kind: "length", owner });
+            return intType;
+        }
+        if (operator === "t[i]") {
+            return this.arrayItem(app);
+        }
         if (operator === ".") {
+            const owner = this.owner(app.args[0]);
+            if (owner?.array) {
+                const name = app.args[1];
+                if (name instanceof RefVar && (name.name === "size" || name.name === "ndim" || name.name === "itemsize")) {
+                    this.arrayOperations.set(app, { kind: name.name, owner });
+                    return intType;
+                }
+                return this.fail(app, "配列属性はsize・ndim・itemsize・shape[軸番号]の読取りに対応しています");
+            }
             this.field(app);
             return this.types.get(app);
         }
@@ -1324,6 +1492,11 @@ class PythonResolver {
             const types = app.args.map(term => this.expression(term));
             let valid = !types.some(type => type?.kind === "error");
             for (const [index, comparison] of app.comparisonOperators.entries()) {
+                if (!["is", "is not"].includes(comparison) && types.slice(index, index + 2).some(type =>
+                    type?.kind === "object" && this.api.classes.find(owner => owner.id === type.classId)?.array)) {
+                    this.fail(app, "配列全体の比較は未対応です。同一参照の判定にはisを使用してください");
+                    valid = false;
+                }
                 if (["is", "is not"].includes(comparison) && [types[index], types[index + 1]]
                     .some(type => type !== undefined && type.kind !== "object" && type.kind !== "none" && type.kind !== "error")) {
                     this.fail(app, "is / is notはオブジェクトとNoneだけに使用できます");
@@ -1342,7 +1515,7 @@ class PythonResolver {
             return valid ? intType : errorType;
         }
         if (["not", "and", "or"].includes(operator)) {
-            const types = app.args.map(term => this.expression(term));
+            const types = app.args.map((term, index) => index === 0 ? this.truthExpression(term) : this.expression(term));
             if (types.some(type => type?.kind === "error")) {
                 return errorType;
             }
@@ -1440,6 +1613,15 @@ class PythonResolver {
             }
         }
         if (this.invalidDeclarations.has(target)) {
+            return;
+        }
+        if (target instanceof App && target.fncName === "t[i]") {
+            const expected = this.arrayItem(target, true);
+            this.remember(target, expected);
+            // uint8への数値変換と0～255検査はC++が行う。float32には通常のint→float変換を使う。
+            if (expected?.kind !== "error") {
+                this.requireNumeric(type, right);
+            }
             return;
         }
         if (target instanceof RefVar) {
@@ -1548,7 +1730,7 @@ class PythonResolver {
             }
         }
         else if (statement instanceof IfStatement) {
-            this.expression(statement.condition);
+            this.truthExpression(statement.condition);
             this.block(statement.ifBlock);
             if (statement.elseIf !== undefined) {
                 this.statement(statement.elseIf);
@@ -1558,7 +1740,7 @@ class PythonResolver {
             }
         }
         else if (statement instanceof WhileStatement) {
-            this.expression(statement.condition);
+            this.truthExpression(statement.condition);
             this.block(statement.block);
         }
         else if (!["pass", "break", "continue"].includes(statement.keyword)) {
@@ -1749,6 +1931,7 @@ class PythonResolver {
         }
         this.diagnostics.sort((left, right) => left.charPos - right.charPos);
         return { diagnostics: this.diagnostics, module: this.module, api: this.api, moduleCalls: this.moduleCalls,
+            numpyCalls: this.numpyCalls, arrayOperations: this.arrayOperations,
             globals: this.globals, functions: this.functions, references: this.references,
             types: this.types, calls: this.calls, fields: this.fields };
     }

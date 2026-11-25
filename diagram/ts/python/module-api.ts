@@ -1,7 +1,7 @@
 /**
  * device.pyiから生成する組込みモジュール定義の読込みと、呼出し引数の名前解決。
  * 生成元はdiagram/python/module_api.py、C++の共有enumはdevice_api_cpp.pyが担当する。
- * 機器APIのPythonType・nativeIdと分離し、第1段階ではNumPyの実行命令を生成しない。
+ * 機器APIのPythonType・nativeIdと分離し、型推論・CALL_NUMPY生成はsemantic.ts・bytecode.tsが担当する。
  */
 import { AbstractSyntaxNode, KeywordArgument, Term } from "./syntax";
 

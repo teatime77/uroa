@@ -2,7 +2,7 @@
  * PythonBlockの停止時専用表示。通信はせず、同一ビルドのDebugInfoと検証済みSnapshotだけを使う。
  * DOMはtextContentで構築し、値をHTMLとして解釈しない。
  */
-import type { DebugSnapshot, DebugValue, DebugAction } from "../ble-wifi/debug-protocol";
+import type { DebugSnapshot, DebugValue, DebugAction, DebugObject } from "../ble-wifi/debug-protocol";
 import type { PythonDebugFunction, PythonDebugInfo } from "./debug-info";
 import { valueSlotTypes, type PythonType, type PythonVariable } from "./semantic";
 
@@ -362,17 +362,24 @@ export class PythonDebuggerView {
     private variable(name: string, type: PythonType, slot: number, slots: readonly DebugValue[],
         info: PythonDebugInfo, snapshot: DebugSnapshot, expanded: Set<number>, depth = 0): HTMLElement {
         const owner = type.kind === "object" ? info.api.classes.find(item => item.id === type.classId) : undefined;
-        const typeName = owner?.name ?? type.kind;
+        const typeName = owner?.array ? `ndarray(${owner.array.dtype}, ${owner.array.rank}次元)` : owner?.name ?? type.kind;
         if (owner?.kind === "record" && slots[slot]?.tag === 8) {
             const id = Number(slots[slot].value);
             const body = snapshot.objects.get(id);
             if (body === undefined || body.classId !== owner.id || body.fields.length !== owner.fields.length) {
                 throw new Error("停止データの本体型・フィールド数がコンパイル情報と一致しません。");
             }
+            if (owner.array === undefined ? body.array !== undefined
+                : body.array?.dtype !== owner.array.dtype || body.array.shape.length !== owner.array.rank) {
+                throw new Error("停止データの配列型がコンパイル情報と一致しません。");
+            }
             if (expanded.has(id) || depth >= 64) {
                 return textElement("div", `${name}: ${typeName} → 参照 #${id}`);
             }
             expanded.add(id);
+            if (body.array) {
+                return this.arrayVariable(name, id, body.array);
+            }
             const details = document.createElement("details");
             details.open = true;
             details.append(textElement("summary", `${name}: ${typeName} #${id}`));
@@ -390,5 +397,38 @@ export class PythonDebuggerView {
         const row = textElement("div", `${name}: ${typeName} = ${this.value(slots[slot], snapshot)}`);
         Object.assign(row.style, { whiteSpace: "pre-wrap", overflowWrap: "anywhere", padding: "3px 0" });
         return row;
+    }
+
+    /**
+     * dtype・shapeと先頭128要素を表示する。Snapshotは全要素を保持し、DOMだけを制限する。
+     * @param name 変数またはメンバー名。
+     * @param id 同一停止の本体ID。
+     * @param array 復号時に長さと有限性を検証した配列。
+     * @returns 展開可能な配列表示。
+     */
+    private arrayVariable(name: string, id: number, array: NonNullable<DebugObject["array"]>): HTMLElement {
+        const details = document.createElement("details");
+        details.open = true;
+        details.append(textElement("summary", `${name}: ndarray #${id}, dtype=${array.dtype}, shape=(${array.shape.join(", ")})`));
+        const data = new DataView(array.data.buffer, array.data.byteOffset, array.data.byteLength);
+        const lines = [`size=${array.size}, ndim=${array.shape.length}, itemsize=${array.dtype === "float32" ? 4 : 1}`];
+        const count = Math.min(array.size, 128);
+        for (let offset = 0; offset < count; offset++) {
+            let remainder = offset;
+            const indices = new Array<number>(array.shape.length);
+            for (let axis = array.shape.length - 1; axis >= 0; axis--) {
+                indices[axis] = remainder % array.shape[axis];
+                remainder = Math.floor(remainder / array.shape[axis]);
+            }
+            const value = array.dtype === "float32" ? data.getFloat32(offset * 4, true) : data.getUint8(offset);
+            lines.push(`[${indices.join(", ")}] = ${value}`);
+        }
+        if (count < array.size) {
+            lines.push(`… 残り${array.size - count}要素（表示は先頭128要素まで）`);
+        }
+        const content = textElement("pre", lines.join("\n"));
+        Object.assign(content.style, { marginLeft: "18px", maxHeight: "320px", overflow: "auto" });
+        details.append(content);
+        return details;
     }
 }

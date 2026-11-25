@@ -1,5 +1,5 @@
 /**
- * PythonAnalysisを入力とするversion=4専用のアセンブリ・バイナリ生成器。
+ * PythonAnalysisを入力とするversion=5専用のアセンブリ・バイナリ生成器。
  * 名前・型・変数配置はsemantic.tsを使用し、意味解析なしの旧生成経路と版1/2は扱わない。
  * 形式の仕様はencodeBinary、参照共有とCALL/RETはcompileTypedと関連メソッドを参照する。
  * BLE/Wi-Fiの形式検査はbytecode-transfer.ts、実行はESP32のbytecode_vm.cppが担当する。
@@ -14,10 +14,13 @@ import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 import type { PythonDebugBuild, PythonDebugInfo } from "./debug-info";
 
 /**
- * opcodeは0x01〜0x21。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
+ * opcodeは0x01〜0x25。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
  * NEW_OBJECTは型ID、GET_FIELD/SET_FIELDは0始まりのフィールド位置をu16で指定する。
  * NEW_OBJECTは未初期化Value列の本体参照を積み、DUPで構築途中のselfを根として保持する。
  * GET_FIELDは対象を値へ置換し、SET_FIELDは右辺・対象の順の2値を取り出して格納する。
+ * CALL_NUMPYはtypedNumpyのスタック規約でnumpy_native.cppを呼ぶ。GET_ITEM/SET_ITEMのu16は軸数。
+ * GET_ITEMは対象→各添字、SET_ITEMは右辺→対象→各添字。ARRAY_ATTRは0=len、1=size、2=ndim、
+ * 3=itemsize、4=shape[軸]で、4だけ対象の後に整数の軸番号を積む。部分配列は返さない。
  * 命令番号・長さと元イメージのCRCを維持する。通信の正本はdebug-protocol.ts。
  */
 export enum BytecodeOpcode {
@@ -53,27 +56,32 @@ export enum BytecodeOpcode {
     NEW_OBJECT = 0x1E,
     GET_FIELD = 0x1F,
     SET_FIELD = 0x20,
-    DUP = 0x21
+    DUP = 0x21,
+    CALL_NUMPY = 0x22,
+    GET_ITEM = 0x23,
+    SET_ITEM = 0x24,
+    ARRAY_ATTR = 0x25
 }
 
 /** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
 export const bytecodeSignature = 0xB1C0;
 /**
- * バイナリversion=4の固定配置。呼出し規約/API schemaは3。旧版は生成しない。
+ * バイナリversion=5の固定配置。呼出し規約/API schemaは4。旧版は生成しない。
  */
-export const bytecodeVersion = 4;
+export const bytecodeVersion = 5;
 /**
- * version=4のバイナリヘッダー長（64バイト）。
+ * version=5のバイナリヘッダー長（64バイト）。
  */
 export const bytecodeHeaderLength = 64;
 /**
- * 本体型レコードはid:uint16、fieldCount:uint16、fieldOffset:uint32の8バイト。
+ * 本体型レコードはid:u16@0、fieldCount:u16@2、fieldOffset:u32@4、kind:u8@8、rank:u8@9、予約0:u16@10。
+ * 計12バイト。kind=0は通常本体（rank=0）、1=float32配列、2=uint8配列（rank=1～4・fieldCount=0）。
  * フィールドはkind:uint8、権限:uint8（読取1・書込2）、classId:uint16の4バイト。
  * classIdは機器7／GC本体8で非0とし、GC本体の型だけ型表へ登録する。
  */
-export const bytecodeTypeRecordLength = 8;
+export const bytecodeTypeRecordLength = 12;
 /**
- * version=4の関数表1件の長さ（12バイト）。
+ * version=5の関数表1件の長さ（12バイト）。
  */
 export const bytecodeFunctionRecordLength = 12;
 /**
@@ -106,7 +114,11 @@ const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> 
     BUILD_STRING: "u16",
     NEW_OBJECT: "u16",
     GET_FIELD: "u16",
-    SET_FIELD: "u16"
+    SET_FIELD: "u16",
+    CALL_NUMPY: "u16",
+    GET_ITEM: "u16",
+    SET_ITEM: "u16",
+    ARRAY_ATTR: "u16"
 };
 
 /** 生成器が対応する四則演算。その他の数値演算は意味解析で受理しても生成時に拒否する。 */
@@ -664,6 +676,84 @@ class BytecodeGenerator {
     }
 
     /**
+     * ソース順に引数を評価し、shape・指定済みoptionId/値だけをC++へ渡す。
+     * CALL_NUMPYのu16は戻り値型ID。スタックは各軸、optionId/値の組、組数、モジュール関数IDの順。
+     * 省略引数を追加しない。dtypeコードは0=None・1=float32・2=uint8で、既定値はC++が設定する。
+     * 一時値を最後に積み直してから根を解除し、入れ子の呼出しでも評価順と生存を保つ。
+     * @param app 意味解析で数値NumPy呼出しとして解決済みの式。
+     */
+    private typedNumpy(app: App): void {
+        const call = this.analysis.numpyCalls.get(app)!;
+        const dimensions: ValueAddress[] = [];
+        const options: {
+            /** 共通宣言の引数番号。 */
+            id: number;
+            /** 評価済み値の位置。 */
+            address: ValueAddress;
+        }[] = [];
+        for (const { parameter, value } of call.binding.arguments) {
+            if (parameter.name === "shape") {
+                for (const dimension of call.shape) {
+                    const address = this.temporary({ kind: "int" }, dimension);
+                    this.expression(dimension);
+                    this.storeValue(address, dimension);
+                    dimensions.push(address);
+                }
+            }
+            else {
+                const dtype = parameter.name === "dtype";
+                const address = this.temporary(dtype ? { kind: "int" } : this.valueType(value), value);
+                if (dtype) {
+                    this.emit("PUSH_INT", value, String(call.dtypeCode));
+                }
+                else {
+                    this.expression(value);
+                }
+                this.storeValue(address, value);
+                options.push({ id: parameter.optionId!, address });
+            }
+        }
+        for (const address of dimensions) {
+            this.loadValue(address, app);
+        }
+        for (const option of options) {
+            this.emit("PUSH_INT", app, String(option.id));
+            this.loadValue(option.address, app);
+        }
+        this.emit("PUSH_INT", app, String(options.length));
+        this.emit("PUSH_INT", app, String(call.binding.definition.id));
+        for (const address of [...dimensions, ...options.map(option => option.address)]) {
+            this.emit("PUSH_NONE", app);
+            this.storeValue(address, app);
+        }
+        this.emit("CALL_NUMPY", app, String(call.owner.id));
+    }
+
+    /**
+     * 配列要素・軸長・スカラー属性を生成する。対象と各添字は左から一度ずつ評価する。
+     * @param app 意味解析で解決済みの添字・属性・len式。
+     */
+    private typedArray(app: App): void {
+        const operation = this.analysis.arrayOperations.get(app)!;
+        if (operation.kind === "shape") {
+            this.expression((app.args[0] as App).args[0]);
+            this.expression(app.args[1]);
+            this.emit("ARRAY_ATTR", app, "4");
+        }
+        else if (operation.kind === "item") {
+            for (const argument of app.args) {
+                this.expression(argument);
+            }
+            this.emit("GET_ITEM", app, String(operation.owner.array!.rank));
+        }
+        else {
+            this.expression(app.args[0]);
+            const code = { length: 0, size: 1, ndim: 2, itemsize: 3 }[operation.kind];
+            this.emit("ARRAY_ATTR", app, String(code));
+        }
+    }
+
+    /**
      * テキストのAPI表はformatAssembly、暗黙変換はexpressionAs、
      * オブジェクト演算の制限はtypedExpressionとconditionで実装する。
      *
@@ -781,6 +871,14 @@ class BytecodeGenerator {
             }
         }
         else if (term instanceof App) {
+            if (this.analysis.numpyCalls.has(term)) {
+                this.typedNumpy(term);
+                return;
+            }
+            if (this.analysis.arrayOperations.has(term)) {
+                this.typedArray(term);
+                return;
+            }
             if (this.typedCall(term)) {
                 return;
             }
@@ -846,6 +944,50 @@ class BytecodeGenerator {
     private typedAssignment(app: App): void {
         const target = app.args[0];
         const right = app.args[1];
+        if (target instanceof App && target.fncName === "t[i]") {
+            const operation = this.analysis.arrayOperations.get(target)!;
+            const cached: ValueAddress[] = [];
+            if (app.fncName === "=") {
+                this.expressionAs(right, this.valueType(target));
+            }
+            else {
+                for (const argument of target.args) {
+                    const address = this.temporary(this.valueType(argument), argument);
+                    this.expression(argument);
+                    this.storeValue(address, argument);
+                    cached.push(address);
+                }
+                for (const address of cached) {
+                    this.loadValue(address, target);
+                }
+                this.emit("GET_ITEM", target, String(operation.owner.array!.rank));
+                this.expression(right);
+                const opcode = arithmetic[app.fncName.slice(0, -1)];
+                if (opcode === undefined) {
+                    this.fail(app, "この配列の複合代入演算には対応していません");
+                }
+                this.emit(opcode, app);
+                if (this.valueType(target).kind === "float") {
+                    this.emit("TO_FLOAT", app);
+                }
+            }
+            if (cached.length === 0) {
+                for (const argument of target.args) {
+                    this.expression(argument);
+                }
+            }
+            else {
+                for (const address of cached) {
+                    this.loadValue(address, target);
+                }
+                for (const address of cached) {
+                    this.emit("PUSH_NONE", target);
+                    this.storeValue(address, target);
+                }
+            }
+            this.emit("SET_ITEM", app, String(operation.owner.array!.rank));
+            return;
+        }
         if (target instanceof App && target.fncName === ".") {
             const field = this.analysis.fields.get(target)!;
             if (app.fncName === "=") {
@@ -1094,6 +1236,9 @@ class BytecodeGenerator {
         lines.push(`.api ${this.analysis.api.callingConventionVersion} ${this.analysis.api.abiHash}`);
         const natives: { /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: DeviceCallable; /** 表示・保存・名前解決に使用する名前。 */ name: string; /** メソッド呼出しで先頭に積む対象オブジェクトのスロット幅。 */ self: number }[] = [];
         for (const owner of this.analysis.api.classes) {
+            if (owner.array) {
+                lines.push(`.array ${owner.id} ${owner.array.dtype} ${owner.array.rank}`);
+            }
             if (owner.constructor !== null) {
                 natives.push({ definition: owner.constructor, name: `${owner.name}.__init__`, self: 0 });
             }
@@ -1328,6 +1473,10 @@ class BytecodeGenerator {
             case "NEW_OBJECT":
             case "GET_FIELD":
             case "SET_FIELD":
+            case "CALL_NUMPY":
+            case "GET_ITEM":
+            case "SET_ITEM":
+            case "ARRAY_ATTR":
                 value = Number(name);
                 break;
             case "CALL":
@@ -1355,15 +1504,15 @@ class BytecodeGenerator {
     }
 
     /**
-     * version=4だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
-     * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=4、大域数:u16@4、関数数:u16@6、
-     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=3、文字列数:u16@16、
-     * schema:u16@18=3、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
+     * version=5だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
+     * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=5、大域数:u16@4、関数数:u16@6、
+     * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=4、文字列数:u16@16、
+     * schema:u16@18=4、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
      * 本体型数:u16@56、予約0:u16@58、本体型表とフィールド表の合計長:u32@60。
      * 関数表は12バイト/件: 入口PC・命令長・引数幅・追加局所幅・戻り値幅・予約0を各u16。
      * 戻り値はNoneも1スロット以上。管理領域2個は追加局所幅に含めず、一時領域は含める。
      * 関数表→本体型表・フィールド表→命令列→文字列表→UTF-8の順でパディングなし。
-     * 型レコード8バイトとフィールド4バイトの詳細はbytecodeTypeRecordLengthのコメントを参照する。
+     * 型レコード12バイトとフィールド4バイトの詳細はbytecodeTypeRecordLengthのコメントを参照する。
      * 型IDは非0昇順、フィールド表は型の宣言順で隙間なく配置する。空の本体型・型の循環を許す。
      * 文字列レコードはoffset:u32と
      * byteLength:u32の8バイトで、ID順に隙間なく連結する。NUL終端・正規化は行わない。
@@ -1376,9 +1525,9 @@ class BytecodeGenerator {
         const api = this.analysis.api;
         const headerLength = bytecodeHeaderLength;
         const functionRecordLength = bytecodeFunctionRecordLength;
-        if (api.schemaVersion !== 3 || api.callingConventionVersion !== 3
+        if (api.schemaVersion !== 4 || api.callingConventionVersion !== 4
             || api.stringPolicyVersion !== 2 || !/^[0-9a-f]{64}$/.test(api.abiHash)) {
-            this.binaryError(this.location(this.module), "バイナリversion=4に対応するAPI定義・ABI指紋ではありません");
+            this.binaryError(this.location(this.module), "バイナリversion=5に対応するAPI定義・ABI指紋ではありません");
         }
         const labels = new Map<string, LabelAddress>();
         const functions: FunctionEntry[] = [];
@@ -1450,6 +1599,8 @@ class BytecodeGenerator {
             view.setUint16(offset, owner.id, true);
             view.setUint16(offset + 2, this.uint16(owner.fields.length, moduleLocation, "フィールド数"), true);
             view.setUint32(offset + 4, fieldOffset, true);
+            view.setUint8(offset + 8, owner.array === undefined ? 0 : owner.array.dtype === "float32" ? 1 : 2);
+            view.setUint8(offset + 9, owner.array?.rank ?? 0);
             for (const field of owner.fields) {
                 const type = field.type;
                 const kind = type.kind === "object" ? (api.classes.find(item => item.id === type.classId)!.kind === "device" ? 7 : 8)
@@ -1526,7 +1677,7 @@ class BytecodeGenerator {
     /**
      * この生成器で内部命令列を1回生成し、共通の命令・定数表からバイナリへ符号化する。
      *
-     * @returns 意味解析済みのversion=4バイナリ。
+     * @returns 意味解析済みのversion=5バイナリ。
      */
     generateBytecode(): Uint8Array {
         this.compileTyped();
@@ -1539,7 +1690,7 @@ class BytecodeGenerator {
      * 文の先頭・関数入口・暗黙returnの最終PCを停止候補へ対応付ける。
      * 複数スロットのSTOREの途中やCALLからの継続には行ブレークポイントを作らない。
      *
-     * @returns 同じ命令列から作ったversion=4のbytesと、元ソース・変数配置・停止位置のinfo。
+     * @returns 同じ命令列から作ったversion=5のbytesと、元ソース・変数配置・停止位置のinfo。
      * @throws Error 元ソースまたは意味解析結果がない場合。
      */
     generateDebugBytecode(): PythonDebugBuild {
@@ -1597,7 +1748,7 @@ export function generateAssembly(analysis: PythonAnalysis): string {
 }
 
 /**
- * version=4のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
+ * version=5のバイナリを生成する。意味解析なしの生成とバイナリ版1/2は非対応。
  * bytecode-transfer.tsとESP32受信器は形式を検証し、VMが実行する。
  * 転送成功・開始ACKは正常終了や実機動作の確認を意味しない。
  * @param analysis 型・配置を確定した解析結果。
@@ -1608,7 +1759,7 @@ export function generateBytecode(analysis: PythonAnalysis): Uint8Array {
 }
 
 /**
- * 同じコンパイルからversion=4のバイナリとデバッグ情報を返す。
+ * 同じコンパイルからversion=5のバイナリとデバッグ情報を返す。
  * @param analysis 元ソースを持つ意味解析結果。
  * @returns 転送バイナリ・最終PC・名前と型・停止点。
  */
