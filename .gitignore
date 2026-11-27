@@ -42,4 +42,6 @@ docs/validation/2026-10-10/
 docs/validation/2026-10-10-fixes/
 public/diagram/python/*
 !public/diagram/python/numeric-kernel.py
+!public/diagram/python/rpc-notify-browser.py
+!public/diagram/python/rpc-notify-esp32.py
 public/diagram/data/

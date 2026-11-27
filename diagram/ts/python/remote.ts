@@ -3,9 +3,11 @@
  * parser.ts/syntax.tsは宣言、semantic.tsは各ソースの型、bytecode.tsは未実行成果物を担当する。
  * ブラウザの構文木・大域値・メソッド本体をESP32へ渡さず、公開署名だけから代理型を作る。
  * ブラウザ側の起動・受付はbrowser-runtime.tsのBrowserRemoteRuntimeへ渡す。
- * BLE/Wi-Fi配送・ESP32側のFuture更新・2ソースのUIは未接続。
+ * PythonBlockが2ソースを選び、remote-session.tsが第3段階のBLE整数通知を配送する。
+ * ESP32側のFuture更新・配列・Wi-Fi配送は後続段階。
  */
 import { AbstractSyntaxNode, App, CallStatement, RefVar } from "./syntax";
+import type { Module } from "./syntax";
 import { parsePython } from "./parser";
 import { loadDeviceApi, resolvePython } from "./semantic";
 import type { DeviceApi, DeviceCallable, DeviceClass, PythonAnalysis, PythonDiagnostic, PythonType } from "./semantic";
@@ -56,7 +58,7 @@ export interface RemoteRegistry {
     objects: RemoteObject[];
 }
 
-/** ESP32のCALL_NATIVEとRPCの対象を結ぶ、未接続スタブの登録情報。 */
+/** ESP32のCALL_NATIVEとRPCの対象を結ぶ動的登録情報。 */
 export interface RemoteNativeBinding {
     /** 基本機器APIの最大IDより後ろへ割り当てるID。既存nativeIdは変更しない。 */
     nativeId: number;
@@ -68,6 +70,8 @@ export interface RemoteNativeBinding {
 
 /** 個別の構文木・解析結果と共通の公開定義。ブラウザに診断があればESP32解析は省く。 */
 export interface RemoteProgramAnalysis {
+    /** ESP32の基本機器APIと照合する元の指紋。 */
+    baseApiHash: string;
     /** ブラウザ専用APIで解析した結果。 */
     browser: PythonAnalysis;
     /** 公開定義を外部APIとして解析したESP32の結果。 */
@@ -82,7 +86,9 @@ export interface RemoteProgramAnalysis {
 
 /** 両コード・PC一覧・署名を同じ生成で保持する。ブラウザだけの起動は第2段階の専用APIを使う。 */
 export interface RemoteProgramBuild {
-    /** ESP32配送を含む一組の実行が未接続で、通常のStartへ渡せないことを示す固定値。 */
+    /** RPC登録時にファームウェアの基本機器APIと照合する指紋。 */
+    baseApiHash: string;
+    /** 単独実行へは渡せない。RPCの対応範囲検査・登録・両VM開始を専用経路で行う。 */
     executable: false;
     /** 対応する公開定義。 */
     registry: RemoteRegistry;
@@ -94,7 +100,7 @@ export interface RemoteProgramBuild {
     esp32: PythonDebugBuild;
     /** ブラウザ用数値カーネルの生成物。Wasmコンパイル・実行は行わない。 */
     kernels: NumericKernelArtifact;
-    /** まだ実装していないRPCスタブの配置。 */
+    /** BLE登録へ渡す動的nativeIdの配置。未対応署名は配送層が拒否する。 */
     nativeBindings: readonly RemoteNativeBinding[];
 }
 
@@ -103,6 +109,22 @@ async function fingerprint(value: unknown): Promise<string> {
     const bytes = new TextEncoder().encode(JSON.stringify(value));
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/** 2ソースの構文エラーへ実行先を付け、PythonBlockが正しい編集領域へ診断を表示できるようにする。 */
+function parseRemoteSource(source: string | Module, target: "browser" | "esp32"): Module {
+    if (typeof source !== "string") {
+        return source;
+    }
+    try {
+        return parsePython(source);
+    }
+    catch (error) {
+        if (error instanceof SyntaxError) {
+            Object.assign(error, { remoteTarget: target });
+        }
+        throw error;
+    }
 }
 
 /** ID・順序・署名を決定的な配列へ正規化する。時刻・元位置・VM側の型IDは含めない。 */
@@ -256,17 +278,18 @@ function proxyApi(base: DeviceApi, registry: RemoteRegistry): {
 }
 
 /**
- * 2ソースをそれぞれparsePython→resolvePythonへ渡す。API読込みは共有するが解析状態は共有しない。
+ * 2ソースをそれぞれparsePython→resolvePythonへ渡す。解析済みModuleは再parseせず使う。
+ * API読込みは共有するが、各Moduleと意味解析の状態は独立させる。
  * ブラウザ側の診断がなければ公開定義を作り、ESP32のfrom remote importと型検査へ接続する。
  * expectedFingerprintを指定した場合は以前の公開定義との不一致をESP32解析前に拒否する。
  * 本関数はUI・開始順序・RPC実行を操作せず、意味エラーを各ソースのdiagnosticsへ返す。
  */
-export async function analyzeRemoteSources(browserSource: string, esp32Source: string, signal?: AbortSignal,
+export async function analyzeRemoteSources(browserSource: string | Module, esp32Source: string | Module, signal?: AbortSignal,
     expectedFingerprint?: string): Promise<RemoteProgramAnalysis> {
     const api = await loadDeviceApi(signal);
-    const browserModule = parsePython(browserSource);
+    const browserModule = parseRemoteSource(browserSource, "browser");
     let browser = resolvePython(browserModule, api, { target: "browser", remote: { objects: new Map() } });
-    const result: RemoteProgramAnalysis = { browser, nativeBindings: [] };
+    const result: RemoteProgramAnalysis = { browser, baseApiHash: api.abiHash, nativeBindings: [] };
     if (browser.diagnostics.length !== 0) {
         return result;
     }
@@ -292,7 +315,7 @@ export async function analyzeRemoteSources(browserSource: string, esp32Source: s
     const apiHash = await fingerprint([remoteDefinitionVersion, api.abiHash, registry.fingerprint, proxies.bindings]);
     signal?.throwIfAborted();
     browser = { ...browser, api: { ...browser.api, abiHash: apiHash } };
-    const esp32Module = parsePython(esp32Source);
+    const esp32Module = parseRemoteSource(esp32Source, "esp32");
     result.browser = browser;
     result.esp32 = resolvePython(esp32Module, { ...proxies.api, abiHash: apiHash },
         { target: "esp32", remote: { objects: proxies.objects } });
@@ -306,7 +329,7 @@ export async function analyzeRemoteSources(browserSource: string, esp32Source: s
  * 対応する2解析から、未実行のバイトコード・各PC情報・登録情報を生成する。
  * 呼出し例：const analysis = await analyzeRemoteSources(browserSource, esp32Source);
  * const build = await createRemoteProgramBuild(analysis);
- * ブラウザ側だけをBrowserRemoteRuntime.start()へ渡せる。通常のStart・ESP32転送は未接続。
+ * ブラウザ側だけの起動はBrowserRemoteRuntime、一組の開始はPythonBlock/RemoteBleSessionが担当する。
  * 既存version 7/8とAPI指紋を使い、命令・通信形式は変更しない。両イメージの内容と指紋を確認する。
  */
 export async function createRemoteProgramBuild(analysis: RemoteProgramAnalysis, signal?: AbortSignal): Promise<RemoteProgramBuild> {
@@ -321,7 +344,7 @@ export async function createRemoteProgramBuild(analysis: RemoteProgramAnalysis, 
         throw new Error("RPCの公開定義と両ソースの解析結果が一致しません");
     }
     const kernels = await createNumericKernelArtifact(browser, signal);
-    return { executable: false, registry, apiHash, kernels,
+    return { executable: false, registry, apiHash, kernels, baseApiHash: analysis.baseApiHash,
         browser: generateRemoteDraftBytecode(browser, kernels.manifest),
         esp32: generateRemoteDraftBytecode(esp32), nativeBindings: analysis.nativeBindings };
 }

@@ -55,7 +55,7 @@ export interface BrowserRpcRequest {
     /** 呼出し時点のスカラー値。VMへの借用参照は含めない。 */
     arguments: BrowserRpcScalar[];
 }
-/** RPC配送前の第2段階だけで使う、Worker要求の失敗種別。VMのError番号とは分離する。 */
+/** Worker要求の失敗種別。BLE配送では全体停止へ伝え、VMのError番号とは分離する。 */
 export type BrowserRpcErrorCode = "notReady" | "invalidRequest" | "unknownMethod" | "argument"
     | "busy" | "duplicate" | "stopped" | "vmError";
 /** Workerが返す受付準備・要求受付・成功・失敗。受付通知は完了通知ではない。 */

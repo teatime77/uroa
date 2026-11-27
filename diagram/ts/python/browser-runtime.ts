@@ -220,7 +220,7 @@ export class BrowserRpcCallError extends Error {
  * start()はrpcReadyまで、call()は各メソッドの完了まで、stop()/closedはWorker終了までを表す。
  * 要求は単調増加IDと世代で照合し、再送しない。実行エラーは全保留要求を失敗にして受付を終える。
  * StopはC復帰後の終了通知を待ってterminateする。通常のBrowserPythonRuntimeとは寿命を分離する。
- * 第2段階の専用APIであり、PythonBlockの2ソースUI・ESP32転送は第3段階以降に接続する。
+ * PythonBlockの2ソース開始ではremote-session.tsから利用する。
  */
 export class BrowserRemoteRuntime {
     /** Worker内のVM。終了通知または異常終了まで保持する。 */
@@ -255,6 +255,7 @@ export class BrowserRemoteRuntime {
     private readonly pending = new Map<number, {
         resolve: (value: BrowserRpcScalar) => void;
         reject: (error: Error) => void;
+        accepted?: () => void;
     }>();
 
     /**
@@ -359,8 +360,8 @@ export class BrowserRemoteRuntime {
         }
     }
 
-    /** 受付可能な世代へ1回だけ送り、完了したスカラーを受け取る。RPCを自動再送しない。 */
-    call(object: number, method: number, args: readonly BrowserRpcScalar[]): Promise<BrowserRpcScalar> {
+    /** 1回だけ送り完了値を受け取る。acceptedはWorker受付時に呼び、メソッド完了とは分ける。 */
+    call(object: number, method: number, args: readonly BrowserRpcScalar[], accepted?: () => void): Promise<BrowserRpcScalar> {
         if (!this.ready || this.controller.signal.aborted || !this.worker) {
             return Promise.reject(new BrowserRpcCallError("notReady", "RPCは受付可能ではありません"));
         }
@@ -369,7 +370,7 @@ export class BrowserRemoteRuntime {
         }
         const id = ++this.nextId;
         return new Promise((resolve, reject) => {
-            this.pending.set(id, { resolve, reject });
+            this.pending.set(id, { resolve, reject, accepted });
             try {
                 this.worker!.postMessage({ kind: "rpc", session: this.session, id, object, method, arguments: [...args] });
             }
@@ -401,6 +402,9 @@ export class BrowserRemoteRuntime {
         if (data.kind === "rpcReady") {
             this.ready = true;
             this.readyResolve?.();
+        }
+        else if (data.kind === "rpcAccepted") {
+            this.pending.get(data.id)?.accepted?.();
         }
         else if (data.kind === "rpcResult" || data.kind === "rpcError") {
             const request = this.pending.get(data.id);

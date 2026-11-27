@@ -14,6 +14,7 @@ import { ControlConnection, ControlOpcode, ControlCommand } from "./control-conn
 import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
 import { checkBytecodeTransfer, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
+import type { RpcChannel } from "./rpc-protocol";
 
 // GATT service shared with esp32/app/diagram-control.
 /**
@@ -45,6 +46,9 @@ export const BLE_UUID = {
     debugResult: "f364140a-00b0-4240-ba50-05ca45bf8abc",
     debugEvent: "f364140b-00b0-4240-ba50-05ca45bf8abc",
     debugData: "f364140c-00b0-4240-ba50-05ca45bf8abc",
+    rpcControl: "f364140d-00b0-4240-ba50-05ca45bf8abc",
+    rpcResult: "f364140e-00b0-4240-ba50-05ca45bf8abc",
+    rpcEvent: "f364140f-00b0-4240-ba50-05ca45bf8abc",
 } as const;
 
 // Structural types keep this browser-only module independent of the robot build.
@@ -617,6 +621,16 @@ export class DeviceConnection {
                             };
                         },
                     };
+                }, async () => {
+                    check();
+                    const control = await service.getCharacteristic(BLE_UUID.rpcControl);
+                    check();
+                    const result = await service.getCharacteristic(BLE_UUID.rpcResult);
+                    check();
+                    const event = await service.getCharacteristic(BLE_UUID.rpcEvent);
+                    check();
+                    return { writeControl: bytes => control.writeValueWithResponse(bytes),
+                        readResult: () => result.readValue(), readEvent: () => event.readValue() };
                 }));
             stage = "状態通知登録";
             await status.startNotifications();
@@ -816,6 +830,24 @@ export class DeviceConnection {
             this.bytecodeSending = false;
             this.notify();
         }
+    }
+
+    /**
+     * 現BLE接続だけで使えるRPC窓口を取得する。各Read/Writeを通常指令と同じ待ち列へ入れる。
+     * 取消はプロトコル処理の境界で行い、進行中のGATT操作は最大2.5秒の既存期限で終える。
+     */
+    async openRpc(): Promise<RpcChannel> {
+        const generation = this.generation;
+        const check = () => {
+            if (generation !== this.generation || this.state.phase !== "connected" || this.state.transport !== "ble" || this.provisioning) {
+                throw new Error("RPCには現在のBLE接続が必要です");
+            }
+        };
+        check();
+        const channel = await this.control.openRpc(check);
+        const run = <T>(operation: () => Promise<T>) => this.control.runOperation(operation, check);
+        return { writeControl: data => run(() => channel.writeControl(data)),
+            readResult: () => run(() => channel.readResult()), readEvent: () => run(() => channel.readEvent()) };
     }
 
     /** 停止値の購読。未取得・失効ではundefined、取得失敗ではerrorを渡す。図の保存には含めない。 */

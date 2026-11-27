@@ -8,7 +8,7 @@ PythonBlockのStartは現在の通信経路で一括転送し、ESP32の検証�
 
 ブレークポイント一覧・実行進捗／停止Event・Snapshot取得の両経路の通信APIは[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、呼出し例は[device-connection.tsのsendBreakpoints()](../../diagram/ts/ble-wifi/device-connection.ts)、受信元の識別・配送は[ControlTransport](../../../esp32/app/diagram-control/include/control_transport.h)を参照する。実機での送受信はビルドとは別に確認する。
 
-ESP32 VMからブラウザVMを呼び出すRPCは、[段階別実装計画](python/rpc-implementation-plan.md)を参照する。第1段階の[独立した解析・生成](../../diagram/ts/python/remote.ts)と、第2段階の[ブラウザVM受付](../../diagram/ts/python/browser-runtime.ts)を追加した。専用APIからブラウザ側だけを起動・呼出しできる実装となっているが、ESP32との通信・Future更新・2ソースUIは未接続。ブラウザ上の実行確認は未実施。Plotly.js・Three.js連携はRPC完了後の別作業とする。
+ESP32 VMからブラウザVMを呼び出すRPCは、[段階別実装計画](python/rpc-implementation-plan.md)を参照する。第3段階まで実装し、戻り値なし・整数0〜1引数のBLE通知と、PythonBlockの2ソース開始・停止を接続した。図にブラウザ用・ESP32用を各1個置き、Openで`rpc-notify-browser.py`・`rpc-notify-esp32.py`を読み、ESP32側からStartする。両側の対応版が必要で、Future更新・配列・Wi-Fi配送は後続段階。通信の正本は[rpc-protocol.ts](../../diagram/ts/ble-wifi/rpc-protocol.ts)、ブラウザ・実通信・実機の動作確認は未実施。Plotly.js・Three.js連携はRPC完了後の別作業とする。
 
 ## 現行の参照先
 

@@ -22,14 +22,33 @@ import { PythonHighlightEditor } from "./highlight-editor";
 import { semanticEditorDiagnostic, syntaxEditorDiagnostic } from "./editor-diagnostics";
 import { openPythonSource } from "./source-dialog";
 import { BrowserPythonRuntime } from "./browser-runtime";
+import { analyzeRemoteSources, createRemoteProgramBuild } from "./remote";
+import type { RemoteProgramAnalysis } from "./remote";
+import { RemoteBleSession } from "./remote-session";
+import { ClassDefinition } from "./syntax";
 
 /**
  * Startはチェック後にコード・行PC・ステップPCを一括送信し、ESP32が検証後に開始する。
  * 完全な転送・開始契約はble-wifi/bytecode-transfer.tsを参照。旧コードの再送省略は行わない。
  * run()は開始結果までを待ち、実行終了までは待たない。StopはVM_STOPで開始待ちも取り消す。
  * 開始成功と正常終了は別とし、observeDeployment()が短い実行の終了・エラー・Pausedも取得する。
+ * RPCは図内のブラウザ用・ESP32用を各1個選び、ESP32側のStartから両解析・生成・準備・開始を行う。
+ * 公開中は両側の編集を止め、どちらのStop・削除でも一組を停止する。ESP32のHALT後も受付は維持する。
+ * 通信の正本はrpc-protocol.ts、Workerの所有と配送はremote-session.ts。Future・配列・Wi-Fiは未対応。
  */
 export class PythonBlock extends ActionBlock {
+    /** 現在の図のPythonBlock。ツール箱を除いてRPCの1組を選ぶ。保存するIDや接続状態ではない。 */
+    private static readonly instances = new Set<PythonBlock>();
+    /** 同じCheckで得た2ソースの解析。次のCheckで必ず置き換える。 */
+    private checkedRemote?: { analysis: RemoteProgramAnalysis; browser: PythonBlock };
+    /** ESP32側が所有するブラウザVMとBLE仲介。 */
+    private remoteSession?: RemoteBleSession;
+    /** RPCを準備・公開している間のブラウザ側ブロック。 */
+    private remotePeer?: PythonBlock;
+    /** ブラウザ側からStopを委譲するESP32側所有者。 */
+    private remoteOwner?: PythonBlock;
+    /** Startの完了後も保持する、RPC全体の取消。 */
+    private remoteLife?: AbortController;
     /** 実行先。既存データはESP32を選び、ブラウザではWorker内のVMを使う。 */
     private readonly executionTarget = document.createElement("select");
     /** ブラウザ実行の完了値。textContentだけで表示する。 */
@@ -178,6 +197,7 @@ export class PythonBlock extends ActionBlock {
      */
     constructor(data: Attr) {
         super(data);
+        PythonBlock.instances.add(this);
         this.setBoxSize();
         const panel = this.panel;
         panel.className = "diagram-python";
@@ -247,6 +267,9 @@ export class PythonBlock extends ActionBlock {
         this.highlightEditor = new PythonHighlightEditor(editor);
         // 1回でも編集したら、元の文字列へ戻した場合も再ビルド・再送する。
         editor.addEventListener("input", () => {
+            if (this.remoteSession || this.remoteOwner || this.remotePeer) {
+                void this.stop().catch(() => undefined);
+            }
             this.editRevision++;
             this.openRequest?.abort();
             this.checkRequest?.abort();
@@ -274,6 +297,9 @@ export class PythonBlock extends ActionBlock {
         panel.append(heading, controls, this.workspace, this.statusView, this.browserOutput);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
         this.releaseConnection = diagramDevice.subscribe(state => {
+            if (state.phase !== "connected" && this.remoteSession) {
+                void this.stop().catch(() => undefined);
+            }
             if (state.phase !== "connected" && this.executionTarget.value === "esp32") {
                 this.ownsVM = false;
                 this.request?.abort();
@@ -537,6 +563,7 @@ export class PythonBlock extends ActionBlock {
      */
     private updateControls(): void {
         const disabled = this.removed || this.inToolbox;
+        const rpc = !!(this.remoteSession || this.remoteOwner || this.remotePeer);
         this.executionTarget.disabled = disabled || this.request !== undefined || this.ownsVM && !this.vmFinished || this.stopping !== undefined;
         this.maximizeButton.disabled = disabled || this.expanded;
         this.minimizeButton.disabled = disabled || !this.expanded;
@@ -552,6 +579,14 @@ export class PythonBlock extends ActionBlock {
         this.sourceEditor.readOnly = this.request !== undefined || this.openRequest !== undefined || this.ownsVM && !this.vmFinished;
         this.debuggerView.setControlsEnabled(!disabled && this.debugValuesReady && !this.debugRequest && !this.request
             && !this.stopping && this.ownsVM && this.vmReceipt === diagramDevice.bytecodeReceipt);
+        if (rpc) {
+            this.executionTarget.disabled = true;
+            this.openButton.disabled = true;
+            this.checkButton.disabled = true;
+            this.startButton.disabled = true;
+            this.sourceEditor.readOnly = true;
+            this.stopButton.disabled = disabled || !!this.stopping;
+        }
     }
 
     /**
@@ -621,11 +656,51 @@ export class PythonBlock extends ActionBlock {
     private async checkSource(controller: AbortController): Promise<PythonAnalysis | undefined> {
         const source = this.sourceEditor.value;
         const revision = this.editRevision;
+        this.checkedRemote = undefined;
+        let remotePair: { browser: PythonBlock; esp32: PythonBlock } | undefined;
         controller.signal.throwIfAborted();
         this.highlightEditor.clearDiagnostics("チェックしています…");
         this.showStatus("Pythonをチェックしています…");
         try {
             const module = parsePython(source);
+            if (module.block.statements.some(statement => statement instanceof ClassDefinition && statement.remote
+                || statement.keyword === "import" && statement.moduleName === "remote")) {
+                const blocks = [...PythonBlock.instances].filter(block => !block.removed && !block.inToolbox);
+                const browsers = blocks.filter(block => block.executionTarget.value === "browser");
+                const devices = blocks.filter(block => block.executionTarget.value === "esp32");
+                if (browsers.length !== 1 || devices.length !== 1) {
+                    throw new Error("RPCはブラウザ用・ESP32用のPythonBlockを各1個配置してください");
+                }
+                remotePair = { browser: browsers[0], esp32: devices[0] };
+                const browser = remotePair.browser;
+                const esp32 = remotePair.esp32;
+                const browserRevision = browser.editRevision;
+                const esp32Revision = esp32.editRevision;
+                const result = await analyzeRemoteSources(this === browser ? module : browser.sourceEditor.value,
+                    this === esp32 ? module : esp32.sourceEditor.value, controller.signal);
+                controller.signal.throwIfAborted();
+                if (browser.removed || esp32.removed || browser.editRevision !== browserRevision || esp32.editRevision !== esp32Revision
+                    || browser.executionTarget.value !== "browser" || esp32.executionTarget.value !== "esp32") {
+                    controller.abort();
+                    controller.signal.throwIfAborted();
+                }
+                browser.highlightEditor.setDiagnostics(browser.sourceEditor.value,
+                    result.browser.diagnostics.map(item => semanticEditorDiagnostic(browser.sourceEditor.value, item)));
+                if (result.esp32) {
+                    esp32.highlightEditor.setDiagnostics(esp32.sourceEditor.value,
+                        result.esp32.diagnostics.map(item => semanticEditorDiagnostic(esp32.sourceEditor.value, item)));
+                }
+                else {
+                    esp32.highlightEditor.clearDiagnostics("ブラウザ側を修正してから再チェックしてください。");
+                }
+                if (result.browser.diagnostics.length || !result.esp32 || result.esp32.diagnostics.length) {
+                    this.showStatus("RPCの両ソースの問題箇所を確認してください。");
+                    return undefined;
+                }
+                this.checkedRemote = { analysis: result, browser };
+                this.showStatus("RPCの両ソースをチェックしました。");
+                return this === browser ? result.browser : result.esp32;
+            }
             // 構文解析器は共用し、利用可能APIと解析結果は選択したVMごとに分離する。
             const analysis = await analyzePython(module, controller.signal,
                 { target: this.executionTarget.value === "browser" ? "browser" : "esp32" });
@@ -643,13 +718,16 @@ export class PythonBlock extends ActionBlock {
             if (controller.signal.aborted || this.removed || this.editRevision !== revision) {
                 throw error;
             }
-            const diagnostic = syntaxEditorDiagnostic(source, error);
+            const diagnosticBlock = remotePair && error instanceof SyntaxError && "remoteTarget" in error
+                ? error.remoteTarget === "browser" ? remotePair.browser : remotePair.esp32 : this;
+            const diagnosticSource = diagnosticBlock.sourceEditor.value;
+            const diagnostic = syntaxEditorDiagnostic(diagnosticSource, error);
             if (diagnostic === undefined) {
                 const message = error instanceof Error ? error.message : "チェックに失敗しました。";
                 this.highlightEditor.clearDiagnostics(`チェックできませんでした：${message}`);
                 throw error;
             }
-            this.highlightEditor.setDiagnostics(source, [diagnostic]);
+            diagnosticBlock.highlightEditor.setDiagnostics(diagnosticSource, [diagnostic]);
             this.showStatus("構文エラーがあります。問題箇所を確認してください。");
             return undefined;
         }
@@ -665,6 +743,10 @@ export class PythonBlock extends ActionBlock {
      * ブラウザの停止はC復帰後に反映し、既存のESP32停止・F9操作とは別に所有する。
      */
     private async start(signal?: AbortSignal): Promise<void> {
+        if (this.remoteSession || this.remoteOwner || this.remotePeer
+            || [...PythonBlock.instances].some(block => block.remoteSession || block.remotePeer)) {
+            throw new Error("RPCの一組を停止してから開始してください");
+        }
         if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest
             || this.stopping || this.openRequest || this.debugRequest) {
             return;
@@ -684,6 +766,54 @@ export class PythonBlock extends ActionBlock {
             if (analysis === undefined) {
                 // Actionチェーンでも後続へ進まない。画面の波線・診断説明は保持する。
                 throw new Error("Pythonに問題があります。表示された問題箇所を修正してください。");
+            }
+            if (analysis.remote) {
+                if (this.executionTarget.value !== "esp32" || !this.checkedRemote) {
+                    throw new Error("RPCはESP32側のPythonBlockからStartしてください");
+                }
+                const peer = this.checkedRemote.browser;
+                if (peer.browserRuntime || peer.request || peer.checkRequest || peer.openRequest || peer.stopping || peer.remoteOwner) {
+                    throw new Error("ブラウザ側の実行・読込み・チェックが終了してからRPCを開始してください");
+                }
+                this.remotePeer = peer;
+                peer.remoteOwner = this;
+                this.remoteLife = controller;
+                this.vmReceipt = undefined;
+                peer.browserOutput.textContent = "";
+                peer.updateControls();
+                this.updateControls();
+                const build = await createRemoteProgramBuild(this.checkedRemote.analysis, controller.signal);
+                controller.signal.throwIfAborted();
+                const session = this.remoteSession = new RemoteBleSession(error => {
+                    void this.stop().catch(() => undefined).finally(() => {
+                        if (!this.removed) {
+                            this.showStatus(`RPCエラー: ${error.message}`);
+                        }
+                        if (!peer.removed) {
+                            peer.showStatus(`RPCエラー: ${error.message}`);
+                        }
+                    });
+                });
+                await session.start(build, controller.signal, text => {
+                    this.showStatus(text);
+                    if (!peer.removed) {
+                        peer.showStatus(text);
+                    }
+                }, text => {
+                    if (!peer.removed) {
+                        peer.browserOutput.textContent += text;
+                    }
+                });
+                const breakpoints = resolveBreakpoints(build.esp32.info, this.highlightEditor.getBreakpointLines());
+                this.debugInfo = build.esp32.info;
+                const receipt = await diagramDevice.sendBytecode(build.esp32.bytes, controller.signal,
+                    { breakpoints, stepPcs: build.esp32.info.stepPcs, start: true });
+                controller.signal.throwIfAborted();
+                this.ownsVM = true;
+                this.vmFinished = false;
+                this.vmReceipt = receipt;
+                await diagramDevice.observeDeployment(receipt, controller.signal);
+                return;
             }
             if (this.executionTarget.value === "browser") {
                 if (this.highlightEditor.getBreakpointLines().length !== 0) {
@@ -736,11 +866,15 @@ export class PythonBlock extends ActionBlock {
             }
         }
         catch (error) {
+            const cancelled = controller.signal.aborted;
+            if (this.remoteSession || this.remotePeer) {
+                await this.stop().catch(() => undefined);
+            }
             if (!this.removed) {
-                if (controller.signal.aborted && this.editRevision === editRevision) {
+                if (cancelled && this.editRevision === editRevision) {
                     this.highlightEditor.clearDiagnostics("開始を取り消しました。再チェックしてください。");
                 }
-                this.showStatus(controller.signal.aborted ? "開始を取り消しました。"
+                this.showStatus(cancelled ? "開始を取り消しました。"
                     : error instanceof Error ? error.message : "Pythonを開始できませんでした。");
             }
             throw error;
@@ -795,6 +929,18 @@ export class PythonBlock extends ActionBlock {
 
     /** 開始待機を無効化してから停止指令を送る。転送の取消で切断した場合は機器側の切断停止を使う。 */
     private stop(): Promise<void> {
+        if (this.remoteOwner) {
+            return this.remoteOwner.stop();
+        }
+        if (this.stopping) {
+            return this.stopping;
+        }
+        const remote = this.remoteSession;
+        const peer = this.remotePeer;
+        this.remoteSession = undefined;
+        this.remoteLife?.abort();
+        this.remoteLife = undefined;
+        const remoteStop = remote?.stop();
         if (this.browserRuntime) {
             this.request?.abort();
             this.browserRuntime.stop();
@@ -804,10 +950,7 @@ export class PythonBlock extends ActionBlock {
         this.debugRequest?.abort();
         this.openRequest?.abort();
         this.checkRequest?.abort();
-        if (this.stopping) {
-            return this.stopping;
-        }
-        const active = this.request !== undefined || this.ownsVM;
+        const active = this.request !== undefined || this.ownsVM || remote !== undefined || peer !== undefined;
         this.request?.abort();
         this.ownsVM = false;
         this.vmReceipt = undefined;
@@ -815,7 +958,12 @@ export class PythonBlock extends ActionBlock {
         if (!active) {
             return Promise.resolve();
         }
-        const task = diagramDevice.stopBytecode().then(() => {
+        // ESP32の停止をC計算の復帰待ちやRPC登録解除の成否に依存させない。
+        const task = Promise.allSettled([remoteStop ?? Promise.resolve(), diagramDevice.stopBytecode()]).then(results => {
+            const failed = results.find(result => result.status === "rejected");
+            if (failed?.status === "rejected" && diagramDevice.state.phase === "connected") {
+                throw failed.reason;
+            }
             if (!this.removed) {
                 this.showStatus("VMを停止しました。");
             }
@@ -825,6 +973,14 @@ export class PythonBlock extends ActionBlock {
             }
             throw error;
         }).finally(() => {
+            if (peer) {
+                peer.remoteOwner = undefined;
+                if (!peer.removed) {
+                    peer.showStatus("ブラウザのRPC受付を停止しました。");
+                }
+                peer.updateControls();
+            }
+            this.remotePeer = undefined;
             this.stopping = undefined;
             this.updateControls();
         });
@@ -848,6 +1004,7 @@ export class PythonBlock extends ActionBlock {
         }
         void this.stop().catch(() => undefined);
         this.removed = true;
+        PythonBlock.instances.delete(this);
         this.releaseStop();
         this.releaseConnection();
         this.releaseDebug();

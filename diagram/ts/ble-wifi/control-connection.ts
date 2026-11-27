@@ -5,10 +5,12 @@
  * ESP32の対応する配送・接続照合はapp/diagram-control/src/control_transport.cpp。
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
+ * RPCはBLE専用の遅延窓口を用意する。各GATT操作は通常指令と同じ待ち列で直列化する。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
+import type { RpcChannel } from "./rpc-protocol";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
 export type ControlPacketKind = "status" | "telemetry";
@@ -43,6 +45,8 @@ export interface ControlTransport {
      * 現在の経路でデバッグ要求・ACK・状態・停止値の窓口を取得する。
      */
     openDebug(): Promise<DebugChannel>;
+    /** RPC専用窓口。第3段階ではBLEだけが対応する。 */
+    openRpc?(): Promise<RpcChannel>;
     /**
      * 通信パケットの通知を購読し、解除関数を返す。
      *
@@ -411,6 +415,17 @@ export class ControlConnection {
     openDebug(check: () => void): Promise<DebugChannel> {
         const transport = this.transport;
         return this.runOperation(() => transport!.openDebug(), check);
+    }
+
+    /** RPC窓口も通常指令と同じ待ち列・接続照合を使う。非対応経路へフォールバックしない。 */
+    openRpc(check: () => void): Promise<RpcChannel> {
+        const transport = this.transport;
+        return this.runOperation(() => {
+            if (!transport?.openRpc) {
+                throw new Error("現在の通信経路はRPCに対応していません");
+            }
+            return transport.openRpc();
+        }, check);
     }
 
     /**

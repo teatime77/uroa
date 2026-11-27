@@ -1,5 +1,15 @@
 # ビルドと回帰テスト
 
+## RPC 第3段階：BLE整数通知と2ソース開始（2026-11-27）
+
+[PythonBlock](../diagram/ts/python/python-block.ts)からブラウザ用・ESP32用の各1個を選び、独立した診断と生成、ブラウザ準備、公開定義の登録、ESP32の一括送信・開始へ接続した。ESP32は戻り値なし・整数0〜1引数の要求を所有キューへコピーして次へ進み、[remote-session.ts](../diagram/ts/python/remote-session.ts)がWorkerの受付後に確認する。通常終了後も通知を配送し、停止・切断・開始失敗では一組を片付ける。通信の正本は[rpc-protocol.ts](../diagram/ts/ble-wifi/rpc-protocol.ts)。Future・配列・Wi-Fi配送、Plotly.js・Three.jsは後続段階。
+
+Openで選べる[rpc-notify-browser.py](../public/diagram/python/rpc-notify-browser.py)・[rpc-notify-esp32.py](../public/diagram/python/rpc-notify-esp32.py)を追加した。既存の公開Pythonフォルダーのignore規則にはこの2ファイルだけ例外を追加し、Viteの既存自動一覧へ接続した。操作は[計画書](diagram/python/rpc-implementation-plan.md)の第3段階に記載した。
+
+`npm.cmd run build:all`と`npm.cmd run verify`の型・公開ビルド・成果物の静的確認が成功。既存のgame import混在2件とBinaryenのNode分岐外部化の警告は継続。共通VMのNativeCallへ呼出しIDを追加したため、Emscripten 4.0.23でブラウザVMを再生成し、JS 9,771バイト・Wasm 46,474バイトと対応するSHA-256を反映した。ESP32側は[ビルド記録](../../esp32/docs/build-and-test.md)を参照する。既存のバイトコードversion 7/8・転送version 1と基本機器APIのID・指紋は維持し、RPC登録表とRPCコードには合成した指紋を使う。
+
+従来のテスト不要指定に従い、テストは作成・実行していない。サンプルの解析・生成の実行試験、ブラウザの開始・print・連続呼出し・停止・通常実行、BLE実配送・切断・期限・満杯時、Upload・実機確認は未実施。第4段階へは進めず、commit・pushは行っていない。
+
 ## RPC 第2段階：ブラウザVM受付（2026-11-27）
 
 [BrowserRemoteRuntime](../diagram/ts/python/browser-runtime.ts)から、第1段階の生成物のブラウザ側だけを起動する専用経路を追加した。初期化後のVM・公開オブジェクト・イメージを保持し、[Worker](../diagram/ts/python/browser-vm-worker.ts)でスカラー要求を順次実行する。共通VMのブラウザ専用入口で最外RETを止め、結果コピー後に大域を残して一時値を回収する。準備完了・受付・結果・失敗・停止を分離し、通常のブラウザ単独実行の終了動作は維持する。仕様は[browser-abi.ts](../diagram/ts/python/browser-abi.ts)と各処理のコメントを参照する。ESP32との通信、ESP32側のFuture更新、2ソースUI、Plotly.js・Three.js連携は未接続。

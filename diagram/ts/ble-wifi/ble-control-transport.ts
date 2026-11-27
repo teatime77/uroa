@@ -2,6 +2,7 @@
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import type { BytecodeChannel } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
+import type { RpcChannel } from "./rpc-protocol";
 
 /** Web Bluetoothの通常通信に使う構造型。GATT参照は保存データへ含めない。 */
 export interface ControlCharacteristic extends EventTarget {
@@ -50,7 +51,9 @@ export class BLEControlTransport implements ControlTransport {
         /**
          * 専用のデバッグ窓口を遅延取得する処理。
          */
-        private loadDebug: () => Promise<DebugChannel>) {
+        private loadDebug: () => Promise<DebugChannel>,
+        /** RPCを利用するときだけ3個の専用Characteristicを取得する。 */
+        private loadRpc?: () => Promise<RpcChannel>) {
     }
 
     /** ネイティブGATTの現在の接続状態を照合する。 */
@@ -76,6 +79,11 @@ export class BLEControlTransport implements ControlTransport {
     /** 4個のデバッグCharacteristicは利用時だけ遅延取得する。 */
     openDebug(): Promise<DebugChannel> {
         return this.loadDebug();
+    }
+
+    /** RPC用の窓口を遅延取得する。通常接続では追加UUIDを要求しない。 */
+    openRpc(): Promise<RpcChannel> {
+        return this.loadRpc ? this.loadRpc() : Promise.reject(new Error("RPC窓口がありません"));
     }
 
     /** 通知購読の解除関数を返す。Wi-Fi切替後は旧GATT通知を共通層へ渡さない。 */
