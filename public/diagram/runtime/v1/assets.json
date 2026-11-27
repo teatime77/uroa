@@ -3,12 +3,12 @@
     "emscriptenVersion": "4.0.23",
     "files": {
         "python-vm.mjs": {
-            "sha256": "1870d3d3be4abeffd427205dca516e5510a7e81978122e4cfca9ae10ef115afa",
-            "bytes": 9347
+            "sha256": "d6f9e8e30f27361c3bf43a93cd03d14ca4db9df35fce009863df529d8d41c614",
+            "bytes": 9771
         },
         "python-vm.wasm": {
-            "sha256": "f3ba70804c99a971cb934f000a5144d265d24d3ef7d51e83178c4547a64205ef",
-            "bytes": 43346
+            "sha256": "14e458962772d5c7f079270368c43edd8660edf3051b5243250e20ada13878f4",
+            "bytes": 46463
         },
         "wccfiles.zip": {
             "sha256": "001b84ef7074f93cd819ce61998f351f6cb01b2e05297119299af1f7e3852b05",

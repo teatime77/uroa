@@ -2,7 +2,8 @@
  * 独立したブラウザ／ESP32ソースをRPC公開定義で結ぶコンパイル用の入口。
  * parser.ts/syntax.tsは宣言、semantic.tsは各ソースの型、bytecode.tsは未実行成果物を担当する。
  * ブラウザの構文木・大域値・メソッド本体をESP32へ渡さず、公開署名だけから代理型を作る。
- * 第1段階は解析・生成まで。Workerでの受付・BLE/Wi-Fi配送・Future更新・2ソースのUIは未接続。
+ * ブラウザ側の起動・受付はbrowser-runtime.tsのBrowserRemoteRuntimeへ渡す。
+ * BLE/Wi-Fi配送・ESP32側のFuture更新・2ソースのUIは未接続。
  */
 import { AbstractSyntaxNode, App, CallStatement, RefVar } from "./syntax";
 import { parsePython } from "./parser";
@@ -79,9 +80,9 @@ export interface RemoteProgramAnalysis {
     nativeBindings: RemoteNativeBinding[];
 }
 
-/** 実行へ渡せない第1段階の生成物。両コード・PC一覧・署名を同じ生成で保持する。 */
+/** 両コード・PC一覧・署名を同じ生成で保持する。ブラウザだけの起動は第2段階の専用APIを使う。 */
 export interface RemoteProgramBuild {
-    /** 通常のStartへ渡せないことを明示する固定値。 */
+    /** ESP32配送を含む一組の実行が未接続で、通常のStartへ渡せないことを示す固定値。 */
     executable: false;
     /** 対応する公開定義。 */
     registry: RemoteRegistry;
@@ -258,7 +259,7 @@ function proxyApi(base: DeviceApi, registry: RemoteRegistry): {
  * 2ソースをそれぞれparsePython→resolvePythonへ渡す。API読込みは共有するが解析状態は共有しない。
  * ブラウザ側の診断がなければ公開定義を作り、ESP32のfrom remote importと型検査へ接続する。
  * expectedFingerprintを指定した場合は以前の公開定義との不一致をESP32解析前に拒否する。
- * UIの2ソース選択・開始順序・RPCの実行はまだ接続しない。意味エラーは各ソースのdiagnosticsへ返す。
+ * 本関数はUI・開始順序・RPC実行を操作せず、意味エラーを各ソースのdiagnosticsへ返す。
  */
 export async function analyzeRemoteSources(browserSource: string, esp32Source: string, signal?: AbortSignal,
     expectedFingerprint?: string): Promise<RemoteProgramAnalysis> {
@@ -304,7 +305,8 @@ export async function analyzeRemoteSources(browserSource: string, esp32Source: s
 /**
  * 対応する2解析から、未実行のバイトコード・各PC情報・登録情報を生成する。
  * 呼出し例：const analysis = await analyzeRemoteSources(browserSource, esp32Source);
- * const build = await createRemoteProgramBuild(analysis); 生成物は確認用で、Startや転送には使わない。
+ * const build = await createRemoteProgramBuild(analysis);
+ * ブラウザ側だけをBrowserRemoteRuntime.start()へ渡せる。通常のStart・ESP32転送は未接続。
  * 既存version 7/8とAPI指紋を使い、命令・通信形式は変更しない。両イメージの内容と指紋を確認する。
  */
 export async function createRemoteProgramBuild(analysis: RemoteProgramAnalysis, signal?: AbortSignal): Promise<RemoteProgramBuild> {

@@ -1,5 +1,13 @@
 # ビルドと回帰テスト
 
+## RPC 第2段階：ブラウザVM受付（2026-11-27）
+
+[BrowserRemoteRuntime](../diagram/ts/python/browser-runtime.ts)から、第1段階の生成物のブラウザ側だけを起動する専用経路を追加した。初期化後のVM・公開オブジェクト・イメージを保持し、[Worker](../diagram/ts/python/browser-vm-worker.ts)でスカラー要求を順次実行する。共通VMのブラウザ専用入口で最外RETを止め、結果コピー後に大域を残して一時値を回収する。準備完了・受付・結果・失敗・停止を分離し、通常のブラウザ単独実行の終了動作は維持する。仕様は[browser-abi.ts](../diagram/ts/python/browser-abi.ts)と各処理のコメントを参照する。ESP32との通信、ESP32側のFuture更新、2ソースUI、Plotly.js・Three.js連携は未接続。
+
+Emscripten 4.0.23でVMを再生成し、JSは9,771バイト、Wasmは46,463バイトとなった。`assets.json`の実バイト数・SHA-256も更新した。`npm.cmd run build:all`と`npm.cmd run verify`の型・公開ビルド・配布資産の静的確認に成功。既存のgame import混在2件とBinaryenのNode分岐外部化の警告は継続。ESP32リポジトリーでも現在の`default_envs`（`supermini_esp32s3`）だけでビルド成功を確認した。変更箇所を整形し、コメント・リンク・差分を確認した。
+
+テスト不要指定に従い、テストは作成・実行していない。RPC生成物の実行、ブラウザの初期化・連続呼出し・引数／戻り値・状態保持・GC・停止・エラー終了、通常実行の再確認、実BLE／Wi-Fi、Upload・実機確認は未実施。ビルド成功はこれらの動作確認を意味しない。
+
 ## RPC 第0・1段階：方針決定と独立した解析・生成（2026-11-27）
 
 [段階別計画](diagram/python/rpc-implementation-plan.md)の第0段階で推奨案の採用を確認し、第1段階のフロントエンドを追加した。[remote.ts](../diagram/ts/python/remote.ts)からブラウザ／ESP32の2ソースを個別に解析し、ブラウザの公開定義から代理・Future型と未実行の生成物を作る。構文・型・生成の契約は各ソースのコメントを正本とする。通常のStart・転送用の生成入口はRPC解析結果を拒否する。2ソースのUI、ブラウザVMのRPC受付、BLE／Wi-Fi配送、Future更新、配列転送は後続段階。Plotly.js・Three.jsの連携は行っていない。

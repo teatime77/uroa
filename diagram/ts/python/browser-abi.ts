@@ -1,5 +1,6 @@
 /** ブラウザ用VM・コンパイラー・Worker間の契約。機器向けの通信形式から独立する。 */
 import type { NumericKernelManifest } from "./kernel-c";
+import type { RemoteValueType } from "./remote";
 
 /** 自サイトから配布する固定資産の場所。browser/build.pyで生成する。 */
 export const browserAssetBase = "/diagram/runtime/v1/";
@@ -7,8 +8,65 @@ export const browserAssetBase = "/diagram/runtime/v1/";
 export const browserKernelTags = { i32: 1, f32: 2, in_f32: 3, out_f32: 4, bool: 0 } as const;
 /** 共通VMのErrorに対応する接続結果。 */
 export const browserVmErrors = { none: 0, memory: 2, unavailable: 14, failure: 16 } as const;
+/** Worker内RPCの上限。通信パケットの上限・版とは独立する。実行中1件を待ち数へ含める。 */
+export const browserRpcLimits = { pending: 16, arguments: 32, stringBytes: 1024, maxId: 0xFFFFFFFF } as const;
+/** browser/host.cppと共有する、スカラー引数・戻り値のVMタグ。 */
+export const browserRpcTags = { int: 1, float: 2, none: 3, str: 6 } as const;
+/** 第2段階でWorkerへコピーする値。配列・オブジェクト・VMアドレスは渡さない。 */
+export type BrowserRpcScalar = number | string | null;
+/** 公開署名と、その同一生成で得たブラウザ側の関数入口・selfの配置。 */
+export interface BrowserRpcMethod {
+    /** 公開オブジェクトID。 */
+    object: number;
+    /** 公開メソッドID。 */
+    method: number;
+    /** 大域のselfのスロット。 */
+    slot: number;
+    /** selfの本体型ID。 */
+    classId: number;
+    /** 関数の入口PC。 */
+    entry: number;
+    /** selfを含めない引数型。 */
+    parameters: RemoteValueType[];
+    /** ブラウザ本体の戻り値型。 */
+    result: RemoteValueType;
+}
+/** 初期化終了後もVMとイメージを保持するRPCの公開情報。 */
+export interface BrowserRpcProgram {
+    /** Runtimeが開始ごとに採番し、全要求・応答へ付ける世代。 */
+    session: number;
+    /** 同じ2ソースの公開定義の指紋。 */
+    fingerprint: string;
+    /** このWorkerで呼べるメソッドだけの表。 */
+    methods: BrowserRpcMethod[];
+}
+/** Workerへ送る1件のRPC。idはセッション内で単調増加し、再利用・自動再送を行わない。 */
+export interface BrowserRpcRequest {
+    /** Worker内の要求種別。通信パケットの操作番号とは分離する。 */
+    kind: "rpc";
+    /** 開始時に割り当てた世代。旧世代の要求を拒否する。 */
+    session: number;
+    /** セッション内で再利用しない要求番号。 */
+    id: number;
+    /** 公開オブジェクトID。 */
+    object: number;
+    /** 公開メソッドID。 */
+    method: number;
+    /** 呼出し時点のスカラー値。VMへの借用参照は含めない。 */
+    arguments: BrowserRpcScalar[];
+}
+/** RPC配送前の第2段階だけで使う、Worker要求の失敗種別。VMのError番号とは分離する。 */
+export type BrowserRpcErrorCode = "notReady" | "invalidRequest" | "unknownMethod" | "argument"
+    | "busy" | "duplicate" | "stopped" | "vmError";
+/** Workerが返す受付準備・要求受付・成功・失敗。受付通知は完了通知ではない。 */
+export type BrowserRpcEvent = { kind: "rpcReady"; session: number }
+    | { kind: "rpcAccepted"; session: number; id: number }
+    | { kind: "rpcResult"; session: number; id: number; value: BrowserRpcScalar }
+    | { kind: "rpcError"; session: number; id: number; code: BrowserRpcErrorCode; message: string };
 /** 実行Workerへ渡す、一組のVMイメージと計算用Wasm。 */
 export interface BrowserPythonProgram {
+    /** 指定時は初期化後も受付を維持する。省略時は従来どおり正常終了で破棄する。 */
+    rpc?: BrowserRpcProgram;
     /** version 7またはカーネル付きversion 8。 */
     bytecode: Uint8Array;
     /** 共通Cと照合済みの登録表。 */
@@ -37,6 +95,11 @@ export interface BrowserVM {
     _browser_pc(): number;
     _browser_instructions(): number;
     _browser_value(slot: number): number;
+    _browser_rpc_register(object: number, method: number, slot: number, classId: number,
+        entry: number, tags: number, count: number): number;
+    _browser_rpc_begin(object: number, method: number, descriptors: number, count: number): number;
+    _browser_rpc_result(): number;
+    _browser_rpc_release(): number;
 }
 
 /** 配布物の固定点と各ファイルのSHA-256。 */
