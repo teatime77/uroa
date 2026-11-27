@@ -1,5 +1,13 @@
 # ビルドと回帰テスト
 
+## RPC 第0・1段階：方針決定と独立した解析・生成（2026-11-27）
+
+[段階別計画](diagram/python/rpc-implementation-plan.md)の第0段階で推奨案の採用を確認し、第1段階のフロントエンドを追加した。[remote.ts](../diagram/ts/python/remote.ts)からブラウザ／ESP32の2ソースを個別に解析し、ブラウザの公開定義から代理・Future型と未実行の生成物を作る。構文・型・生成の契約は各ソースのコメントを正本とする。通常のStart・転送用の生成入口はRPC解析結果を拒否する。2ソースのUI、ブラウザVMのRPC受付、BLE／Wi-Fi配送、Future更新、配列転送は後続段階。Plotly.js・Three.jsの連携は行っていない。
+
+uroaルートで`npm.cmd run build:all`と`npm.cmd run verify`が成功し、型・公開ビルド・配布資産の静的確認を完了した。既存のgame import混在2件とBinaryenのNode分岐外部化の警告は継続。リンク・差分・空白も確認した。
+
+従来のテスト不要指定に従い、テストは作成・実行していない。RPCサンプルの解析・生成や構文再生成の実行試験、ブラウザ、通信、VMの実行・GC・Futureの実動作は未確認。ESP32ソース・バイトコードの命令形式・機器API生成物・配布用VM資産は変更せず、ファームウェアビルド・Upload・実機確認も行っていない。
+
 ## ブラウザVMのprint接続（2026-11-27）
 
 `print("hello world")`がチェックを通る一方、StartでNativeUnavailable（14）となる報告に対応した。[ブラウザ用ホスト](../../esp32/app/diagram-control/browser/host.cpp)へ文字列1引数・None戻り値のprintを登録する。nativeIdとAPI指紋は同じPythonAnalysisからWorkerへ渡し、VMは開始・呼出し時に指紋を照合する。生成済み機器APIとそのIDは変更していない。Workerは長さ付きUTF-8を文字列へコピーし、改行を付加してtick終了時に出力を転送する。PythonBlockは到着したprint出力を保持し、正常終了時にはその後ろへ大域変数の値を表示する。

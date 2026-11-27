@@ -626,7 +626,9 @@ export class PythonBlock extends ActionBlock {
         this.showStatus("Pythonをチェックしています…");
         try {
             const module = parsePython(source);
-            const analysis = await analyzePython(module, controller.signal);
+            // 構文解析器は共用し、利用可能APIと解析結果は選択したVMごとに分離する。
+            const analysis = await analyzePython(module, controller.signal,
+                { target: this.executionTarget.value === "browser" ? "browser" : "esp32" });
             controller.signal.throwIfAborted();
             if (this.removed || this.editRevision !== revision || this.sourceEditor.value !== source) {
                 controller.abort();

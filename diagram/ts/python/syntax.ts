@@ -699,6 +699,8 @@ export class ForStatement extends Statement {
 
 /** Pythonのdefは実行順を保つため、文列中にも保持する。 */
 export class Fn extends Statement {
+    /** Remoteの応答をFutureで受ける宣言。コルーチン・awaitの実行機構は含まない。 */
+    asynchronous = false;
     /** 単純名のデコレーター。実行せず、kernel.tsが許可範囲を検査する。 */
     decorators: RefVar[] = [];
     /** 戻り値の単純な型注釈。意味解析が検証する。 */
@@ -728,7 +730,7 @@ export class Fn extends Statement {
             const args = this.args.map(arg => arg.toString()).join(", ");
             const decorators = this.decorators.map(decorator => `@${decorator}\n`).join("");
             const result = this.returnAnnotation === undefined ? "" : ` -> ${this.returnAnnotation}`;
-            this._str = `${decorators}def ${this.name}(${args})${result}:\n${formatSuite(this.block)}`;
+            this._str = `${decorators}${this.asynchronous ? "async " : ""}def ${this.name}(${args})${result}:\n${formatSuite(this.block)}`;
         }
         return this._str;
     }
@@ -739,6 +741,8 @@ export class Fn extends Statement {
  * フィールド配置・メソッドの一意名・GC本体型は意味解析で決定する。
  */
 export class ClassDefinition extends Statement {
+    /** Remoteだけを公開対象の印として許す。通常の基底クラス・継承探索は行わない。 */
+    remote = false;
     /**
      * 宣言されたクラス名。
      */
@@ -773,7 +777,7 @@ export class ClassDefinition extends Statement {
      */
     toString(): string {
         if (this._str === undefined) {
-            this._str = `class ${this.name}:\n${formatSuite(this.block)}`;
+            this._str = `class ${this.name}${this.remote ? "(Remote)" : ""}:\n${formatSuite(this.block)}`;
         }
         return this._str;
     }

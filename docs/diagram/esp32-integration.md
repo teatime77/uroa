@@ -1,12 +1,14 @@
 # diagramとESP32の連携
 
-更新日: 2026-11-05（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
+更新日: 2026-11-27（日本時間）。ブラウザー側はuroa、ESP32側は別リポジトリーの`D:\usr\prj\esp32`で管理する。現行ファームウェアは`app/diagram-control/`。
 
 ## Pythonプログラム・VM・デバッグのBLE／Wi-Fi通信
 
 PythonBlockのStartは現在の通信経路で一括転送し、ESP32の検証後開始と状態確認を行う。フレーム・Result照合・認証・取消・保持と実行の境界は[bytecode-transfer.ts](../../diagram/ts/ble-wifi/bytecode-transfer.ts)、開始・停止との連携は[python-block.ts](../../diagram/ts/python/python-block.ts)と[main.cpp](../../../esp32/app/diagram-control/src/main.cpp)を正本とする。
 
 ブレークポイント一覧・実行進捗／停止Event・Snapshot取得の両経路の通信APIは[debug-protocol.ts](../../diagram/ts/ble-wifi/debug-protocol.ts)、呼出し例は[device-connection.tsのsendBreakpoints()](../../diagram/ts/ble-wifi/device-connection.ts)、受信元の識別・配送は[ControlTransport](../../../esp32/app/diagram-control/include/control_transport.h)を参照する。実機での送受信はビルドとは別に確認する。
+
+ESP32 VMからブラウザVMを呼び出すRPCは、[段階別実装計画](python/rpc-implementation-plan.md)を参照する。第0段階の方針を決定し、第1段階の独立した解析・未実行成果物の生成を追加した。実装の入口は[remote.ts](../../diagram/ts/python/remote.ts)。RPC実行・通信・2ソースUIは未接続で、Futureの状態更新も後続段階となる。Plotly.js・Three.js連携はRPC完了後の別作業とする。
 
 ## 現行の参照先
 

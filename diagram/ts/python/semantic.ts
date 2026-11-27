@@ -80,6 +80,8 @@ export interface DeviceField {
 
 /** APIとユーザークラスの定義。recordはGC本体、deviceは不透明な機器ハンドル。 */
 export interface DeviceClass {
+    /** コンパイル専用のFuture本体。done/errorはint、valueはこの戻り値型。実行接続は後続段階。 */
+    future?: PythonType;
     /** ndarrayの静的型。長さは型に含めず、各呼出しで実行時に決める。 */
     array?: {
         /** 要素表現。 */
@@ -255,6 +257,10 @@ export interface PythonDiagnostic {
  * 診断がある場合も部分的な解決情報を返すが、変数のslotはすべて-1とする。
  */
 export interface PythonAnalysis {
+    /** APIの利用可能範囲を決めた実行先。解析器の実装は共通、解析状態は個別に所有する。 */
+    target: "esp32" | "browser";
+    /** RPC専用解析だけが持つimportと代理変数。通常の実行・転送入口では生成を拒否する。 */
+    remote?: { imports: ReadonlyMap<Statement, readonly PythonVariable[]> };
     /** カーネルの宣言・独立した数値型・ヘルパー。通常VMの配置とは分離する。 */
     kernelAnalysis: PythonKernelAnalysis;
     /** 静的に解決したlaunch。関数名を実行時の値として扱わない。 */
@@ -289,6 +295,14 @@ export interface PythonAnalysis {
     calls: ReadonlyMap<App, PythonCall>;
     /** 属性式から所有クラスと公開フィールド定義への対応。 */
     fields: ReadonlyMap<App, { /** 解決したメソッドまたはフィールドを所有するAPIクラス。 */ owner: DeviceClass; /** 名前解決で特定したAPIまたはユーザー宣言の定義。 */ definition: DeviceField }>;
+}
+
+/** remote.tsが独立した2ソースの解析へ渡す、実行先と生成済み代理クラスの公開名。 */
+export interface PythonAnalysisOptions {
+    /** 省略時は従来どおりESP32の機器APIを使う。 */
+    target?: "esp32" | "browser";
+    /** RPC専用解析の許可。ブラウザ側は空の表、ESP32側は公開定義だけを渡す。 */
+    remote?: { objects: ReadonlyMap<string, DeviceClass> };
 }
 
 /** NumPy生成の静的情報。既定引数の値は命令列へ追加せず、C++が設定する。 */
@@ -581,7 +595,7 @@ export function valueSlotTypes(type: PythonType, api: DeviceApi): PythonType[] {
  * @returns 検証済みのAPI定義。
  * @throws HTTP失敗・不正JSON・API形式不正・取消の例外を呼出し元へ伝播する。
  */
-async function loadDeviceApi(signal?: AbortSignal): Promise<DeviceApi> {
+export async function loadDeviceApi(signal?: AbortSignal): Promise<DeviceApi> {
     const response = await fetch("/diagram/device/device-api.json", { signal, cache: "no-store" });
     if (!response.ok) {
         throw new Error(`device-api.jsonを読み込めません: HTTP ${response.status}`);
@@ -637,6 +651,10 @@ function numeric(type: PythonType): boolean {
  * 元の構文木、parent、charPos、toString()のキャッシュは変更しない。
  */
 class PythonResolver {
+    /** from remote importで導入した読取専用の代理名。再束縛・仮引数による隠蔽を拒否する。 */
+    private readonly remoteNames = new Set<string>();
+    /** import文と、その文で初期化する代理の大域スロット。 */
+    private readonly remoteImports = new Map<Statement, PythonVariable[]>();
     /** kernel.tsが通常VMと独立して検査した数値関数。 */
     private readonly kernelAnalysis: PythonKernelAnalysis;
     /** 通常の型推論で検査するlaunchとその未評価引数。 */
@@ -717,8 +735,12 @@ class PythonResolver {
      * @param module 構文解析済みのモジュール。
      * @param api 検証済みのAPI定義。
      */
-    constructor(/** この処理が対象とする構文解析済みのモジュール。 */ private readonly module: Module, /** 検証済みの機器API定義。型参照・nativeId・ABI指紋を共有する。 */ private readonly api: DeviceApi) {
-        this.api = { ...api, classes: [...api.classes] };
+    constructor(/** この処理が対象とする構文解析済みのモジュール。 */ private readonly module: Module,
+        /** 検証済みAPI。解析中に追加するクラスとフィールドは各解析が所有する。 */ private readonly api: DeviceApi,
+        /** 実行先とRPCの公開定義。構文木や他VMの変数表を含めない。 */ private readonly options: PythonAnalysisOptions = {}) {
+        this.api = { ...api, classes: api.classes.map(owner => ({ ...owner,
+            fields: owner.fields.map(field => ({ ...field })), methods: [...owner.methods],
+            array: owner.array === undefined ? undefined : { ...owner.array } })) };
         this.classes = new Map(this.api.classes.map(item => [item.name, item]));
         this.nativeFunctions = new Map(api.functions.map(item => [item.name, item]));
         this.kernelAnalysis = analyzePythonKernels(module, (node, message) => {
@@ -862,19 +884,23 @@ class PythonResolver {
      * @returns 定数・組込み・カーネル名、クラス名、API関数名、import済み別名ならtrue。
      */
     private reserved(name: string, kernelDeclaration = false): boolean {
-        return ["True", "False", "None", "len", "object", "kernel", "launch", "InF32", "OutF32"].includes(name) || this.classes.has(name)
+        return ["True", "False", "None", "Remote", "len", "object", "kernel", "launch", "InF32", "OutF32"].includes(name) || this.classes.has(name)
+            || this.remoteNames.has(name)
             || this.nativeFunctions.has(name) || this.moduleAliases.has(name)
             || !kernelDeclaration && this.kernelAnalysis.kernels.has(name);
     }
 
     /**
      * ユーザークラスとメソッドを登録し、__init__のself代入から固定フィールド名を収集する。
-     * @details 継承・クラス変数・動的フィールド追加は扱わない。型は全呼出しを反復して推論する。
+     * @details Remote指定はブラウザのRPC専用解析だけに許す。一般の継承探索は行わない。
      */
     private registerClasses(): void {
         for (const statement of this.module.block.statements) {
             if (!(statement instanceof ClassDefinition)) {
                 continue;
+            }
+            if (statement.remote && (this.options.target !== "browser" || this.options.remote === undefined)) {
+                this.fail(statement, "Remoteクラスはブラウザ側のRPC専用解析で使用してください");
             }
             if (this.reserved(statement.name)) {
                 this.fail(statement, `クラス名が重複・衝突しています: ${statement.name}`);
@@ -897,6 +923,12 @@ class PythonResolver {
                         this.fail(member, "クラス本体はメソッド・pass・説明文字列だけに対応しています");
                     }
                     continue;
+                }
+                if (member.asynchronous && (!statement.remote || member.name === "__init__")) {
+                    this.fail(member, "async defはRemoteの通常メソッドだけに使用できます");
+                }
+                if (statement.remote && member.decorators.length !== 0) {
+                    this.fail(member, "Remoteメソッドのデコレーターは未対応です");
                 }
                 if (owner.userMethods!.has(member.name) || member.args[0]?.name !== "self") {
                     this.fail(member, "メソッド名の重複、または先頭引数selfがありません");
@@ -969,6 +1001,30 @@ class PythonResolver {
     private registerModuleImports(): void {
         for (const statement of this.module.block.statements) {
             if (statement.keyword !== "import") {
+                continue;
+            }
+            if (statement.moduleName === "remote") {
+                if (this.options.target === "browser" || this.options.remote === undefined) {
+                    this.fail(statement, "from remote importはESP32側のRPC専用解析で使用してください");
+                    continue;
+                }
+                const variables: PythonVariable[] = [];
+                for (const imported of statement.imports) {
+                    const owner = this.options.remote.objects.get(imported.name);
+                    const alias = imported.alias ?? imported.name;
+                    if (owner === undefined) {
+                        this.fail(statement, `公開されたRemoteオブジェクトがありません: ${imported.name}`);
+                        continue;
+                    }
+                    const variable = this.addVariable(alias, statement);
+                    if (variable !== undefined) {
+                        variable.type = { kind: "object", classId: owner.id };
+                        this.remoteNames.add(alias);
+                        variables.push(variable);
+                    }
+                }
+                this.remoteImports.set(statement, variables);
+                this.validImports.add(statement);
                 continue;
             }
             if (statement.moduleName !== undefined) {
@@ -1495,7 +1551,7 @@ class PythonResolver {
             : this.fail(app.fnc, `この名前は呼び出せません: ${app.fncName}`);
     }
 
-    /** 単純なスカラー注釈を通常関数の固定型へ変換する。配列モードはkernel.tsだけで扱う。 */
+    /** スカラー注釈を固定型へ変換する。RPC解析ではstrも許す。配列モードはkernel.tsだけで扱う。 */
     private annotationType(annotation: RefVar): PythonType {
         if (annotation.name === "int") {
             return intType;
@@ -1506,7 +1562,10 @@ class PythonResolver {
         if (annotation.name === "None") {
             return noneType;
         }
-        return this.fail(annotation, `通常関数の型注釈はint・float・Noneにしてください: ${annotation.name}`);
+        if (annotation.name === "str" && this.options.remote !== undefined) {
+            return strType;
+        }
+        return this.fail(annotation, `型注釈はint・float・None${this.options.remote === undefined ? "" : "・str"}にしてください: ${annotation.name}`);
     }
 
     /** 数値専用の解析で本体を検査済みか。VMの推論規則を重ねて適用しない。 */
@@ -2039,6 +2098,9 @@ class PythonResolver {
                 executable = true;
                 continue;
             }
+            if (statement.asynchronous) {
+                this.fail(statement, "モジュール直下のasync defは未対応です");
+            }
             // カーネルはkernelAnalysisだけに保持し、VM関数表やスロットを作らない。
             if (isKernelFunction(statement)) {
                 if (executable || this.reserved(statement.name, true) || this.functions.has(statement.name)) {
@@ -2077,8 +2139,8 @@ class PythonResolver {
                     declaration: parameter, type: errorType });
                 if (variable !== undefined && parameter.annotation !== undefined) {
                     variable.type = this.annotationType(parameter.annotation);
-                    if (variable.type.kind === "none") {
-                        this.fail(parameter.annotation, "仮引数の型はintまたはfloatにしてください");
+                    if (variable.type.kind === "none" && !fn.owner?.userClass?.remote) {
+                        this.fail(parameter.annotation, "None型の仮引数はRemoteメソッドだけに使用できます");
                     }
                 }
             }
@@ -2196,7 +2258,9 @@ class PythonResolver {
             }
         }
         this.diagnostics.sort((left, right) => left.charPos - right.charPos);
-        return { kernelAnalysis: this.kernelAnalysis, kernelLaunches: this.kernelLaunches,
+        return { target: this.options.target ?? "esp32",
+            remote: this.options.remote === undefined ? undefined : { imports: this.remoteImports },
+            kernelAnalysis: this.kernelAnalysis, kernelLaunches: this.kernelLaunches,
             diagnostics: this.diagnostics, module: this.module, api: this.api, moduleCalls: this.moduleCalls,
             numpyCalls: this.numpyCalls, arrayOperations: this.arrayOperations,
             globals: this.globals, functions: this.functions, references: this.references,
@@ -2212,10 +2276,14 @@ class PythonResolver {
  * parser.tsの開発用入口は診断を記録して生成を省く。
  * @param module 元の構文木。解析では書き換えない。
  * @param api readDeviceApiまたはloadDeviceApiで検証済みのAPI定義。
+ * @param options 実行先とRPC公開定義。ブラウザでは機器クラス・機器関数を名前解決に登録しない。
  * @returns 名前の束縛・型・呼出し先・公開フィールドと意味診断。
  */
-function resolvePython(module: Module, api: DeviceApi): PythonAnalysis {
-    return new PythonResolver(module, api).resolve();
+export function resolvePython(module: Module, api: DeviceApi, options: PythonAnalysisOptions = {}): PythonAnalysis {
+    // 現在のブラウザホストはprintだけを接続する。NumPyは独立した組込みモジュールとして共用する。
+    const available = options.target === "browser" ? { ...api, classes: [],
+        functions: api.functions.filter(fn => fn.name === "print") } : api;
+    return new PythonResolver(module, available, options).resolve();
 }
 
 /**
@@ -2223,11 +2291,12 @@ function resolvePython(module: Module, api: DeviceApi): PythonAnalysis {
  * parsePythonは同期の構文解析APIとして維持し、その構文エラーの例外も変更しない。
  * @param module 構文解析済みのモジュール。
  * @param signal API読込みと意味解析直前の取消確認に使うシグナル。
+ * @param options 実行先とRPC公開定義。省略時は従来のESP32単独解析。
  * @returns 意味解析結果。ソースの意味エラーではrejectせずdiagnosticsへ蓄積する。
  * @throws API読込み・JSONやAPIの形式不正・取消の例外を呼出し元へ伝播する。
  */
-export async function analyzePython(module: Module, signal?: AbortSignal): Promise<PythonAnalysis> {
+export async function analyzePython(module: Module, signal?: AbortSignal, options: PythonAnalysisOptions = {}): Promise<PythonAnalysis> {
     const api = await loadDeviceApi(signal);
     signal?.throwIfAborted();
-    return resolvePython(module, api);
+    return resolvePython(module, api, options);
 }

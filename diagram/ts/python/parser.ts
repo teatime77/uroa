@@ -207,7 +207,7 @@ export class Parser {
                 }
                 this.skipNewLine();
             }
-            if (!this.isToken("def")) {
+            if (!this.isToken("def") && !this.isToken("async")) {
                 this.fail("デコレーターの直後には関数定義が必要です");
             }
             const fn = this.readFn();
@@ -226,7 +226,7 @@ export class Parser {
         if (this.isToken("for")) {
             return this.parseFor();
         }
-        if (this.isToken("def")) {
+        if (this.isToken("def") || this.isToken("async")) {
             return this.readFn();
         }
         const statement = this.readSimpleStatement();
@@ -359,7 +359,7 @@ export class Parser {
     }
 
     /**
-     * クラス名と本体を読む。継承・入れ子のクラスは対象外とする。
+     * クラス名と本体を読む。Remote指定だけを保持し、通常の継承・入れ子は拒否する。
      * 型・フィールド配置とクラス本体の制約は後段の意味解析で検査する。
      * @returns クラス名・本体・元位置を保持したクラス宣言。
      * @throws {SyntaxError} 定義位置・継承指定・本体の構文が不正な場合。
@@ -371,16 +371,23 @@ export class Parser {
         const position = this.token.charPos;
         this.nextToken("class");
         const name = this.readName();
+        let remote = false;
         if (this.match("(")) {
             if (!this.match(")")) {
-                this.fail("クラスの継承は未対応です");
+                if (!this.match("Remote")) {
+                    this.fail("クラスの継承はRemote指定だけに対応しています");
+                }
+                this.nextToken(")");
+                remote = true;
             }
         }
         const previousLoopDepth = this.loopDepth;
         this.loopDepth = 0;
         this.classDepth++;
         try {
-            return this.at(new ClassDefinition(name, this.parseBlock()), position);
+            const definition = this.at(new ClassDefinition(name, this.parseBlock()), position);
+            definition.remote = remote;
+            return definition;
         }
         finally {
             this.classDepth--;
@@ -389,10 +396,11 @@ export class Parser {
     }
 
     /**
-     * 関数名・重複のない仮引数・単純名の型注釈・本体を読み、関数内の制御文の配置を検査する。
+     * 関数名・仮引数・注釈・本体を読む。asyncは宣言へ保持し、Remote限定の検査は意味解析で行う。
      */
     readFn(): Fn {
         const position = this.token.charPos;
+        const asynchronous = this.match("async");
         this.nextToken("def");
         const name = this.readName();
         this.nextToken("(");
@@ -419,6 +427,7 @@ export class Parser {
         this.functionDepth++;
         try {
             const fn = this.at(new Fn(name, args, this.parseBlock()), position);
+            fn.asynchronous = asynchronous;
             fn.returnAnnotation = returnAnnotation;
             return fn;
         }

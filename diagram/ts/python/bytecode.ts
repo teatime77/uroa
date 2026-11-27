@@ -296,7 +296,8 @@ class BytecodeGenerator {
       * @throws SyntaxError 意味診断があるか、数値カーネルを含む場合。
      */
     constructor(/** 同じ構文木に対応する、診断のない意味解析結果。 */ private readonly analysis: PythonAnalysis,
-        /** ブラウザ用の専用生成入口だけが渡す、同じ解析結果の登録情報。 */ private readonly kernelManifest?: NumericKernelManifest) {
+        /** ブラウザ用の専用生成入口だけが渡す、同じ解析結果の登録情報。 */ private readonly kernelManifest?: NumericKernelManifest,
+        /** RPCの確認用成果物だけに許す。通常の実行・送信入口では必ずfalse。 */ remoteDraft = false) {
         this.module = analysis.module;
         const module = this.module;
         // 意味解析は診断を蓄積して正常に戻るため、部分的な解析結果を命令へ変換する前に拒否する。
@@ -304,6 +305,9 @@ class BytecodeGenerator {
         if (analysis.diagnostics.length !== 0) {
             const first = analysis.diagnostics[0];
             throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
+        }
+        if (analysis.remote !== undefined && !remoteDraft) {
+            throw new SyntaxError("RPCは解析・生成段階です。通常のStart・転送はまだ利用できません");
         }
         // カーネルの登録情報はブラウザ専用入口だけが渡す。ESP32向け入口では従来どおり拒否する。
         if (kernelManifest === undefined && (analysis.kernelAnalysis.kernels.size !== 0 || analysis.kernelLaunches.size !== 0)) {
@@ -1400,6 +1404,16 @@ class BytecodeGenerator {
             records.set(scope, entry);
             this.entries.push(entry);
         }
+        // RPC用のfrom importは、静的登録された代理を初期化するCALL_NATIVEへ変換する。
+        // これは第1段階の未実行成果物だけに含め、接続・配送は後続段階で実装する。
+        for (const variables of this.analysis.remote?.imports.values() ?? []) {
+            for (const variable of variables) {
+                const type = variable.type!;
+                const owner = this.analysis.api.classes.find(item => type.kind === "object" && item.id === type.classId)!;
+                this.emit("CALL_NATIVE", variable.declaration, String(owner.constructor!.nativeId));
+                this.emit("STORE_G", variable.declaration, String(variable.slot));
+            }
+        }
         this.block(globalScope.block);
         this.emit("HALT");
         for (const scope of this.functions.values()) {
@@ -1877,4 +1891,17 @@ export function generateBrowserBytecode(analysis: PythonAnalysis, manifest: Nume
  */
 export function generateDebugBytecode(analysis: PythonAnalysis): PythonDebugBuild {
     return new BytecodeGenerator(analysis).generateDebugBytecode();
+}
+
+/**
+ * remote.ts専用の未実行成果物を生成する。通常の実行・転送へは渡さない。
+ * 既存version 7/8のCALL_NATIVE・record配置を使い、RPC専用のAPI指紋で既存登録表と区別する。
+ * nativeIdはremote.tsが同じ登録情報から割り当てる。スタブ・受付・Futureの更新はまだ未接続。
+ * 命令形式は変更しないため、ESP32の命令長・受信検証・デバッガーの変更はこの段階では不要。
+ */
+export function generateRemoteDraftBytecode(analysis: PythonAnalysis, manifest?: NumericKernelManifest): PythonDebugBuild {
+    if (analysis.remote === undefined) {
+        throw new Error("RPC専用解析の結果が必要です");
+    }
+    return new BytecodeGenerator(analysis, manifest, true).generateDebugBytecode();
 }
