@@ -286,10 +286,11 @@ class BytecodeGenerator {
 
     /**
      * 意味解析結果とその構文木から、生成用の索引と元ソースの行位置を準備する。
-     * 意味診断がある結果は命令生成前に拒否し、構文木と意味解析結果は書き換えない。
+     * 意味診断がある結果と、C生成・実行接続が未実装の数値カーネルを命令生成前に拒否する。
+     * 構文木と意味解析結果は書き換えない。
      *
       * @param analysis 診断のない意味解析結果。構文木もこの結果から取得する。
-      * @throws SyntaxError 意味診断が1件以上ある場合。
+      * @throws SyntaxError 意味診断があるか、数値カーネルを含む場合。
      */
     constructor(/** 同じ構文木に対応する、診断のない意味解析結果。 */ private readonly analysis: PythonAnalysis) {
         this.module = analysis.module;
@@ -299,6 +300,11 @@ class BytecodeGenerator {
         if (analysis.diagnostics.length !== 0) {
             const first = analysis.diagnostics[0];
             throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
+        }
+        // 数値カーネルの解析だけが実装済み。通常の関数としてversion 7へ誤生成しない。
+        if (analysis.kernelAnalysis.kernels.size !== 0 || analysis.kernelLaunches.size !== 0) {
+            const kernel = analysis.kernelAnalysis.kernels.values().next().value;
+            throw new SyntaxError(`数値カーネルのC生成・launch実行は未実装です (charPos=${kernel?.node.charPos ?? 0})`);
         }
         this.globalScope = { fn: undefined, block: module.block };
         this.scope = this.globalScope;

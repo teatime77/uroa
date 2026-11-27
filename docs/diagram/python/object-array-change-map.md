@@ -1,6 +1,6 @@
 # Python VMのオブジェクト・NumPy配列対応：仕様共有・変更箇所・段階別計画
 
-最終更新：2026-11-25。ブラウザーのChatGPTへ渡して議論を継続できるよう、合意した仕様・現行実装・今後の修正段階をまとめる。対象はuroaでコンパイルし、ESP32上の独自C++ VMで実行するPythonサブセット。CPythonやMicroPythonの移植ではない。
+最終更新：2026-11-26。ブラウザーのChatGPTへ渡して議論を継続できるよう、合意した仕様・現行実装・今後の修正段階をまとめる。対象はuroaでコンパイルし、ESP32上の独自C++ VMで実行するPythonサブセット。CPythonやMicroPythonの移植ではない。
 
 実装済み仕様の正本はソースのコメントとする。形式・呼出し規約は[bytecode.ts](../../../diagram/ts/python/bytecode.ts)、型は[semantic.ts](../../../diagram/ts/python/semantic.ts)、実行は[bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)、GCは[bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)と[bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp)を参照する。本書の未実装項目は設計共有用であり、実装時にソースへ仕様コメントを記述する。
 
@@ -17,6 +17,8 @@
 | 第4段階 | float32・uint8のzeros/empty、実行時shape、全軸添字・属性・len、参照共有を実装済み。 |
 | 第5段階 | object配列のNone初期化・参照格納・要素型推論・GC探索を接続。全5段階の実装を完了。 |
 | GC簡略化 | メインループの回収点を追加。再帰マークとスイープに整理し、C++の根・確保中のGC・GC統計・本体のデバッグ転送と展開を削除した。 |
+| primitive配列の簡略化 | 2026-11-26に添字計算・スタック受渡し・型別の直接アクセスを整理した。object要素の型検査・参照格納は従来の処理を維持する。 |
+| object配列の簡略化 | 2026-11-26に本体の再検証と読取り時の要素型照合を削除し、格納時の要素タグ・クラスIDの照合に整理した。初期化・参照共有・GCの探索を維持する。 |
 | 採用方式 | ヒープに確保する、移動しない単純なマーク＆スイープGC。旧6段階を第10節の5段階へ再編した。 |
 
 現行形式と変更点の正本はソースコメントを参照する。GC簡略化でバイトコードversion=7、API schema・呼出し規約=6、stringPolicyVersion=3、Snapshot=6へ更新した。moduleDefinitionVersion=1、Control=1、Event=2、転送フレーム=2は維持する。既存nativeIdは維持し、NumPyは共有のモジュール関数IDで呼ぶ。ABI指紋は変更したため、Web・ファームウェアの両方を更新し、バイトコードを再生成・再送信する。
@@ -171,7 +173,7 @@ GC採用により、新規lifetime.tsとコンストラクタ所有先の解析�
 | [include/bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)・[src/bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp) | `BytecodeHeap::Block`、`blocks`、`allocate()`、`contains()`、`sweep()`、`clear()` | 第2〜4段階で拡張済み／探索を簡略化済み | 確保一覧・確保・到達不能本体のスイープ・全解放。本体種別で通常オブジェクトと配列を区別する。 |
 | VMヘッダー・実装 | `allocateHeapValue()`、`markValues()`、`collectHeap()` | 第2段階で追加済み | メインループの安全な位置だけで、大域とメインの局所値から本体先頭のValue列を再帰探索する。 |
 | [include/numpy_native.h](../../../../esp32/app/diagram-control/include/numpy_native.h)・[src/numpy_native.cpp](../../../../esp32/app/diagram-control/src/numpy_native.cpp) | `numpy_native::Option`、`create()`、`item()`、`attribute()` | 第4段階で追加済み | 共有enumの関数ID・引数番号でzeros/emptyを実行する。既定値・対応オプション・数値変換・添字をC++で扱う。 |
-| VMヘッダー・実装 | `Array`、`allocateArray()`、`arrayData()`、`arrayElementValue()`、`callNumpy()`、`arrayItem()`、`arrayAttribute()` | 第4〜5段階で追加・変更済み | 数値本体のサイズ・型・shapeを検証し、object配列のValue要素列をNoneで初期化してGCへ接続する。数値データは探索しない。旧NumericArray系の名前は共通名へ変更した。 |
+| VMヘッダー・実装 | `Array`、`Array::Dtype`、`Array::getOffset()`、`allocateArray()`、`arrayData()`、`arrayElementValue()`、`callNumpy()`、`arrayItem()`、`arrayAttribute()` | 第4〜5段階で追加・変更済み／primitive・objectを簡略化 | 全配列の生成時の保証・添字計算・借用と、object要素の格納時の型照合を担当する。詳細は各ソースの仕様コメントを参照する。数値データはGC探索しない。 |
 | [include/device_native.h](../../../../esp32/app/diagram-control/include/device_native.h)・[src/device_native.cpp](../../../../esp32/app/diagram-control/src/device_native.cpp) | `DeviceNative::IMU_get_value()`、`reset()`、既存の`create()`と機器管理用`Object` | 条件付き | 生成BackendのC++署名を保つならIMU本体の変更は不要で、変換は生成スタブへ置ける。機器ハンドルの管理とVM本体領域の解放を混ぜない。 |
 | [src/main.cpp](../../../../esp32/app/diagram-control/src/main.cpp) | `nativeApi`初期化、`setup()`、`runBytecode()`、`handle()`、`loop()` | 必須／一部条件付き | NumPy登録をVMへ接続し、終了後の診断表示を新しい参照型へ対応させる。既存の開始・停止・世代変更経路でデータ領域が解放されることを確認する。VMは引き続き`loop()`だけで操作する。 |
 

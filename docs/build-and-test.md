@@ -1,5 +1,11 @@
 # ビルドと回帰テスト
 
+## 数値カーネル 第3段階：構文・型解析（2026-11-27）
+
+`@kernel`・型注釈・`launch()`を構文木と意味解析へ接続した。カーネル本体とスカラーヘルパーの制約、配列の読書きモード、launchの引数を静的に診断する。仕様の正本は[カーネル解析](../diagram/ts/python/kernel.ts)と[意味解析](../diagram/ts/python/semantic.ts)のコメント。C生成・実行接続は後続段階のため、[コード生成入口](../diagram/ts/python/bytecode.ts)でカーネルを含むプログラムを拒否する。バイトコードversion 7とESP32のソースは変更していない。
+
+uroaルートで`npm.cmd run verify`の型・公開ビルド・成果物の静的確認に成功。既存gameのimport混在警告2件は残る。差分・空白と文書リンクを確認した。従来の指定に従いテストは作成・実行していない。診断の実行試験、ソース再生成のラウンドトリップ、ブラウザー操作、C/Wasm実行、ESP32ビルド・Upload・実機確認は未実施。
+
 ## Python VMのGC簡略化（2026-11-25）
 
 [コンパイラー](../diagram/ts/python/bytecode.ts)へメインループの回収点と根の範囲を追加し、[VM](../../esp32/app/diagram-control/src/bytecode_vm.cpp)の再帰マークと[ヒープ](../../esp32/app/diagram-control/src/bytecode_heap.cpp)のスイープへ整理した。C++の根登録、確保中のGC・再試行、GC統計と本体IDを削除した。本体のSnapshot転送・展開を削除し、既存のスカラー・文字列・フレーム表示は維持する。仕様の正本と変更先は[共有文書](diagram/python/object-array-change-map.md)から参照する。

@@ -4,6 +4,8 @@
  * parser.tsの開発用入口とble-wifi/device-connection.tsの送信前処理から利用する。
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
  * アセンブリ・version=7のバイトコード生成はbytecode.tsがこの結果を利用する。
+ * @kernelの数値型・純粋性はkernel.tsへ委譲し、launchだけを通常の式型へ接続する。
+ * kernelAnalysis/kernelLaunchesは生成用の解析結果であり、C生成・version=8・実行接続は未実装。
  * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
  * ユーザークラス・record・数値／object ndarrayはGC本体を参照し、共有・循環を許す。
  * 新形式のBLE転送・受信形式検証はble-wifi側、参照共有と呼出しの実行はESP32の
@@ -15,6 +17,8 @@ import {
     WhileStatement, isAssignmentToken
 } from "./syntax.js";
 import { collectScopeGlobals } from "./global-scope";
+import { analyzePythonKernels, isKernelFunction } from "./kernel";
+import type { PythonKernelAnalysis, PythonKernelLaunch } from "./kernel";
 import { bindModuleArguments, readModuleDefinitions } from "./module-api";
 import type { ModuleCallBinding, ModuleDefinition } from "./module-api";
 
@@ -251,6 +255,10 @@ export interface PythonDiagnostic {
  * 診断がある場合も部分的な解決情報を返すが、変数のslotはすべて-1とする。
  */
 export interface PythonAnalysis {
+    /** カーネルの宣言・独立した数値型・ヘルパー。通常VMの配置とは分離する。 */
+    kernelAnalysis: PythonKernelAnalysis;
+    /** 静的に解決したlaunch。関数名を実行時の値として扱わない。 */
+    kernelLaunches: ReadonlyMap<App, PythonKernelLaunch>;
     /** NumPy呼出しの評価順・型と、省略しなかったoptionId/値の対応。 */
     numpyCalls: ReadonlyMap<App, PythonNumpyCall>;
     /** 添字・配列属性・lenの静的な操作種別。 */
@@ -629,6 +637,10 @@ function numeric(type: PythonType): boolean {
  * 元の構文木、parent、charPos、toString()のキャッシュは変更しない。
  */
 class PythonResolver {
+    /** kernel.tsが通常VMと独立して検査した数値関数。 */
+    private readonly kernelAnalysis: PythonKernelAnalysis;
+    /** 通常の型推論で検査するlaunchとその未評価引数。 */
+    private readonly kernelLaunches = new Map<App, PythonKernelLaunch>();
     /**
      * 全関数で共有する大域変数の型と配置。
      */
@@ -709,6 +721,9 @@ class PythonResolver {
         this.api = { ...api, classes: [...api.classes] };
         this.classes = new Map(this.api.classes.map(item => [item.name, item]));
         this.nativeFunctions = new Map(api.functions.map(item => [item.name, item]));
+        this.kernelAnalysis = analyzePythonKernels(module, (node, message) => {
+            this.fail(node, message);
+        });
     }
 
     /**
@@ -843,11 +858,13 @@ class PythonResolver {
     /**
      * API名または組込み定数名との衝突を調べる。
      * @param name 宣言候補の名前。
-     * @returns True・False・None・len・object、クラス名、API関数名、import済み別名のいずれかならtrue。
+     * @param kernelDeclaration カーネル自身の宣言時だけ、登録済みカーネル名との一致を除くか。
+     * @returns 定数・組込み・カーネル名、クラス名、API関数名、import済み別名ならtrue。
      */
-    private reserved(name: string): boolean {
-        return ["True", "False", "None", "len", "object"].includes(name) || this.classes.has(name)
-            || this.nativeFunctions.has(name) || this.moduleAliases.has(name);
+    private reserved(name: string, kernelDeclaration = false): boolean {
+        return ["True", "False", "None", "len", "object", "kernel", "launch", "InF32", "OutF32"].includes(name) || this.classes.has(name)
+            || this.nativeFunctions.has(name) || this.moduleAliases.has(name)
+            || !kernelDeclaration && this.kernelAnalysis.kernels.has(name);
     }
 
     /**
@@ -1127,6 +1144,9 @@ class PythonResolver {
                 }
             }
             else if (statement instanceof Fn) {
+                if (isKernelFunction(statement) && this.kernelAnalysis.kernels.get(statement.name)?.node === statement) {
+                    continue;
+                }
                 if (!this.invalidDeclarations.has(statement)
                     && (scope !== undefined || this.functions.get(statement.name)?.node !== statement)) {
                     this.fail(statement, "関数定義はモジュール先頭だけに置けます");
@@ -1360,6 +1380,15 @@ class PythonResolver {
      * @returns 戻り値型。未定ならundefined、不正な呼出しならerror。
      */
     private call(app: App): PythonType | undefined {
+        if (app.fncName === "launch") {
+            return this.kernelLaunch(app);
+        }
+        if (this.kernelAnalysis.kernels.has(app.fncName)) {
+            for (const argument of app.args) {
+                this.expression(argument);
+            }
+            return this.fail(app, "@kernel関数はlaunchから呼び出してください");
+        }
         if (this.resolveModuleCall(app)) {
             const owner = this.numpyCalls.get(app)?.owner;
             return owner === undefined ? errorType : { kind: "object", classId: owner.id };
@@ -1447,6 +1476,10 @@ class PythonResolver {
                 const parameter = fn.parameters[index];
                 // 個数が違う呼出しは仮引数の推論へ混ぜず、他の正しい呼出しからの推論を維持する。
                 if (parameter !== undefined && app.args.length === fn.parameters.length) {
+                    const annotation = fn.node.args[index].annotation;
+                    if (annotation !== undefined) {
+                        this.compatible(actual, this.annotationType(annotation), argument);
+                    }
                     this.update(parameter, actual, argument);
                 }
                 if (actual?.kind === "error" || parameter?.type?.kind === "error") {
@@ -1460,6 +1493,74 @@ class PythonResolver {
         }
         return binding.kind === "error" ? errorType
             : this.fail(app.fnc, `この名前は呼び出せません: ${app.fncName}`);
+    }
+
+    /** 単純なスカラー注釈を通常関数の固定型へ変換する。配列モードはkernel.tsだけで扱う。 */
+    private annotationType(annotation: RefVar): PythonType {
+        if (annotation.name === "int") {
+            return intType;
+        }
+        if (annotation.name === "float") {
+            return floatType;
+        }
+        if (annotation.name === "None") {
+            return noneType;
+        }
+        return this.fail(annotation, `通常関数の型注釈はint・float・Noneにしてください: ${annotation.name}`);
+    }
+
+    /** 数値専用の解析で本体を検査済みか。VMの推論規則を重ねて適用しない。 */
+    private numericFunction(fn: Fn): boolean {
+        return isKernelFunction(fn) || this.kernelAnalysis.helpers.get(fn.name)?.node === fn;
+    }
+
+    /**
+     * launchの関数名・n・引数を通常VMの型へ接続する。式は通常の評価順で解析する。
+     * nの実行時値、配列の実行時共有、添字範囲、数値の有限性はここでは検査しない。
+     * 戻り値はNone。C生成とCALL_KERNELは未実装なのでbytecode.tsの生成入口が拒否する。
+     */
+    private kernelLaunch(app: App): PythonType {
+        const reference = app.args[0];
+        const kernel = reference instanceof RefVar ? this.kernelAnalysis.kernels.get(reference.name) : undefined;
+        if (kernel === undefined) {
+            this.fail(reference ?? app, "launchの先頭引数には@kernel関数の名前を直接指定してください");
+        }
+        if (app.args.some(argument => argument instanceof KeywordArgument)) {
+            this.fail(app, "launchは位置引数だけに対応しています");
+        }
+        const count = app.args[1];
+        if (count === undefined) {
+            this.fail(app, "launchにはカーネル名と実行要素数が必要です");
+        }
+        else {
+            this.requireNumeric(this.expression(count), count, true);
+        }
+        const argumentsList = app.args.slice(2);
+        const expected = kernel?.parameters.slice(1) ?? [];
+        if (kernel !== undefined && argumentsList.length !== expected.length) {
+            this.fail(app, `${kernel.node.name}のlaunchには要素数の後に${expected.length}個の引数が必要です`);
+        }
+        for (const [index, argument] of argumentsList.entries()) {
+            const value = argument instanceof KeywordArgument ? argument.value : argument;
+            const actual = this.expression(value);
+            const parameter = expected[index];
+            if (parameter === undefined || actual === undefined || actual.kind === "error") {
+                continue;
+            }
+            if (parameter.type === "int" || parameter.type === "float") {
+                this.compatible(actual, parameter.type === "int" ? intType : floatType, value);
+            }
+            else if (parameter.type === "in_f32" || parameter.type === "out_f32") {
+                const owner = actual.kind === "object" ? this.api.classes.find(item => item.id === actual.classId) : undefined;
+                if (owner?.array?.dtype !== "float32" || owner.array.rank !== 1) {
+                    this.fail(value, `${parameter.name}には1次元のfloat32配列が必要です`);
+                }
+            }
+        }
+        if (kernel !== undefined && count !== undefined) {
+            this.kernelLaunches.set(app, { kernel, count, arguments: argumentsList });
+        }
+        return noneType;
     }
 
     /**
@@ -1618,6 +1719,9 @@ class PythonResolver {
             type = /[.eE]/.test(term.text) ? floatType : intType;
         }
         else if (term instanceof RefVar) {
+            if (this.kernelAnalysis.kernels.has(term.name)) {
+                return this.remember(term, this.fail(term, "@kernel関数の名前はlaunchの先頭引数だけに使用できます"));
+            }
             const binding = this.binding(term);
             if (binding.kind === "variable") {
                 type = binding.variable.type;
@@ -1803,6 +1907,9 @@ class PythonResolver {
                 this.fail(statement, "returnは関数内だけに使用できます");
                 return;
             }
+            if (this.scope.node.returnAnnotation !== undefined) {
+                this.compatible(type, this.annotationType(this.scope.node.returnAnnotation), statement);
+            }
             this.update(this.scope, type, statement);
             if (this.scope.owner && this.scope.node.name === "__init__" && type !== undefined && type.kind !== "none") {
                 this.fail(statement, "__init__は値を返せません");
@@ -1851,6 +1958,9 @@ class PythonResolver {
             this.scope = undefined;
             this.block(this.module.block);
             for (const fn of this.functions.values()) {
+                if (this.numericFunction(fn.node)) {
+                    continue;
+                }
                 this.scope = fn;
                 this.block(fn.node.block);
                 if (this.fallsThrough(fn.node.block)) {
@@ -1928,6 +2038,13 @@ class PythonResolver {
                 executable = true;
                 continue;
             }
+            // カーネルはkernelAnalysisだけに保持し、VM関数表やスロットを作らない。
+            if (isKernelFunction(statement)) {
+                if (executable || this.reserved(statement.name, true) || this.functions.has(statement.name)) {
+                    this.fail(statement, "カーネル名の衝突、または先頭以外のカーネル定義です");
+                }
+                continue;
+            }
             if (executable || this.reserved(statement.name) || this.functions.has(statement.name)) {
                 this.fail(statement, "関数名の重複・API名との衝突、または先頭以外の関数定義です");
                 this.invalidDeclarations.add(statement);
@@ -1943,6 +2060,9 @@ class PythonResolver {
         });
         this.collect(this.module.block);
         for (const fn of this.functions.values()) {
+            if (fn.node.returnAnnotation !== undefined) {
+                fn.type = this.annotationType(fn.node.returnAnnotation);
+            }
             for (const parameter of fn.node.args) {
                 let variable: PythonVariable | undefined;
                 if (fn.variables.has(parameter.name)) {
@@ -1954,6 +2074,15 @@ class PythonResolver {
                 // 不正な仮引数も位置を残し、後続の引数番号をずらさない。名前の束縛は追加しない。
                 fn.parameters.push(variable ?? { name: parameter.name, scope: "local", slot: -1,
                     declaration: parameter, type: errorType });
+                if (variable !== undefined && parameter.annotation !== undefined) {
+                    variable.type = this.annotationType(parameter.annotation);
+                    if (variable.type.kind === "none") {
+                        this.fail(parameter.annotation, "仮引数の型はintまたはfloatにしてください");
+                    }
+                }
+            }
+            if (this.numericFunction(fn.node)) {
+                continue;
             }
             this.collect(fn.node.block, fn);
             if (fn.owner && fn.parameters.length !== 0) {
@@ -2030,6 +2159,17 @@ class PythonResolver {
             }
             owner.fields = ordered;
         }
+        // 注釈付き引数が本体の代入で拡張された場合も、宣言型との違いを最終結果で検査する。
+        for (const fn of this.functions.values()) {
+            if (this.numericFunction(fn.node)) {
+                continue;
+            }
+            for (const [index, parameter] of fn.node.args.entries()) {
+                if (parameter.annotation !== undefined) {
+                    this.compatible(fn.parameters[index]?.type, this.annotationType(parameter.annotation), parameter);
+                }
+            }
+        }
         this.normalizeArrays();
         // 診断を含む結果のslotは全て-1のまま返し、部分的な配置を生成器へ渡さない。
         if (this.diagnostics.length === 0) {
@@ -2055,7 +2195,8 @@ class PythonResolver {
             }
         }
         this.diagnostics.sort((left, right) => left.charPos - right.charPos);
-        return { diagnostics: this.diagnostics, module: this.module, api: this.api, moduleCalls: this.moduleCalls,
+        return { kernelAnalysis: this.kernelAnalysis, kernelLaunches: this.kernelLaunches,
+            diagnostics: this.diagnostics, module: this.module, api: this.api, moduleCalls: this.moduleCalls,
             numpyCalls: this.numpyCalls, arrayOperations: this.arrayOperations,
             globals: this.globals, functions: this.functions, references: this.references,
             types: this.types, calls: this.calls, fields: this.fields };

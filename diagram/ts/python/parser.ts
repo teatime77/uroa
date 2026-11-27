@@ -6,6 +6,7 @@
  * syntax.tsのApp・Str・Termで保持する。bytecode.tsは意味解析結果を必須とする
  * アセンブリ・バイナリ生成まで対応する。ESP32のbytecode_vm.cppが新形式を実行し、
  * 機器APIはdevice_api.generated.cppの生成スタブを通して呼び出す。
+ * 関数の単純な型注釈と@kernelはsyntax.tsに位置付きで保持し、kernel.tsが数値計算の制約を検査する。
  */
 import { fetchText, msg } from "@i18n";
 import { Token, TokenSubType, TokenType, lexicalAnalysis } from "./lex.js";
@@ -190,11 +191,28 @@ export class Parser {
     }
 
     /**
-     * if・while・for・class・defまたは単純文を読み、文末の改行も検査する。
+     * if・while・for・class・def・デコレーター付きdefまたは単純文を読み、文末の改行も検査する。
      * @returns 元位置を保持した文の構文木。
      * @throws {SyntaxError} 文の構文や制御文の配置が不正な場合。
      */
     parseStatement(): Statement {
+        if (this.isToken("@")) {
+            const decorators: RefVar[] = [];
+            while (this.match("@")) {
+                const position = this.token.charPos;
+                decorators.push(this.at(new RefVar(this.readName()), position));
+                if (!this.isLineEnd()) {
+                    this.fail("デコレーターは引数なしの単純名だけに対応しています");
+                }
+                this.skipNewLine();
+            }
+            if (!this.isToken("def")) {
+                this.fail("デコレーターの直後には関数定義が必要です");
+            }
+            const fn = this.readFn();
+            fn.decorators = decorators;
+            return fn;
+        }
         if (this.isToken("class")) {
             return this.readClass();
         }
@@ -370,7 +388,7 @@ export class Parser {
     }
 
     /**
-     * 関数名・重複のない仮引数・本体を読み、関数内の制御文の配置を検査する。
+     * 関数名・重複のない仮引数・単純名の型注釈・本体を読み、関数内の制御文の配置を検査する。
      */
     readFn(): Fn {
         const position = this.token.charPos;
@@ -384,17 +402,24 @@ export class Parser {
             if (args.some(arg => arg.name === argument)) {
                 this.fail(`仮引数が重複しています: ${argument}`);
             }
-            args.push(this.at(new Variable(argument), argumentPosition));
+            const parameter = this.at(new Variable(argument), argumentPosition);
+            if (this.match(":")) {
+                parameter.annotation = this.readAnnotation();
+            }
+            args.push(parameter);
             if (!this.match(",")) {
                 break;
             }
         }
         this.nextToken(")");
+        const returnAnnotation = this.match("->") ? this.readAnnotation() : undefined;
         const previousLoopDepth = this.loopDepth;
         this.loopDepth = 0;
         this.functionDepth++;
         try {
-            return this.at(new Fn(name, args, this.parseBlock()), position);
+            const fn = this.at(new Fn(name, args, this.parseBlock()), position);
+            fn.returnAnnotation = returnAnnotation;
+            return fn;
         }
         finally {
             this.functionDepth--;
@@ -402,9 +427,14 @@ export class Parser {
         }
     }
 
-    /**
-     * ドットで連なるimport用のモジュール名を読む。
-     */
+    /** int・float・None・InF32・OutF32などの単純名を保持する。許可型は意味解析で検査する。 */
+    private readAnnotation(): RefVar {
+        const position = this.token.charPos;
+        const name = this.isToken("None") ? this.readText() : this.readName();
+        return this.at(new RefVar(name), position);
+    }
+
+    /** ドットで連なるimport用のモジュール名を読む。 */
     private readModuleName(): string {
         let name = this.readName();
         while (this.match(".")) {

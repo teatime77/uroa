@@ -640,8 +640,16 @@ export class WhileStatement extends Statement {
     }
 }
 
-/** 関数の仮引数、forの単一の束縛先。型宣言は持たない。 */
+/** 関数の仮引数とforの束縛先。限定した型注釈は評価せず、名前と位置を保持する。 */
 export class Variable extends AbstractSyntaxNode {
+    /** 仮引数にだけ付けられる単純な型名。実行時の名前参照ではない。 */
+    annotation?: RefVar;
+
+    /** 型注釈にも元位置と親参照を設定する。 */
+    get children(): AbstractSyntaxNode[] {
+        return this.annotation === undefined ? [] : [this.annotation];
+    }
+
     /**
      * この型の状態と依存先を初期化する。
      *
@@ -656,7 +664,7 @@ export class Variable extends AbstractSyntaxNode {
      */
     toString(): string {
         if (this._str === undefined) {
-            this._str = this.name;
+            this._str = this.annotation === undefined ? this.name : `${this.name}: ${this.annotation}`;
         }
         return this._str;
     }
@@ -691,6 +699,11 @@ export class ForStatement extends Statement {
 
 /** Pythonのdefは実行順を保つため、文列中にも保持する。 */
 export class Fn extends Statement {
+    /** 単純名のデコレーター。実行せず、kernel.tsが許可範囲を検査する。 */
+    decorators: RefVar[] = [];
+    /** 戻り値の単純な型注釈。意味解析が検証する。 */
+    returnAnnotation?: RefVar;
+
     /**
      * この型の状態と依存先を初期化する。
      *
@@ -704,7 +717,7 @@ export class Fn extends Statement {
      * このノードが直接所有する子ノードを構文上の順序で返す。
      */
     get children(): AbstractSyntaxNode[] {
-        return [...this.args, this.block];
+        return [...this.decorators, ...this.args, ...(this.returnAnnotation === undefined ? [] : [this.returnAnnotation]), this.block];
     }
 
     /**
@@ -713,7 +726,9 @@ export class Fn extends Statement {
     toString(): string {
         if (this._str === undefined) {
             const args = this.args.map(arg => arg.toString()).join(", ");
-            this._str = `def ${this.name}(${args}):\n${formatSuite(this.block)}`;
+            const decorators = this.decorators.map(decorator => `@${decorator}\n`).join("");
+            const result = this.returnAnnotation === undefined ? "" : ` -> ${this.returnAnnotation}`;
+            this._str = `${decorators}def ${this.name}(${args})${result}:\n${formatSuite(this.block)}`;
         }
         return this._str;
     }
