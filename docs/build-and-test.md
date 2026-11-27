@@ -1,5 +1,27 @@
 # ビルドと回帰テスト
 
+## コンパイルWorkerの準備待ちと進捗通知（2026-11-27）
+
+ユーザーから「CをWebAssemblyへコンパイルしています」のまま変化しない報告があった。[コンパイルWorker](../diagram/ts/python/browser-kernel-worker.ts)で、受信処理の登録より先にBinaryenの非同期初期化を待つ構成を修正した。Binaryenを要求受信後の動的importに変更し、受信設定後にreadyを通知する。[実行所有処理](../diagram/ts/python/browser-runtime.ts)はreadyを待ってから要求を送る。進捗通知は完了応答と区別し、資産取得・展開、成果物照合、wcc実行、Binaryen初期化・最適化・出力の段階を表示する。Workerの通信エラーと、準備・コンパイル待ちの取消も待機元へ伝える。計算用WorkerのC実行を中断する処理は追加していない。
+
+`npm.cmd run verify`の型・公開ビルド・成果物の静的確認に成功。コンパイルWorker本体は約225KBとなり、約14.8MBのBinaryenは要求処理中に別モジュールとして読み込む構成になった。配布資産のハッシュ照合も成功。従来のテスト不要指定に従い、ブラウザでの症状の再現・再実行、Cカーネルの実行試験は行っていない。実際に停止していた段階は未確認であり、追加した進捗表示で切り分ける。
+
+## ブラウザVMのpublic資産読込み修正（2026-11-27）
+
+ユーザーのブラウザ実行で、Vite開発サーバーがpublic配下のpython-vm.mjsへの動的importを拒否した。[実行Worker](../diagram/ts/python/browser-vm-worker.ts)を修正し、JSとWasmを静的資産として取得してSHA-256を照合する。JSはBlob URLから読み込み、EmscriptenにはwasmBinaryと絶対URLを返すlocateFileを渡す。初期化終了時にはBlob URLを解放する。詳細は該当処理の仕様コメントを参照する。
+
+`npm.cmd run verify`の型・公開ビルド・成果物の静的確認に成功。既存のgame import混在とBinaryenのNode分岐外部化の警告は継続。差分・空白・リンクを確認した。従来のテスト不要指定に従い、ブラウザでの再実行とカーネルの実行試験は行っていない。VMとコンパイラーの生成済み資産は変更していない。
+
+## 数値カーネル 第7段階：ブラウザへの組込み（2026-11-27）
+
+[ブラウザ実行の所有処理](../diagram/ts/python/browser-runtime.ts)、[コンパイルWorker](../diagram/ts/python/browser-kernel-worker.ts)、[実行Worker](../diagram/ts/python/browser-vm-worker.ts)と[共通VMのブラウザ用ホスト](../../esp32/app/diagram-control/browser/README.md)を追加した。PythonBlockで「ブラウザ」を選び、StartからC生成・wcc・Binaryen・VM実行・結果表示を接続する。カーネル付きのブラウザ専用入口はversion 8、既存ESP32向け入口はversion 7を使う。Colab用ホストとESP32へのカーネル組込みは後回しとした。契約は各ソースの仕様コメントを正本とする。
+
+固定コミットのwcc資産・標準ライブラリーのビルドと、Emscripten 4.0.23による共通C++ VMのWasmビルドに成功。VM用Wasmは42,886バイト、JSは9,134バイト、wccfiles.zipは163,911バイト。これらの長さとSHA-256をassets.jsonに記録した。ブラウザ用Workerは遅延読込みする。公開ビルドのコンパイルWorkerは約15.1MB、実行Workerは約209KBであり、通信量・初回時間・実行性能は未計測。
+
+固定依存とロックファイルを更新し、28パッケージのライセンス・告知を生成した。`npm.cmd run verify`の型・公開ビルド・成果物の静的確認に成功。静的確認にはWorker、固定版、VMとコンパイラー資産のハッシュ、ライセンスの配置を含む。既存gameのimport混在警告2件に加え、BinaryenのNode専用分岐にあるnode:moduleの外部化警告が出る。ソース上、この分岐はglobalThis.process.versions.nodeがある場合だけ使う。
+
+従来の指定に従いテストは作成・実行していない。ブラウザのUI操作、Cカーネルのコンパイル・数値実行試験、停止・再実行の実行試験、性能計測、ESP32のPlatformIOビルド・Upload・実機確認は未実施。ブラウザ用ホストの共有VM変更は__EMSCRIPTEN__の条件付き経路で、ESP32へのカーネル登録は追加していない。
+
 ## 数値カーネル 第4段階：中間表現・C生成（2026-11-27）
 
 [型付き中間表現](../diagram/ts/python/kernel-ir.ts)と[共通C・登録情報の生成](../diagram/ts/python/kernel-c.ts)を追加した。1要素関数、要素ループの公開ラッパー、到達するスカラーヘルパー、集合ハッシュとマニフェストを生成する。[開発用入口](../diagram/ts/python/parser.ts)からIR・C・登録情報を表示できる。仕様とAPIの使用例は各ソースのコメントを参照する。VMの実行接続は後続工程であり、既存バイトコードversion 7の生成入口ではカーネルを含むプログラムを引き続き拒否する。

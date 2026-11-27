@@ -156,6 +156,8 @@ function saveDataPlugin(): Plugin {
 
 
 export default defineConfig(({ command }) => ({
+    // Binaryenの非同期ES module初期化をWorkerでも維持する。
+    worker: { format: 'es' },
     root: '.',
     base: './', // baseConfigから引き継ぎ
     build: {

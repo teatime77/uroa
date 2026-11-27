@@ -38,8 +38,14 @@
     "vite-tsconfig-paths": "^6.1.1"
   },
   "dependencies": {
+    "@wasmer/wasi": "0.12.0",
+    "@wasmer/wasmfs": "0.12.0",
+    "binaryen": "132.0.0",
+    "buffer": "6.0.3",
+    "fflate": "0.8.3",
     "firebase": "^10.14.1",
     "gl-matrix": "^3.4.4",
-    "katex": "^0.18.5"
+    "katex": "^0.18.5",
+    "path-browserify": "1.0.1"
   }
 }

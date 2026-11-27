@@ -1,5 +1,5 @@
 /**
- * PythonAnalysisを入力とするversion=7専用のアセンブリ・バイナリ生成器。
+ * PythonAnalysisを入力とするアセンブリ・バイナリ生成器。標準入口はversion=7、ブラウザ専用入口はversion=7/8。
  * 名前・型・変数配置はsemantic.tsを使用し、意味解析なしの旧生成経路と版1/2は扱わない。
  * 形式の仕様はencodeBinary、参照共有とCALL/RETはcompileTypedと関連メソッドを参照する。
  * BLE/Wi-Fiの形式検査はbytecode-transfer.ts、実行はESP32のbytecode_vm.cppが担当する。
@@ -12,6 +12,7 @@ import {
 import { valueSlotTypes } from "./semantic.js";
 import type { DeviceCallable, PythonAnalysis, PythonType } from "./semantic.js";
 import type { PythonDebugBuild, PythonDebugInfo } from "./debug-info";
+import type { NumericKernelManifest } from "./kernel-c";
 
 /**
  * opcodeは0x01〜0x27。生成・転送時のbit7は0とし、デバッガーだけが命令先頭へ設定する。
@@ -64,7 +65,8 @@ export enum BytecodeOpcode {
     SET_ITEM = 0x24,
     ARRAY_ATTR = 0x25,
     CHECK_REF = 0x26,
-    GC_LOOP = 0x27
+    GC_LOOP = 0x27,
+    CALL_KERNEL = 0x28
 }
 
 /** バイナリヘッダーの数値識別子。文字列のマジックナンバーは使わない。 */
@@ -105,6 +107,7 @@ type Opcode = keyof typeof BytecodeOpcode;
 
 /** オペランドなしの命令は登録しない。複数バイト値は全てlittle endian。 */
 const operandEncoding: Readonly<Partial<Record<Opcode, "u16" | "i32" | "f32">>> = {
+    CALL_KERNEL: "u16",
     LOAD_L: "u16",
     LOAD_G: "u16",
     PUSH_INT: "i32",
@@ -286,13 +289,14 @@ class BytecodeGenerator {
 
     /**
      * 意味解析結果とその構文木から、生成用の索引と元ソースの行位置を準備する。
-     * 意味診断がある結果と、実行接続が未実装の数値カーネルを命令生成前に拒否する。
+     * 意味診断がある結果と、標準入口へ渡された数値カーネルを命令生成前に拒否する。
      * 構文木と意味解析結果は書き換えない。
      *
       * @param analysis 診断のない意味解析結果。構文木もこの結果から取得する。
       * @throws SyntaxError 意味診断があるか、数値カーネルを含む場合。
      */
-    constructor(/** 同じ構文木に対応する、診断のない意味解析結果。 */ private readonly analysis: PythonAnalysis) {
+    constructor(/** 同じ構文木に対応する、診断のない意味解析結果。 */ private readonly analysis: PythonAnalysis,
+        /** ブラウザ用の専用生成入口だけが渡す、同じ解析結果の登録情報。 */ private readonly kernelManifest?: NumericKernelManifest) {
         this.module = analysis.module;
         const module = this.module;
         // 意味解析は診断を蓄積して正常に戻るため、部分的な解析結果を命令へ変換する前に拒否する。
@@ -301,10 +305,10 @@ class BytecodeGenerator {
             const first = analysis.diagnostics[0];
             throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
         }
-        // 数値カーネルのC生成はkernel-c.tsが担当する。実行接続までversion 7へ誤生成しない。
-        if (analysis.kernelAnalysis.kernels.size !== 0 || analysis.kernelLaunches.size !== 0) {
+        // カーネルの登録情報はブラウザ専用入口だけが渡す。ESP32向け入口では従来どおり拒否する。
+        if (kernelManifest === undefined && (analysis.kernelAnalysis.kernels.size !== 0 || analysis.kernelLaunches.size !== 0)) {
             const kernel = analysis.kernelAnalysis.kernels.values().next().value;
-            throw new SyntaxError(`数値カーネルのlaunch実行接続は未実装です (charPos=${kernel?.node.charPos ?? 0})`);
+            throw new SyntaxError(`数値カーネルにはブラウザ用の生成入口を使用してください (charPos=${kernel?.node.charPos ?? 0})`);
         }
         this.globalScope = { fn: undefined, block: module.block };
         this.scope = this.globalScope;
@@ -359,6 +363,9 @@ class BytecodeGenerator {
         this.globalScope.block = new BlockStatement(this.module.block.statements.filter(statement =>
             !(statement instanceof Fn) && !(statement instanceof ClassDefinition) && statement.keyword !== "import"));
         for (const fn of this.analysis.functions.values()) {
+            if (this.kernelManifest && this.analysis.kernelAnalysis.helpers.has(fn.node.name)) {
+                continue;
+            }
             this.functions.set(fn.name, { name: fn.name, fn: fn.node, block: fn.node.block });
         }
         const nodes: AbstractSyntaxNode[] = [];
@@ -910,6 +917,20 @@ class BytecodeGenerator {
             }
         }
         else if (term instanceof App) {
+            // ブラウザ版だけが専用命令を生成する。nと明示引数を一度ずつソース順に積む。
+            const launch = this.analysis.kernelLaunches.get(term);
+            if (launch && this.kernelManifest) {
+                const entry = this.kernelManifest.kernels.find(item => item.name === launch.kernel.node.name);
+                if (!entry) {
+                    this.fail(term, "カーネルの登録情報がありません");
+                }
+                this.expressionAs(launch.count, { kind: "int" });
+                for (const [index, argument] of launch.arguments.entries()) {
+                    this.expressionAs(argument, entry.argumentTypes[index] === "f32" ? { kind: "float" } : this.valueType(argument));
+                }
+                this.emit("CALL_KERNEL", term, String(entry.id));
+                return;
+            }
             if (this.analysis.numpyCalls.has(term)) {
                 this.typedNumpy(term);
                 return;
@@ -1512,6 +1533,12 @@ class BytecodeGenerator {
                     this.binaryError(entry, "CALL_NATIVEのIDがAPI定義に存在しません");
                 }
                 break;
+            case "CALL_KERNEL":
+                value = Number(name);
+                if (!this.kernelManifest?.kernels.some(entry => entry.id === value)) {
+                    this.binaryError(entry, "CALL_KERNELのIDが登録情報に存在しません");
+                }
+                break;
             case "BUILD_STRING":
             case "NEW_OBJECT":
             case "GET_FIELD":
@@ -1551,7 +1578,10 @@ class BytecodeGenerator {
     }
 
     /**
-     * version=7だけをlittle endianで符号化する。全体128KiB、命令列1〜65536バイト。
+     * 標準入口はversion=7、ブラウザ専用入口でカーネルがあればversion=8をlittle endianで符号化する。
+     * 全体128KiB、命令列1〜65536バイト。version=8は以下の先頭64バイトに加え、集合SHA-256を@64へ置く96バイトヘッダー。
+     * CALL_KERNEL(0x28,u16 ID)はn→明示引数を積み、専用ホストが同期実行後にNoneへ置換する。
+     * ID・引数型は同じ解析のmanifestで確定し、ブラウザ用VMは開始前に集合指紋と全呼出しIDを照合する。
      * ヘッダー64バイト: magic:u16@0=0xB1C0、version:u16@2=7、大域数:u16@4、関数数:u16@6、
      * 命令長:u32@8、開始PC:u16@12=0、呼出し規約:u16@14=6、文字列数:u16@16、
      * schema:u16@18=6、UTF-8長:u32@20、ABI SHA-256の生32バイト@24、
@@ -1576,7 +1606,8 @@ class BytecodeGenerator {
      */
     private encodeBinary(): Uint8Array {
         const api = this.analysis.api;
-        const headerLength = bytecodeHeaderLength;
+        const hasKernels = (this.kernelManifest?.kernels.length ?? 0) !== 0;
+        const headerLength = bytecodeHeaderLength + (hasKernels ? 32 : 0);
         const functionRecordLength = bytecodeFunctionRecordLength;
         if (api.schemaVersion !== 6 || api.callingConventionVersion !== 6
             || api.stringPolicyVersion !== 3 || !/^[0-9a-f]{64}$/.test(api.abiHash)) {
@@ -1632,7 +1663,15 @@ class BytecodeGenerator {
         const bytes = new Uint8Array(stringDataOffset + stringDataLength);
         const view = new DataView(bytes.buffer);
         view.setUint16(0, bytecodeSignature, true);
-        view.setUint16(2, bytecodeVersion, true);
+        view.setUint16(2, hasKernels ? 8 : bytecodeVersion, true);
+        if (hasKernels) {
+            if (!/^[0-9a-f]{64}$/.test(this.kernelManifest!.kernelSetHash)) {
+                throw new Error("カーネル集合のSHA-256が不正です");
+            }
+            for (let index = 0; index < 32; index++) {
+                view.setUint8(bytecodeHeaderLength + index, Number.parseInt(this.kernelManifest!.kernelSetHash.slice(index * 2, index * 2 + 2), 16));
+            }
+        }
         view.setUint16(4, globals, true);
         view.setUint16(6, functionCount, true);
         view.setUint32(8, codeLength, true);
@@ -1820,6 +1859,15 @@ export function generateAssembly(analysis: PythonAnalysis): string {
  */
 export function generateBytecode(analysis: PythonAnalysis): Uint8Array {
     return new BytecodeGenerator(analysis).generateBytecode();
+}
+
+/**
+ * ブラウザ用ホストへ渡す専用入口。manifestは同じ解析からcreateNumericKernelArtifactで作る。
+ * カーネル使用時はversion 8・96バイトヘッダー・CALL_KERNELを生成し、集合のSHA-256を含める。
+ * 既存のESP32送信入口はversion 7とカーネル拒否を維持する。
+ */
+export function generateBrowserBytecode(analysis: PythonAnalysis, manifest: NumericKernelManifest): Uint8Array {
+    return new BytecodeGenerator(analysis, manifest).generateBytecode();
 }
 
 /**

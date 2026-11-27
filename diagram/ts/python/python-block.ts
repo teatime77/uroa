@@ -1,6 +1,7 @@
 /**
  * Python編集・実行用ActionBlock。parser.ts、semantic.ts、bytecode.tsでビルドし、
- * ble-wifi/device-connection.tsが転送・VM指令を担当する。index.tsがツール、procedure.tsが復元を登録する。
+ * ESP32はble-wifi/device-connection.tsが転送・VM指令、ブラウザはbrowser-runtime.tsがWorkerの実行を担当する。
+ * index.tsがツール、procedure.tsが復元を登録する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
  * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
  */
@@ -20,6 +21,7 @@ import { analyzePython, type PythonAnalysis } from "./semantic";
 import { PythonHighlightEditor } from "./highlight-editor";
 import { semanticEditorDiagnostic, syntaxEditorDiagnostic } from "./editor-diagnostics";
 import { openPythonSource } from "./source-dialog";
+import { BrowserPythonRuntime } from "./browser-runtime";
 
 /**
  * Startはチェック後にコード・行PC・ステップPCを一括送信し、ESP32が検証後に開始する。
@@ -28,6 +30,12 @@ import { openPythonSource } from "./source-dialog";
  * 開始成功と正常終了は別とし、observeDeployment()が短い実行の終了・エラー・Pausedも取得する。
  */
 export class PythonBlock extends ActionBlock {
+    /** 実行先。既存データはESP32を選び、ブラウザではWorker内のVMを使う。 */
+    private readonly executionTarget = document.createElement("select");
+    /** ブラウザ実行の完了値。textContentだけで表示する。 */
+    private readonly browserOutput = document.createElement("pre");
+    /** このブロックが所有するブラウザ実行。C復帰まで保持する。 */
+    private browserRuntime?: BrowserPythonRuntime;
     /**
      * 学習者がPythonソースを編集するtextarea。ソースと選択状態の正本。
      */
@@ -191,6 +199,20 @@ export class PythonBlock extends ActionBlock {
         });
         heading.appendChild(this.filenameView);
         const controls = document.createElement("div");
+        this.executionTarget.setAttribute("aria-label", "Python実行先");
+        this.executionTarget.style.pointerEvents = "auto";
+        for (const [value, label] of [["esp32", "ESP32"], ["browser", "ブラウザ"]]) {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = label;
+            this.executionTarget.appendChild(option);
+        }
+        this.executionTarget.addEventListener("change", () => {
+            void this.stop().catch(() => undefined);
+            this.browserOutput.textContent = "";
+            this.updateControls();
+        }, { signal: this.events.signal });
+        controls.appendChild(this.executionTarget);
         Object.assign(controls.style, { display: "flex", gap: "6px", flexWrap: "wrap" });
         const buttons: [HTMLButtonElement, string, () => void][] = [
             [this.maximizeButton, "最大化", () => this.setExpanded(true)],
@@ -218,7 +240,7 @@ export class PythonBlock extends ActionBlock {
         }
         const editor = this.sourceEditor = document.createElement("textarea");
         editor.setAttribute("aria-label", "Pythonソースコード");
-        editor.placeholder = "# ESP32で実行するPythonコードを入力してください\n";
+        editor.placeholder = "# Pythonコードを入力してください\n";
         editor.spellcheck = false;
         editor.autocomplete = "off";
         editor.wrap = "off";
@@ -248,10 +270,11 @@ export class PythonBlock extends ActionBlock {
         this.highlightEditor.element.style.flex = "1 1 0";
         this.highlightEditor.element.style.minWidth = "0";
         this.workspace.append(this.highlightEditor.element, this.debuggerView.element);
-        panel.append(heading, controls, this.workspace, this.statusView);
+        Object.assign(this.browserOutput.style, { maxHeight: "140px", minHeight: "0", pointerEvents: "auto", overflow: "auto", whiteSpace: "pre-wrap", margin: "0", font: "13px monospace" });
+        panel.append(heading, controls, this.workspace, this.statusView, this.browserOutput);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
         this.releaseConnection = diagramDevice.subscribe(state => {
-            if (state.phase !== "connected") {
+            if (state.phase !== "connected" && this.executionTarget.value === "esp32") {
                 this.ownsVM = false;
                 this.request?.abort();
                 this.debugRequest?.abort();
@@ -325,7 +348,7 @@ export class PythonBlock extends ActionBlock {
 
     /** 最大化状態は保存せず、ソースとファイル名を通常のActionBlock情報に追加する。旧データは無名で復元する。 */
     makeObj(): any {
-        return { ...super.makeObj(), source: this.sourceEditor.value, sourceFilename: this.sourceFilename };
+        return { ...super.makeObj(), source: this.sourceEditor.value, sourceFilename: this.sourceFilename, executionTarget: this.executionTarget.value };
     }
 
     /**
@@ -336,6 +359,7 @@ export class PythonBlock extends ActionBlock {
     loadObj(obj: any): void {
         void this.stop().catch(() => undefined);
         super.loadObj(obj);
+        this.executionTarget.value = obj.executionTarget === "browser" ? "browser" : "esp32";
         this.replaceSource(typeof obj.source === "string" ? obj.source : "",
             typeof obj.sourceFilename === "string" ? obj.sourceFilename : "");
     }
@@ -362,6 +386,7 @@ export class PythonBlock extends ActionBlock {
         this.copyUI(block);
         block.sourceEditor.value = this.sourceEditor.value;
         block.setSourceFilename(this.sourceFilename);
+        block.executionTarget.value = this.executionTarget.value;
         block.highlightEditor.refresh();
         block.setContext2D(this.ctx);
         block.setBlockPortPosition(block.position);
@@ -512,6 +537,7 @@ export class PythonBlock extends ActionBlock {
      */
     private updateControls(): void {
         const disabled = this.removed || this.inToolbox;
+        this.executionTarget.disabled = disabled || this.request !== undefined || this.ownsVM && !this.vmFinished || this.stopping !== undefined;
         this.maximizeButton.disabled = disabled || this.expanded;
         this.minimizeButton.disabled = disabled || !this.expanded;
         this.openButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined
@@ -521,7 +547,7 @@ export class PythonBlock extends ActionBlock {
             || this.checkRequest !== undefined || this.stopping !== undefined || this.openRequest !== undefined;
         this.startButton.disabled = disabled || this.ownsVM && !this.vmFinished || this.request !== undefined || this.stopping !== undefined
             || this.checkRequest !== undefined || this.openRequest !== undefined || this.debugRequest !== undefined
-            || diagramDevice.bytecodeSending || diagramDevice.state.phase !== "connected";
+            || this.executionTarget.value === "esp32" && (diagramDevice.bytecodeSending || diagramDevice.state.phase !== "connected");
         this.stopButton.disabled = disabled || this.stopping !== undefined || (!this.request && !this.ownsVM);
         this.sourceEditor.readOnly = this.request !== undefined || this.openRequest !== undefined || this.ownsVM && !this.vmFinished;
         this.debuggerView.setControlsEnabled(!disabled && this.debugValuesReady && !this.debugRequest && !this.request
@@ -633,6 +659,8 @@ export class PythonBlock extends ActionBlock {
      * Startは毎回チェックし、問題があれば転送・VM開始を行わない。
      * Startで得た解析結果はそのまま生成に使い、同じStart内で解析を繰り返さない。
      * Startは同一生成のDebugInfo・コード・両PC一覧を送り、ESP32の検証・開始後にReceiptを保持する。
+     * ブラウザ選択時は同じ解析からC・登録情報・専用バイトコードを生成し、Workerの完了まで待つ。
+     * ブラウザの停止はC復帰後に反映し、既存のESP32停止・F9操作とは別に所有する。
      */
     private async start(signal?: AbortSignal): Promise<void> {
         if (this.removed || this.inToolbox || this.ownsVM && !this.vmFinished || this.request || this.checkRequest
@@ -654,6 +682,30 @@ export class PythonBlock extends ActionBlock {
             if (analysis === undefined) {
                 // Actionチェーンでも後続へ進まない。画面の波線・診断説明は保持する。
                 throw new Error("Pythonに問題があります。表示された問題箇所を修正してください。");
+            }
+            if (this.executionTarget.value === "browser") {
+                if (this.highlightEditor.getBreakpointLines().length !== 0) {
+                    throw new Error("ブラウザ実行ではブレークポイントを解除してください。");
+                }
+                this.browserOutput.textContent = "";
+                const runtime = this.browserRuntime = new BrowserPythonRuntime();
+                try {
+                    const values = await runtime.run(analysis, controller.signal, text => {
+                        if (!this.removed) {
+                            this.showStatus(text);
+                        }
+                    });
+                    if (!this.removed) {
+                        this.browserOutput.textContent = Object.entries(values).map(([name, value]) => {
+                            const text = ArrayBuffer.isView(value) ? `[${Array.from(value as Float32Array).slice(0, 200).join(", ")}] (長さ=${(value as Float32Array).length})` : String(value);
+                            return `${name} = ${text}`;
+                        }).join("\n");
+                    }
+                }
+                finally {
+                    this.browserRuntime = undefined;
+                }
+                return;
             }
             if (diagramDevice.state.phase !== "connected") {
                 throw new Error("機器接続ブロックでESP32へ接続してください。");
@@ -736,6 +788,12 @@ export class PythonBlock extends ActionBlock {
 
     /** 開始待機を無効化してから停止指令を送る。転送の取消で切断した場合は機器側の切断停止を使う。 */
     private stop(): Promise<void> {
+        if (this.browserRuntime) {
+            this.request?.abort();
+            this.browserRuntime.stop();
+            this.showStatus("停止要求を送りました。C計算は完了後にVMを停止します。");
+            return Promise.resolve();
+        }
         this.debugRequest?.abort();
         this.openRequest?.abort();
         this.checkRequest?.abort();

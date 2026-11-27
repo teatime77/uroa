@@ -40,5 +40,6 @@ public/algebra/output
 .firebaserc
 docs/validation/2026-10-10/
 docs/validation/2026-10-10-fixes/
-public/diagram/python/
+public/diagram/python/*
+!public/diagram/python/numeric-kernel.py
 public/diagram/data/

@@ -1,0 +1,18 @@
+{
+    "wccCommit": "659a1773f20499864a8c3fdc7cd25cb506092bc1",
+    "emscriptenVersion": "4.0.23",
+    "files": {
+        "python-vm.mjs": {
+            "sha256": "3c5ad4536fb7ba83debdf86a8cba0ce1537a2e64cc9a3bc1d58f94f89324a839",
+            "bytes": 9134
+        },
+        "python-vm.wasm": {
+            "sha256": "7539a4442f696a30eed3caa4b761809887ebc4308a433b0996cce0db36bc756c",
+            "bytes": 42886
+        },
+        "wccfiles.zip": {
+            "sha256": "001b84ef7074f93cd819ce61998f351f6cb01b2e05297119299af1f7e3852b05",
+            "bytes": 163911
+        }
+    }
+}
