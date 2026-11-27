@@ -13,6 +13,16 @@ let vm: BrowserVM | undefined;
 let stopped = false;
 /** 正常終了・停止・エラーの通知を一度だけ送る。 */
 let completed = false;
+/** tick内のprintを順序どおりにまとめる。VMの内部参照は保持しない。 */
+let stdout: string[] = [];
+
+/** tick終了時と終了・エラー通知の前に文字列出力を届ける。 */
+function flushOutput(): void {
+    if (stdout.length !== 0) {
+        self.postMessage({ kind: "stdout", text: stdout.join("") });
+        stdout = [];
+    }
+}
 
 /** 完了時だけUIへ渡す大域値。数値配列のNaN・Infもそのまま保持する。 */
 function readGlobals(program: BrowserPythonProgram): Record<string, unknown> {
@@ -125,6 +135,10 @@ async function execute(program: BrowserPythonProgram): Promise<void> {
     try {
         const factory = (await import(/* @vite-ignore */ moduleURL)).default;
         vm = await factory({ wasmBinary, kernelInvoke,
+            pythonPrint: (address: number, length: number) => {
+                // 埋込NULも長さどおりに読み、print 1回につき改行を付加する。
+                stdout.push(new TextDecoder().decode(vm!.HEAPU8.subarray(address, address + length)), "\n");
+            },
             locateFile: (name: string) => new URL(browserAssetBase + name, self.location.href).href });
     }
     finally {
@@ -133,6 +147,17 @@ async function execute(program: BrowserPythonProgram): Promise<void> {
     if (stopped) {
         finish(program, true);
         return;
+    }
+    if (program.print) {
+        if (!/^[0-9a-f]{64}$/.test(program.print.abiHash)) {
+            throw new Error("printのAPI指紋が不正です");
+        }
+        const apiHash = Uint8Array.from(program.print.abiHash.match(/../g)!, hex => Number.parseInt(hex, 16));
+        withBytes(apiHash, pointer => {
+            if (!vm!._browser_bind_print(program.print!.id, pointer)) {
+                throw new Error("ブラウザのprint登録に失敗しました");
+            }
+        });
     }
     const hash = Uint8Array.from(program.manifest.kernelSetHash.match(/../g)!, hex => Number.parseInt(hex, 16));
     withBytes(hash, pointer => vm!._browser_kernel_hash(pointer));
@@ -162,6 +187,7 @@ async function execute(program: BrowserPythonProgram): Promise<void> {
             else {
                 vm!._browser_tick(4096);
             }
+            flushOutput();
             if (vm!._browser_state() === 1) {
                 setTimeout(tick, 0);
             }
@@ -172,6 +198,7 @@ async function execute(program: BrowserPythonProgram): Promise<void> {
             }
         }
         catch (error) {
+            flushOutput();
             self.postMessage({ kind: "error", message: String(error) });
         }
     };

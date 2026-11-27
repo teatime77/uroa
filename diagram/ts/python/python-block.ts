@@ -694,9 +694,14 @@ export class PythonBlock extends ActionBlock {
                         if (!this.removed) {
                             this.showStatus(text);
                         }
+                    }, text => {
+                        if (!this.removed) {
+                            this.browserOutput.textContent += text;
+                        }
                     });
                     if (!this.removed) {
-                        this.browserOutput.textContent = Object.entries(values).map(([name, value]) => {
+                        // print済みの出力を保持し、その後ろへ大域変数の結果を表示する。
+                        this.browserOutput.textContent += Object.entries(values).map(([name, value]) => {
                             const text = ArrayBuffer.isView(value) ? `[${Array.from(value as Float32Array).slice(0, 200).join(", ")}] (長さ=${(value as Float32Array).length})` : String(value);
                             return `${name} = ${text}`;
                         }).join("\n");

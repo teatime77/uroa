@@ -114,8 +114,12 @@ export class BrowserPythonRuntime {
     /** 準備中の停止要求も記録する。 */
     private stopped = false;
 
-    /** C生成・コンパイル・VM開始・正常終了までを同じ成果物で行う。 */
-    async run(analysis: PythonAnalysis, signal: AbortSignal, status: (text: string) => void): Promise<Record<string, unknown>> {
+    /**
+     * C生成・コンパイル・VM開始・正常終了までを同じ成果物で行う。
+     * printは解析済みAPIの文字列1引数・None戻り値だけを登録し、出力は到着順に通知する。
+     */
+    async run(analysis: PythonAnalysis, signal: AbortSignal, status: (text: string) => void,
+        output: (text: string) => void): Promise<Record<string, unknown>> {
         const cancel = () => this.stop();
         signal.addEventListener("abort", cancel, { once: true });
         try {
@@ -131,8 +135,13 @@ export class BrowserPythonRuntime {
             if (this.stopped) {
                 throw new DOMException("開始を取り消しました", "AbortError");
             }
+            const print = analysis.api.functions.find(fn => fn.name === "print");
+            if (print && (print.parameters.length !== 1 || print.parameters[0].type.kind !== "str" || print.returnType.kind !== "none")) {
+                throw new Error("ブラウザのprintは文字列1引数とNoneの戻り値に対応しています");
+            }
             const program: BrowserPythonProgram = { bytecode: generateBrowserBytecode(analysis, artifact.manifest),
                 manifest: artifact.manifest, kernelWasm,
+                print: print === undefined ? undefined : { id: print.nativeId, abiHash: analysis.api.abiHash },
                 globals: [...analysis.globals.values()].map(variable => ({ name: variable.name, slot: variable.slot })) };
             status("ブラウザ用Python VMを準備しています…");
             return await new Promise((resolve, reject) => {
@@ -151,6 +160,9 @@ export class BrowserPythonRuntime {
                     const data = event.data;
                     if (data.kind === "started") {
                         status("ブラウザのPython VMを実行しています…");
+                    }
+                    else if (data.kind === "stdout") {
+                        output(data.text);
                     }
                     else if (data.kind === "kernelError") {
                         kernelFailure = data.message;

@@ -15,6 +15,8 @@ export interface BrowserPythonProgram {
     manifest: NumericKernelManifest;
     /** 計算用Wasm。カーネルがなければ省略する。 */
     kernelWasm?: Uint8Array;
+    /** printのnativeIdとAPI指紋。同じPythonAnalysisから取得する。 */
+    print?: { id: number; abiHash: string };
     /** 結果表示に使用する大域変数の名前とスロット。 */
     globals: { name: string; slot: number }[];
 }
@@ -26,6 +28,7 @@ export interface BrowserVM {
     _free(pointer: number): void;
     _browser_kernel_hash(pointer: number): void;
     _browser_register_kernel(id: number, tags: number, count: number): number;
+    _browser_bind_print(id: number, hash: number): number;
     _browser_load(pointer: number, length: number): number;
     _browser_tick(budget: number): void;
     _browser_stop(): void;

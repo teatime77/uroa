@@ -1,5 +1,11 @@
 # ビルドと回帰テスト
 
+## ブラウザVMのprint接続（2026-11-27）
+
+`print("hello world")`がチェックを通る一方、StartでNativeUnavailable（14）となる報告に対応した。[ブラウザ用ホスト](../../esp32/app/diagram-control/browser/host.cpp)へ文字列1引数・None戻り値のprintを登録する。nativeIdとAPI指紋は同じPythonAnalysisからWorkerへ渡し、VMは開始・呼出し時に指紋を照合する。生成済み機器APIとそのIDは変更していない。Workerは長さ付きUTF-8を文字列へコピーし、改行を付加してtick終了時に出力を転送する。PythonBlockは到着したprint出力を保持し、正常終了時にはその後ろへ大域変数の値を表示する。
+
+Emscripten 4.0.23によるVM再ビルドに成功。VMのJSは9,347バイト、Wasmは43,346バイトとなり、assets.jsonのSHA-256と一緒に配布先へ反映した。`npm.cmd run verify`の型・公開ビルド・配布資産の静的確認に成功。既存のgame import混在とBinaryenのNode分岐外部化の警告は継続。従来のテスト不要指定に従い、ブラウザでのprint・改行・連続実行・エラー時の出力保持の実行試験は行っていない。ESP32向けのビルド・Upload・実機確認は未実施。
+
 ## コンパイルWorkerの準備待ちと進捗通知（2026-11-27）
 
 ユーザーから「CをWebAssemblyへコンパイルしています」のまま変化しない報告があった。[コンパイルWorker](../diagram/ts/python/browser-kernel-worker.ts)で、受信処理の登録より先にBinaryenの非同期初期化を待つ構成を修正した。Binaryenを要求受信後の動的importに変更し、受信設定後にreadyを通知する。[実行所有処理](../diagram/ts/python/browser-runtime.ts)はreadyを待ってから要求を送る。進捗通知は完了応答と区別し、資産取得・展開、成果物照合、wcc実行、Binaryen初期化・最適化・出力の段階を表示する。Workerの通信エラーと、準備・コンパイル待ちの取消も待機元へ伝える。計算用WorkerのC実行を中断する処理は追加していない。
