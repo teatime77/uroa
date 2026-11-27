@@ -17,6 +17,7 @@ import {
 } from "./syntax.js";
 import { generateAssembly, generateBytecode } from "./bytecode.js";
 import { analyzePython } from "./semantic.js";
+import { createNumericKernelArtifact } from "./kernel-c";
 
 /** 改行を保持し、Pythonサブセットを再帰下降で解析する。 */
 export class Parser {
@@ -805,7 +806,7 @@ export function parsePython(text: string): Module {
     return module;
 }
 
-/** 開発用入口は意味解析付きアセンブリとversion=7のバイト列を表示する。通信は行わない。 */
+/** 開発用入口は、カーネルがあればIR・C・登録情報、通常プログラムならアセンブリとversion=7を表示する。 */
 export async function testPython(){
     const text = await fetchText("/diagram/python/a.py")
     msg(`python:${text}`)
@@ -822,6 +823,14 @@ export async function testPython(){
     }
     for (const [name, variable] of analysis.globals) {
         msg(`  type ${name}: ${JSON.stringify(variable.type)}`);
+    }
+
+    if (analysis.kernelAnalysis.kernels.size !== 0) {
+        const artifact = await createNumericKernelArtifact(analysis);
+        msg(`  numeric IR:\n${JSON.stringify(artifact.ir, null, 4)}`);
+        msg(`  generated C:\n${artifact.generatedC}`);
+        msg(`  kernel manifest:\n${JSON.stringify(artifact.manifest, null, 4)}`);
+        return;
     }
 
     const asm = generateAssembly(analysis);

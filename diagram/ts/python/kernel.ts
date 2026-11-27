@@ -1,7 +1,8 @@
 /**
  * @kernelの宣言・数値型・純粋性と、1要素分の独立した書込みを検査する。
  * parser.ts/syntax.tsが型注釈とデコレーターを保持し、semantic.tsが通常VMの型推論とlaunchを接続する。
- * C生成、CALL_KERNEL、実行時の配列共有検査は後段で実装する。本処理は実行時検査を生成しない。
+ * kernel-ir.tsが型付き中間表現へ変換し、kernel-c.tsが共通Cと登録マニフェストを生成する。
+ * CALL_KERNELと実行時の配列共有検査は後段で実装する。本処理は実行時検査を生成しない。
  */
 import {
     AbstractSyntaxNode, App, BlockStatement, CallStatement, ConstNum, Fn, ForStatement,

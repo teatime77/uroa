@@ -5,7 +5,7 @@
  * 診断の画面表示はpython-block.tsとhighlight-editor.tsが担当し、ここではDOMを操作しない。
  * アセンブリ・version=7のバイトコード生成はbytecode.tsがこの結果を利用する。
  * @kernelの数値型・純粋性はkernel.tsへ委譲し、launchだけを通常の式型へ接続する。
- * kernelAnalysis/kernelLaunchesは生成用の解析結果であり、C生成・version=8・実行接続は未実装。
+ * kernelAnalysis/kernelLaunchesをkernel-ir.ts/kernel-c.tsがC生成に利用する。version=8と実行接続は後続段階。
  * 組込みモジュールの定義検証・引数番号対応はmodule-api.tsへ委譲する。
  * ユーザークラス・record・数値／object ndarrayはGC本体を参照し、共有・循環を許す。
  * 新形式のBLE転送・受信形式検証はble-wifi側、参照共有と呼出しの実行はESP32の
@@ -1517,7 +1517,8 @@ class PythonResolver {
     /**
      * launchの関数名・n・引数を通常VMの型へ接続する。式は通常の評価順で解析する。
      * nの実行時値、配列の実行時共有、添字範囲、数値の有限性はここでは検査しない。
-     * 戻り値はNone。C生成とCALL_KERNELは未実装なのでbytecode.tsの生成入口が拒否する。
+     * 戻り値はNone。C生成はkernel-c.tsが担当し、CALL_KERNELの実行接続は後続段階。
+     * bytecode.tsの生成入口は実行接続までカーネルを含むプログラムを拒否する。
      */
     private kernelLaunch(app: App): PythonType {
         const reference = app.args[0];

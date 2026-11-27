@@ -286,7 +286,7 @@ class BytecodeGenerator {
 
     /**
      * 意味解析結果とその構文木から、生成用の索引と元ソースの行位置を準備する。
-     * 意味診断がある結果と、C生成・実行接続が未実装の数値カーネルを命令生成前に拒否する。
+     * 意味診断がある結果と、実行接続が未実装の数値カーネルを命令生成前に拒否する。
      * 構文木と意味解析結果は書き換えない。
      *
       * @param analysis 診断のない意味解析結果。構文木もこの結果から取得する。
@@ -301,10 +301,10 @@ class BytecodeGenerator {
             const first = analysis.diagnostics[0];
             throw new SyntaxError(`意味解析に${analysis.diagnostics.length}件のエラーがあります: ${first.message} (charPos=${first.charPos})`);
         }
-        // 数値カーネルの解析だけが実装済み。通常の関数としてversion 7へ誤生成しない。
+        // 数値カーネルのC生成はkernel-c.tsが担当する。実行接続までversion 7へ誤生成しない。
         if (analysis.kernelAnalysis.kernels.size !== 0 || analysis.kernelLaunches.size !== 0) {
             const kernel = analysis.kernelAnalysis.kernels.values().next().value;
-            throw new SyntaxError(`数値カーネルのC生成・launch実行は未実装です (charPos=${kernel?.node.charPos ?? 0})`);
+            throw new SyntaxError(`数値カーネルのlaunch実行接続は未実装です (charPos=${kernel?.node.charPos ?? 0})`);
         }
         this.globalScope = { fn: undefined, block: module.block };
         this.scope = this.globalScope;
