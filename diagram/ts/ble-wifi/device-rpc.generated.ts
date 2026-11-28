@@ -32,7 +32,7 @@ export const rpcApiVersion = 1;
 
 export const rpcMaxPending = 32;
 
-export const rpcSchemaFingerprint = "0689de5820168058524a9dfa6ac952941e4a441ae08fb7dd967838c6e53cd10c";
+export const rpcSchemaFingerprint = "024c72760355b575cbd0458dd0d85fa550880ef04bc5c685d07c17574b68e4ed";
 
 
 
@@ -1257,7 +1257,11 @@ export const rpcMethods = {
         "command": {
             "cases": [
                 {
-                    "opcode": "INFO"
+                    "opcode": "INFO",
+                    "server": {
+                        "status_only": true,
+                        "echo_channel": true
+                    }
                 }
             ]
         }
@@ -1281,7 +1285,11 @@ export const rpcMethods = {
         "command": {
             "cases": [
                 {
-                    "opcode": "PING"
+                    "opcode": "PING",
+                    "server": {
+                        "status_only": true,
+                        "echo_channel": true
+                    }
                 }
             ]
         }
@@ -1326,12 +1334,38 @@ export const rpcMethods = {
                     "equals": "angle",
                     "opcode": "ARM",
                     "channel": "channel",
-                    "constant_value": 9000
+                    "constant_value": 9000,
+                    "server": {
+                        "handler": "armAngle",
+                        "value_name": "angle",
+                        "value_scale": 100,
+                        "echo_channel": true,
+                        "checks": {
+                            "field": "duration",
+                            "max": 10000
+                        },
+                        "notify_io_error": true
+                    }
                 },
                 {
                     "equals": "speed",
                     "opcode": "ARM_SPEED",
-                    "channel": "channel"
+                    "channel": "channel",
+                    "server": {
+                        "handler": "armSpeed",
+                        "echo_channel": true,
+                        "checks": [
+                            {
+                                "field": "value",
+                                "equals": 0
+                            },
+                            {
+                                "field": "duration",
+                                "equals": 0
+                            }
+                        ],
+                        "notify_io_error": true
+                    }
                 }
             ]
         }
@@ -1359,7 +1393,12 @@ export const rpcMethods = {
                     "channel": "channel",
                     "value": "angle",
                     "scale": 100,
-                    "duration": "duration"
+                    "duration": "duration",
+                    "server": {
+                        "handler": "move",
+                        "echo_channel": true,
+                        "notify_io_error": true
+                    }
                 }
             ]
         }
@@ -1387,7 +1426,16 @@ export const rpcMethods = {
                     "channel": "channel",
                     "value": "percent",
                     "scale": 100,
-                    "signed_value": true
+                    "signed_value": true,
+                    "server": {
+                        "handler": "speed",
+                        "echo_channel": true,
+                        "notify_io_error": true,
+                        "checks": {
+                            "field": "duration",
+                            "equals": 0
+                        }
+                    }
                 }
             ]
         }
@@ -1412,7 +1460,11 @@ export const rpcMethods = {
             "cases": [
                 {
                     "opcode": "DISABLE",
-                    "channel": "channel"
+                    "channel": "channel",
+                    "server": {
+                        "handler": "disable",
+                        "echo_channel": true
+                    }
                 }
             ]
         }
@@ -1436,7 +1488,10 @@ export const rpcMethods = {
         "command": {
             "cases": [
                 {
-                    "opcode": "STOP"
+                    "opcode": "STOP",
+                    "server": {
+                        "handler": "stop"
+                    }
                 }
             ]
         }
@@ -1477,7 +1532,25 @@ export const rpcMethods = {
         "command": {
             "cases": [
                 {
-                    "opcode": "VM_START"
+                    "opcode": "VM_START",
+                    "server": {
+                        "handler": "start",
+                        "context": true,
+                        "checks": [
+                            {
+                                "field": "channel",
+                                "equals": 255
+                            },
+                            {
+                                "field": "value",
+                                "equals": 0
+                            },
+                            {
+                                "field": "duration",
+                                "equals": 0
+                            }
+                        ]
+                    }
                 }
             ]
         }
@@ -1501,7 +1574,25 @@ export const rpcMethods = {
         "command": {
             "cases": [
                 {
-                    "opcode": "VM_STOP"
+                    "opcode": "VM_STOP",
+                    "server": {
+                        "handler": "stop",
+                        "context": true,
+                        "checks": [
+                            {
+                                "field": "channel",
+                                "equals": 255
+                            },
+                            {
+                                "field": "value",
+                                "equals": 0
+                            },
+                            {
+                                "field": "duration",
+                                "equals": 0
+                            }
+                        ]
+                    }
                 }
             ]
         }
@@ -1832,7 +1923,19 @@ export const rpcMethods = {
             "cases": [
                 {
                     "opcode": "STREAM",
-                    "value": "rate"
+                    "value": "rate",
+                    "server": {
+                        "handler": "stream",
+                        "checks": {
+                            "field": "value",
+                            "one_of": [
+                                0,
+                                5,
+                                10,
+                                20
+                            ]
+                        }
+                    }
                 }
             ]
         }

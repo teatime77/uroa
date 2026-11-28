@@ -1,10 +1,10 @@
 /**
- * device.proto/options.protoから機器RPCの型・操作表・方向別固定長codecを生成する。
+ * device.proto/options.protoから機器RPCの型・操作表・方向別codec・サーバー振分けと応答を生成する。
  * protobufjsは生成時の標準.proto構文解析だけに使い、生成物へ依存させない。
  * TypeScriptのホスト型は既存の復号済み値と所有参照を保ち、wire_packetだけ固定長codecの対象にする。
  * 未対応の型・属性不足・番号重複は生成前に拒否する。--checkは書き込まず成果物の一致を検査する。
  * codecは各messageのts_codec/cpp_codec方向だけを生成し、未使用の逆方向は出力しない。
- * command付きRPCは宣言的な分岐・フィールド参照・倍率から通常指令のクライアントを生成する。
+ * command付きRPCは宣言的な分岐・フィールド参照・倍率・受理条件から通常指令の両側を生成する。
  * 操作ごとのJavaScript実装文字列は持たず、機能状態は生成したサービス型のフックへ委譲する。
  * 固定値・enum・下限は通常の形式検査へ生成する。C++復号は値を保持し、検査は別関数とする。
  * 既定はWebだけを生成する。--esp32で隣接ESP32のヘッダー・実装も更新・照合する。
@@ -191,7 +191,7 @@ for (const method of commandMethods) {
         `Commandの分岐フィールドが不正: ${method.name}`);
     const selections = new Set();
     for (const variant of variants) {
-        requireCondition(Object.keys(variant).every(key => ["equals", "opcode", "channel", "value", "constant_value", "scale", "signed_value", "duration"].includes(key)),
+        requireCondition(Object.keys(variant).every(key => ["equals", "opcode", "channel", "value", "constant_value", "scale", "signed_value", "duration", "server"].includes(key)),
             `未対応のCommand属性: ${method.name}`);
         requireCondition(Object.hasOwn(opcodeEnum.values, variant.opcode) && opcodeEnum.values[variant.opcode] > 0,
             `Command操作番号が不正: ${method.name}`);
@@ -221,6 +221,67 @@ for (const method of commandMethods) {
     method.command = { ...binding, cases: variants };
 }
 requireCondition(methods.filter(method => method.scope === "internal").every(method => method.command), "内部操作のCommand対応がありません");
+
+/** クライアントの既定値と受信制約を混同せず、サーバー用の対応を検証する。 */
+const statusBinding = aggregateOption(schema.lookupType("StatusPacket"), "status_binding");
+requireCondition(statusBinding && Object.keys(statusBinding).every(key => ["channel_count", "speed_flag", "speed_scale"].includes(key))
+    && Number.isInteger(statusBinding.channel_count) && statusBinding.channel_count > 0 && statusBinding.channel_count <= 256
+    && Number.isInteger(statusBinding.speed_flag) && statusBinding.speed_flag > 0 && statusBinding.speed_flag <= 255
+    && Number.isInteger(statusBinding.speed_scale) && statusBinding.speed_scale > 0, "Statusのサーバー対応が不正です");
+const serverCases = [];
+const serverOpcodes = new Set();
+const handlerNames = new Set();
+for (const method of commandMethods) {
+    for (const variant of method.command.cases) {
+        const server = variant.server;
+        requireCondition(server && Object.keys(server).every(key => ["handler", "value_name", "value_scale", "context", "echo_channel", "notify_io_error", "status_only", "checks"].includes(key)),
+            `サーバー対応がありません: ${variant.opcode}`);
+        requireCondition(!serverOpcodes.has(variant.opcode), `サーバー操作が重複: ${variant.opcode}`);
+        serverOpcodes.add(variant.opcode);
+        for (const name of ["context", "echo_channel", "notify_io_error", "status_only"]) {
+            requireCondition(server[name] === undefined || typeof server[name] === "boolean", `サーバー属性が不正: ${variant.opcode}.${name}`);
+        }
+        requireCondition(server.status_only ? !server.handler && !server.context && !server.value_name && !variant.channel && !variant.value && !variant.duration
+            : /^[a-z][a-zA-Z0-9]*$/.test(server.handler) && !handlerNames.has(`${method.service}.${server.handler}`),
+            `サーバーハンドラーが不正または重複: ${variant.opcode}`);
+        if (!server.status_only) {
+            handlerNames.add(`${method.service}.${server.handler}`);
+        }
+        const valueName = server.value_name ?? variant.value;
+        const scale = server.value_scale ?? variant.scale ?? 1;
+        requireCondition((valueName === undefined || /^[a-z][a-zA-Z0-9]*$/.test(valueName))
+            && Number.isInteger(scale) && scale > 0 && (server.value_scale === undefined || valueName),
+            `サーバーの値引数が不正: ${variant.opcode}`);
+        const checks = server.checks ? (Array.isArray(server.checks) ? server.checks : [server.checks]) : [];
+        for (const check of checks) {
+            const field = commandLayout.fields.find(field => field.name === check.field);
+            const predicates = ["equals", "max", "one_of"].filter(key => check[key] !== undefined);
+            requireCondition(field && Object.keys(check).every(key => ["field", "equals", "max", "one_of"].includes(key)) && predicates.length === 1,
+                `サーバー検査が不正: ${variant.opcode}`);
+            const values = predicates[0] === "one_of" ? check.one_of : [check[predicates[0]]];
+            requireCondition(Array.isArray(values) && values.length > 0 && values.every(value => Number.isInteger(value) && value >= field.minimum && value <= field.maximum),
+                `サーバー検査値が不正: ${variant.opcode}`);
+        }
+        const args = [];
+        if (variant.channel) {
+            args.push({ name: variant.channel, type: "uint8_t", expression: "command.channel" });
+        }
+        if (valueName) {
+            args.push({ name: valueName, type: scale > 1 ? "float" : `${variant.signed_value ? "int" : "uint"}16_t`,
+                expression: `${variant.signed_value ? "signedValue" : "command.value"}${scale > 1 ? ` / ${scale}.0f` : ""}` });
+        }
+        if (variant.duration) {
+            args.push({ name: variant.duration, type: "uint16_t", expression: "command.duration" });
+        }
+        if (server.context) {
+            args.push({ name: "context", type: "const ControlRpcContext &", expression: "context" });
+        }
+        requireCondition(new Set(args.map(arg => arg.name)).size === args.length, `サーバー引数名が重複: ${variant.opcode}`);
+        serverCases.push({ service: method.service, variant, server, checks, args });
+    }
+}
+requireCondition(Object.entries(opcodeEnum.values).filter(([, value]) => value > 0).every(([name]) => serverOpcodes.has(name)),
+    "サーバーで未対応のCommand操作があります");
 
 /** 定義の指紋はコメント・絶対パスを含めず、型・配置・番号・契約から生成する。 */
 const fingerprint = createHash("sha256").update(JSON.stringify({ schema: schema.toJSON(), packets, methods })).digest("hex");
@@ -352,10 +413,17 @@ const cpp = ["/**", " * @file uroa_rpc.generated.h", " * @brief device.protoか�
     ...Object.entries(packets).flatMap(([name, layout]) => ["        /**", "         * @brief 宣言順・little endian・パディングなしの位置。sizeofで通信サイズを求めない。", "         */",
         `        struct ${name}Layout {`, `            static constexpr size_t ByteLength = ${layout.byteLength}; ///< パケット全長。`,
         ...layout.fields.flatMap(field => [`            static constexpr size_t ${field.name} = ${field.offset}; ///< ${field.bits}bitの先頭位置。`,
-            ...(field.fixed === undefined ? [] : [`            static constexpr uint${field.bits}_t ${field.name}Value = ${field.fixed}; ///< 通常形式の固定値。`])]), "        };", "",
+            ...(field.fixed === undefined ? [] : [`            static constexpr uint${field.bits}_t ${field.name}Value = ${field.fixed}; ///< 通常形式の固定値。`])]),
+        ...(name === "StatusPacket" ? [
+            `            static constexpr uint16_t ChannelCount = ${statusBinding.channel_count}; ///< 値を持つCHの件数。`,
+            `            static constexpr uint8_t SpeedFlag = ${statusBinding.speed_flag}; ///< 速度モードの状態ビット。`,
+            `            static constexpr uint32_t SpeedScale = ${statusBinding.speed_scale}; ///< 速度指令の整数化倍率。`] : []), "        };", "",
         "        /**", "         * @brief 固定長パケットの値。メモリー上の配置を直接送らない。", "         */", `        struct ${name} {`,
         ...layout.fields.map(field => `            ${field.signed ? "int" : "uint"}${field.bits}_t ${field.name}; ///< ${field.bits}bitの値。`), "        };", "",
         ...cppCodecDeclarations(name, layout)]),
+    "        /**", "         * @brief 固定値とCHの条件に従ってStatusの値を作る。", "         * @param code 受付結果。", "         * @param sequence 応答対象。", "         * @param flags 機器状態。", "         * @param channel CHまたは全体。", "         * @param current 現在の指令値のビット列。", "         * @param target 目標値のビット列。", "         * @param remaining 残り時間ms。", "         * @return 通信へ書き込む値。全体CHの3値は0。", "         */",
+    "        StatusPacket makeStatusPacket(uint8_t code, uint16_t sequence, uint8_t flags, uint8_t channel,",
+    "            uint16_t current, uint16_t target, uint16_t remaining);", "",
     "    }", "}", ""].join("\n");
 
 /** uint32のシフトで読み書きする。構造体の直接送信・未整列アクセス・符号付き右シフトを使わない。 */
@@ -387,7 +455,14 @@ const cppSource = ["/**", " * @file uroa_rpc.generated.cpp", " * @brief device.p
         "        /**", "         * @brief 生成元の固定値・enum・下限を検査する。", "         * @param packet 復号した値。", "         * @return 通常の形式が正しければtrue。", "         */",
         `        bool validate${name}(const ${name} &packet) {`,
         `            return ${layout.fields.flatMap(field => fieldConditions(field, `packet.${field.name}`)).join(" && ") || "true"};`,
-        "        }", ""]), "    }", "}", ""].join("\n");
+        "        }", ""]),
+    "        /**", "         * @brief 共通Statusの固定値・CHごとの値を設定する。", "         * @param code 受付結果。", "         * @param sequence 応答対象。", "         * @param flags 機器状態。", "         * @param channel CHまたは全体。", "         * @param current 現在の指令値。", "         * @param target 目標値。", "         * @param remaining 残り時間ms。", "         * @return CH条件を適用したStatus。", "         */",
+    "        StatusPacket makeStatusPacket(uint8_t code, uint16_t sequence, uint8_t flags, uint8_t channel,",
+    "            uint16_t current, uint16_t target, uint16_t remaining) {",
+    "            StatusPacket packet{};", "            packet.version = StatusPacketLayout::versionValue;",
+    "            packet.code = code;", "            packet.sequence = sequence;", "            packet.flags = flags;", "            packet.channel = channel;",
+    "            if (channel < StatusPacketLayout::ChannelCount) {", "                packet.current = current;", "                packet.target = target;", "                packet.remaining = remaining;", "            }",
+    "            return packet;", "        }", "", "    }", "}", ""].join("\n");
 
 /** 全成果物を生成し終えてから書き込む。--checkでは欠落も不一致として失敗させる。 */
 // 型/メタデータとcodecを分け、rpc-clientが参照する定義へエラー型の循環依存を作らない。
@@ -490,12 +565,98 @@ async function invokeControl(transport: ControlConnection, packet: Omit<CommandP
 }`,
     controlFactoryText("createControlCalls", publicCommands),
     controlFactoryText("createInternalControlCalls", internalCommands, true), ""].join("\n\n");
+/** サービスごとの型付き関数表。実装・状態・タスクや接続の所有権は生成しない。 */
+const serverServices = [...new Set(serverCases.filter(entry => !entry.server.status_only).map(entry => entry.service))];
+const memberName = name => name[0].toLowerCase() + name.slice(1);
+const argsText = args => args.map(arg => `${arg.type}${arg.type.endsWith("&") ? "" : " "}${arg.name}`).join(", ");
+const serverHeader = ["/**", " * @file control_rpc.generated.h", " * @brief device.protoから生成した通常指令のサービスと応答。手動編集しない。", " */",
+    "#pragma once", '#include "uroa_rpc.generated.h"', '#include "control_session.h"', "", "namespace uroa {", "    namespace rpc {",
+    "        /**", "         * @brief loop()が取得する指令状態。角度は既存cdeg、速度は%で渡す。", "         */",
+    "        struct ControlStatusState {",
+    "            uint8_t flags; ///< 機器と制御の状態。",
+    "            uint16_t current; ///< 角度指令のcdeg。",
+    "            uint16_t target; ///< 角度目標のcdeg。",
+    "            uint16_t remaining; ///< 補間の残りms。",
+    "            bool speedMode; ///< 指定CHが速度モードならtrue。",
+    "            float speedPercent; ///< 速度指令%。実測速度ではない。", "        };", "",
+    "        /**", "         * @brief 状態取得・配送と通常形式受理の共通窓口。すべてloop()で呼ぶ。", "         */",
+    "        struct ControlReplyService {",
+    "            ControlStatusState (&snapshot)(uint8_t channel); ///< 指定CHの現在状態。",
+    "            void (&publish)(const uint8_t *bytes, size_t length); ///< 完成したStatusを現在の経路へ通知する。",
+    "            void (&accepted)(); ///< 通常形式が有効なら細部検査前にheartbeatを更新する。", "        };", "",
+    ...serverServices.flatMap(service => ["        /**", `         * @brief ${service}の型付き機能ハンドラー。単位変換済みの値を受け取る。`, "         */",
+        `        struct ${service}CommandService {`,
+        ...serverCases.filter(entry => entry.service === service && !entry.server.status_only).map(entry =>
+            `            StatusCode (&${entry.server.handler})(${argsText(entry.args)}); ///< ${entry.variant.opcode}の機能本体。`), "        };", ""]),
+    "        /**", "         * @brief 稼働中保持するサービス表。必須の関数参照により未登録をコンパイル時に拒否する。", "         */",
+    "        struct ControlServices {",
+    ...serverServices.map(service => `            ${service}CommandService ${memberName(service)}; ///< ${service}の処理群。`),
+    "            ControlReplyService reply; ///< 共有の状態と配送窓口。", "        };", "",
+    "        /**", "         * @brief 状態を取得し、通常応答・自発通知のStatusを生成して通知する。", "         * @param service 状態取得と通知窓口。", "         * @param code 受付結果。", "         * @param sequence 応答対象。0は自発通知。", "         * @param channel CHまたは全体。", "         */",
+    "        void publishControlStatus(const ControlReplyService &service, uint8_t code, uint16_t sequence, uint8_t channel);", "",
+    "        /**", "         * @brief 復号済みCommandを検査・振分けし、ハンドラーの結果からStatusを返す。", "         * @param command 受信時に生成codecで復号した値。", "         * @param context loop()の呼出元と停止優先状態。", "         * @param services 機能本体と共通の通知窓口。", "         * @details 通信コールバックから直接呼ばない。優先STOPは呼出元の従来経路で処理する。", "         */",
+    "        void dispatchControl(const CommandPacket &command, const ControlRpcContext &context, const ControlServices &services);",
+    "    }", "}", ""].join("\n");
+
+/** 各caseは宣言から生成する。未指定フィールドの追加検査や既定値の押付けを行わない。 */
+function serverCaseText(entry) {
+    const { variant, server, checks, args, service } = entry;
+    const channel = server.echo_channel ? "command.channel" : commandLayout.fields.find(field => field.name === "channel").default;
+    const lines = [`                case CommandOpcode::${variant.opcode}: {`];
+    const reject = replyChannel => [`                        publishControlStatus(services.reply, static_cast<uint8_t>(StatusCode::CODE_RANGE), command.sequence, ${replyChannel});`, "                        return;"];
+    if (variant.channel) {
+        lines.push("                    if (command.channel >= StatusPacketLayout::ChannelCount) {",
+            ...reject(commandLayout.fields.find(field => field.name === "channel").default), "                    }");
+    }
+    for (const check of checks) {
+        const input = `command.${check.field}`;
+        const invalid = check.equals !== undefined ? `${input} != ${check.equals}` : check.max !== undefined ? `${input} > ${check.max}`
+            : check.one_of.map(value => `${input} != ${value}`).join(" && ");
+        lines.push(`                    if (${invalid}) {`, ...reject(channel), "                    }");
+    }
+    if (variant.signed_value) {
+        const bits = commandLayout.fields.find(field => field.name === "value").bits;
+        lines.push(`                    const int32_t signedValue = command.value >= ${2 ** (bits - 1)}u`,
+            `                        ? static_cast<int32_t>(command.value) - ${2 ** bits} : command.value;`);
+    }
+    lines.push(server.status_only ? "                    const StatusCode code = StatusCode::CODE_OK;"
+        : `                    const StatusCode code = services.${memberName(service)}.${server.handler}(${args.map(arg => arg.expression).join(", ")});`);
+    if (server.notify_io_error) {
+        lines.push("                    if (code == StatusCode::CODE_IO_ERROR) {",
+            `                        publishControlStatus(services.reply, static_cast<uint8_t>(code), 0, ${channel});`, "                    }");
+    }
+    lines.push(`                    publishControlStatus(services.reply, static_cast<uint8_t>(code), command.sequence, ${channel});`,
+        "                    return;", "                }");
+    return lines;
+}
+const serverSource = ["/**", " * @file control_rpc.generated.cpp", " * @brief device.protoの受理条件・機能振分け・応答作成。手動編集しない。", " */",
+    '#include "control_rpc.generated.h"', "#include <math.h>", "", "namespace uroa {", "    namespace rpc {",
+    "        /**", "         * @brief 状態をwire値へ変換し、生成したStatusを現在の窓口へ通知する。", "         * @param service 状態取得と通知窓口。", "         * @param code 結果。", "         * @param sequence 応答対象。", "         * @param channel CHまたは全体。", "         */",
+    "        void publishControlStatus(const ControlReplyService &service, uint8_t code, uint16_t sequence, uint8_t channel) {",
+    "            const ControlStatusState state = service.snapshot(channel);", "            uint8_t flags = state.flags;",
+    "            uint16_t current = state.current;", "            uint16_t target = state.target;",
+    "            if (state.speedMode) {", "                flags |= StatusPacketLayout::SpeedFlag;",
+    "                current = static_cast<uint16_t>(static_cast<int16_t>(lroundf(state.speedPercent * StatusPacketLayout::SpeedScale)));",
+    "                target = current;", "            }",
+    "            const StatusPacket packet = makeStatusPacket(code, sequence, flags, channel, current, target, state.remaining);",
+    "            uint8_t bytes[StatusPacketLayout::ByteLength];", "            encodeStatusPacket(bytes, packet);",
+    "            service.publish(bytes, sizeof bytes);", "        }", "",
+    "        /**", "         * @brief 受理条件とopcode対応から機能を呼び、共通のStatusを返す。", "         * @param command 復号済みの値。", "         * @param context 呼出元の世代と停止優先状態。", "         * @param services 型付きの機能表。", "         */",
+    "        void dispatchControl(const CommandPacket &command, const ControlRpcContext &context, const ControlServices &services) {",
+    "            if (!validateCommandPacket(command)) {",
+    `                publishControlStatus(services.reply, static_cast<uint8_t>(StatusCode::CODE_FORMAT), command.sequence, ${commandLayout.fields.find(field => field.name === "channel").default});`,
+    "                return;", "            }", "            services.reply.accepted();",
+    "            switch (static_cast<CommandOpcode>(command.opcode)) {", ...serverCases.flatMap(serverCaseText), "                default:",
+    `                    publishControlStatus(services.reply, static_cast<uint8_t>(StatusCode::CODE_FORMAT), command.sequence, ${commandLayout.fields.find(field => field.name === "channel").default});`,
+    "                    return;", "            }", "        }", "    }", "}", ""].join("\n");
 const outputs = [[resolve(directory, "../ts/ble-wifi/device-rpc.generated.ts"), ts],
     [resolve(directory, "../ts/ble-wifi/device-rpc-codec.generated.ts"), tsCodecSource],
     [resolve(directory, "../ts/ble-wifi/device-control.generated.ts"), controlSource]];
 if (flags.has("--esp32")) {
     outputs.push([resolve(directory, "../../../esp32/lib/protocol/include/uroa_rpc.generated.h"), cpp]);
     outputs.push([resolve(directory, "../../../esp32/lib/protocol/src/uroa_rpc.generated.cpp"), cppSource]);
+    outputs.push([resolve(directory, "../../../esp32/app/diagram-control/include/control_rpc.generated.h"), serverHeader]);
+    outputs.push([resolve(directory, "../../../esp32/app/diagram-control/src/control_rpc.generated.cpp"), serverSource]);
 }
 for (const [path, content] of outputs) {
     if (flags.has("--check")) {

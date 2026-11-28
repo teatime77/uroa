@@ -1,5 +1,23 @@
 # ビルドと回帰テスト
 
+## RPC生成化4：サーバー振分け・応答（2026-11-28）
+
+[生成化計画](diagram/python/rpc-implementation-plan.md)の生成化4を実施した。[device.proto](../diagram/rpc/device.proto)のサーバー対応からESP32の[型付きサービスと振分け](../../esp32/app/diagram-control/include/control_rpc.generated.h)を生成し、既存11 opcodeの受理・変換・結果通知をloop()へ接続した。main.cppの機能本体と状態取得は維持し、opcode分岐と応答作成を生成処理へ置き換えた。仕様本文は生成元と各ソースのコメントを参照する。
+
+uroaルートで生成・照合とWebの型・公開ビルド・配布資産確認に成功した。`--esp32`は共有codecに加え、教材側のサービスヘッダーと実装も生成・照合する。
+
+```powershell
+node diagram/rpc/generate.mjs --esp32
+node diagram/rpc/generate.mjs --check --esp32
+npm.cmd run verify
+```
+
+既存5配置の長さ・位置・整数幅・符号は変更前と静的に一致した。公開32操作／購読と内部1操作は維持した。旧ソースの受理条件、未使用フィールドの扱い、応答CH、通常形式の受理時刻、優先STOPの別経路、VM操作の条件と確認順、I/O自発通知とACKの順序を静的に確認した。生成物7ファイルの照合も成功。
+
+Webの公開ビルドは成功（Vite 33.44秒、92 WebGPU資産を含む成果物確認）。game import混在2件とBinaryenのNode分岐外部化の既存警告は継続。ESP32の結果は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)を参照する。今回の手書き物理行数は型付き機能本体・共有状態・コメントの追加で68行増加し、基準からは累計62行減少した。分類別の内訳は計画書へ記録した。
+
+従来の指定に従いテストは作成・実行していない。ブラウザ・実BLE／Wi-Fi、受理・応答順や停止・期限の実動作、Upload・実機確認は未実施。生成化5・6、Python Future・配列・Wi-Fi配送は未着手。
+
 ## RPC生成化3：通常指令クライアント（2026-11-28）
 
 [生成化計画](diagram/python/rpc-implementation-plan.md)の生成化3を実施した。[device.proto](../diagram/rpc/device.proto)の宣言的なCommand対応から[クライアント](../diagram/ts/ble-wifi/device-control.generated.ts)を生成し、公開9操作と内部STREAMへ接続した。要求作成・数値変換・期限・優先度とStatusの結果対応を生成し、操作別の手書き送信とRPCラッパーを削除した。機能状態のフックは[DeviceConnection](../diagram/ts/ble-wifi/device-connection.ts)、ACK・世代・待ち列は[ControlConnection](../diagram/ts/ble-wifi/control-connection.ts)が所有する。仕様は生成元と各ソースのコメントを参照する。

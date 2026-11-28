@@ -3,6 +3,27 @@ package uroa;
 import "google/protobuf/descriptor.proto";
 
 // Command v1への宣言的な対応。フィールド名だけを参照し、実装コードは指定しない。
+message CommandCheck {
+    string field = 1;
+    uint32 equals = 2;
+    uint32 max = 3;
+    repeated uint32 one_of = 4;
+}
+message CommandServer {
+    string handler = 1;
+    string value_name = 2;
+    uint32 value_scale = 3;
+    bool context = 4;
+    bool echo_channel = 5;
+    bool notify_io_error = 6;
+    bool status_only = 7;
+    repeated CommandCheck checks = 8;
+}
+message StatusBinding {
+    uint32 channel_count = 1;
+    uint32 speed_flag = 2;
+    uint32 speed_scale = 3;
+}
 message CommandCase {
     string equals = 1;
     string opcode = 2;
@@ -12,6 +33,7 @@ message CommandCase {
     uint32 scale = 6;
     bool signed_value = 7;
     string duration = 8;
+    CommandServer server = 9;
 }
 message CommandBinding {
     string selector = 1;
@@ -30,6 +52,7 @@ extend google.protobuf.MessageOptions {
     string ts_codec = 51104; // 未指定なら生成しない。encodeまたはdecode。
     string cpp_codec = 51105; // 未指定なら生成しない。encodeまたはdecode。
     string result_enum = 51106; // 結果番号とメッセージを持つenum。
+    StatusBinding status_binding = 51107;
 }
 extend google.protobuf.FieldOptions {
     uint32 bits = 51201;

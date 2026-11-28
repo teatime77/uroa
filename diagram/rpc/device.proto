@@ -16,6 +16,14 @@ import "options.proto";
 // control-connection.tsのexchangeは現在のBLE/Wi-Fi経路・世代・有限キュー・sequence ACK・取消/期限を所有する。
 // device-connection.tsは型付きサービスフックで機器状態・Receipt・操作世代を検査し、現世代のACK後だけ状態を確定する。
 // 内部STREAM/PINGも生成した送信経路を使う。ローカル購読sensors.streamとは別の操作である。
+// CommandCase.serverはESP32用の受理条件・機能ハンドラー・応答CHを定義する。クライアント既定値は受信制約ではない。
+// serverの値引数はvalue_name/scale（省略時はvalue/scale）で復号する。ARMは任意の受信角度を渡す。
+// channel引数がある操作はStatusBinding.channel_count未満を検査し、不正CHの応答は全体CHとする。
+// その他のchecks不一致はCODE_RANGEで、その操作のecho_channelに従う。省略したwireフィールドは従来どおり無視する。
+// control_rpc.generated.h/.cppはloop()からだけ呼ぶ型付きサービス振分けとStatus作成・IO自発通知を生成する。
+// main.cppは機器・VM・STREAMの機能本体と状態取得、control_session.hは呼出元と停止優先の実行コンテキストを持つ。
+// 通常形式が有効な指令は細部の範囲検査前にheartbeatを更新する。優先STOPの受理・停止順は既存経路に残す。
+// Statusの角度は既存cdegのまま、速度だけ四捨五入した符号付き0.01%をcurrent/targetへ共用する。
 // BLE/Wi-Fiの既存パケット、認証、転送、Snapshot、JPEGの形式は各既存アダプターを維持する。
 // host_type付きmessageは復号後の既存型やローカル所有者の参照であり、通信に直列化しない。
 // host_typeの実体・同一Receipt/Snapshotの所有検査は既存ソースが担当する。
@@ -78,6 +86,7 @@ message StatusPacket {
     option (uroa.ts_codec) = "decode";
     option (uroa.cpp_codec) = "encode";
     option (uroa.result_enum) = "StatusCode";
+    option (uroa.status_binding) = { channel_count: 16 speed_flag: 16 speed_scale: 100 };
     uint32 version = 1 [(uroa.bits) = 8, (uroa.fixed_value) = 1];
     uint32 code = 2 [(uroa.bits) = 8];
     uint32 sequence = 3 [(uroa.bits) = 16];
@@ -261,7 +270,10 @@ service Device {
     rpc Info(Empty) returns (Empty) {
         option (uroa.method_id) = 2;
         option (uroa.api_name) = "device.info";
-        option (uroa.command) = { cases: { opcode: "INFO" } };
+        option (uroa.command) = { cases: {
+            opcode: "INFO"
+            server: { status_only: true echo_channel: true }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -269,7 +281,10 @@ service Device {
     rpc Ping(Empty) returns (Empty) {
         option (uroa.method_id) = 3;
         option (uroa.api_name) = "device.ping";
-        option (uroa.command) = { cases: { opcode: "PING" } };
+        option (uroa.command) = { cases: {
+            opcode: "PING"
+            server: { status_only: true echo_channel: true }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -288,8 +303,14 @@ service Servo {
         option (uroa.api_name) = "servo.arm";
         option (uroa.command) = {
             selector: "mode"
-            cases: { equals: "angle" opcode: "ARM" channel: "channel" constant_value: 9000 }
-            cases: { equals: "speed" opcode: "ARM_SPEED" channel: "channel" }
+            cases: {
+            equals: "angle" opcode: "ARM" channel: "channel" constant_value: 9000
+            server: { handler: "armAngle" value_name: "angle" value_scale: 100 echo_channel: true checks: { field: "duration" max: 10000 } notify_io_error: true }
+        }
+            cases: {
+            equals: "speed" opcode: "ARM_SPEED" channel: "channel"
+            server: { handler: "armSpeed" echo_channel: true checks: { field: "value" equals: 0 } checks: { field: "duration" equals: 0 } notify_io_error: true }
+        }
         };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
@@ -298,7 +319,10 @@ service Servo {
     rpc Move(MoveRequest) returns (Empty) {
         option (uroa.method_id) = 2;
         option (uroa.api_name) = "servo.move";
-        option (uroa.command) = { cases: { opcode: "MOVE" channel: "channel" value: "angle" scale: 100 duration: "duration" } };
+        option (uroa.command) = { cases: {
+            opcode: "MOVE" channel: "channel" value: "angle" scale: 100 duration: "duration"
+            server: { handler: "move" echo_channel: true notify_io_error: true }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -306,7 +330,10 @@ service Servo {
     rpc Speed(SpeedRequest) returns (Empty) {
         option (uroa.method_id) = 3;
         option (uroa.api_name) = "servo.speed";
-        option (uroa.command) = { cases: { opcode: "SET_SPEED" channel: "channel" value: "percent" scale: 100 signed_value: true } };
+        option (uroa.command) = { cases: {
+            opcode: "SET_SPEED" channel: "channel" value: "percent" scale: 100 signed_value: true
+            server: { handler: "speed" echo_channel: true notify_io_error: true checks: { field: "duration" equals: 0 } }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -314,7 +341,10 @@ service Servo {
     rpc Disable(Channel) returns (Empty) {
         option (uroa.method_id) = 4;
         option (uroa.api_name) = "servo.disable";
-        option (uroa.command) = { cases: { opcode: "DISABLE" channel: "channel" } };
+        option (uroa.command) = { cases: {
+            opcode: "DISABLE" channel: "channel"
+            server: { handler: "disable" echo_channel: true }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -322,7 +352,10 @@ service Servo {
     rpc Stop(Empty) returns (Empty) {
         option (uroa.method_id) = 5;
         option (uroa.api_name) = "servo.stop";
-        option (uroa.command) = { cases: { opcode: "STOP" } };
+        option (uroa.command) = { cases: {
+            opcode: "STOP"
+            server: { handler: "stop" }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -341,7 +374,10 @@ service Program {
     rpc Start(ProgramRequest) returns (Empty) {
         option (uroa.method_id) = 2;
         option (uroa.api_name) = "program.start";
-        option (uroa.command) = { cases: { opcode: "VM_START" } };
+        option (uroa.command) = { cases: {
+            opcode: "VM_START"
+            server: { handler: "start" context: true checks: { field: "channel" equals: 255 } checks: { field: "value" equals: 0 } checks: { field: "duration" equals: 0 } }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "initialized";
         option (uroa.io_timeout_ms) = 2500;
@@ -349,7 +385,10 @@ service Program {
     rpc Stop(Empty) returns (Empty) {
         option (uroa.method_id) = 3;
         option (uroa.api_name) = "program.stop";
-        option (uroa.command) = { cases: { opcode: "VM_STOP" } };
+        option (uroa.command) = { cases: {
+            opcode: "VM_STOP"
+            server: { handler: "stop" context: true checks: { field: "channel" equals: 255 } checks: { field: "value" equals: 0 } checks: { field: "duration" equals: 0 } }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -509,7 +548,10 @@ service Control {
     rpc Stream(StreamRate) returns (Empty) {
         option (uroa.method_id) = 1;
         option (uroa.api_name) = "control.stream";
-        option (uroa.command) = { cases: { opcode: "STREAM" value: "rate" } };
+        option (uroa.command) = { cases: {
+            opcode: "STREAM" value: "rate"
+            server: { handler: "stream" checks: { field: "value" one_of: [0, 5, 10, 20] } }
+        } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
