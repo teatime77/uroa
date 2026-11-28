@@ -10,6 +10,12 @@ import "options.proto";
 // 不正形式でもsequenceを応答へ使う。長さ不正はゼロ値とし、優先STOPはProtocol::urgentStopが別途判定する。
 // control-connection.tsは生成したTS codec、uroa_protocol.cpp/main.cppは生成したC++ codec/値型を使う。
 // device-connection.tsがAPIと既存通信を接続し、control-connection.tsが指令のACK・待ち列を扱う。
+// command付きRPCはdevice-control.generated.tsが引数→既存Command・送信・Status結果の変換を生成する。
+// selector/casesは文字列値による分岐。scaleは四捨五入して整数化し、signed_valueだけ2の補数へ変換する。
+// opcode・固定値・既定値・優先度・期限・結果番号は生成元へ集約し、新しいwireヘッダーは追加しない。
+// control-connection.tsのexchangeは現在のBLE/Wi-Fi経路・世代・有限キュー・sequence ACK・取消/期限を所有する。
+// device-connection.tsは型付きサービスフックで機器状態・Receipt・操作世代を検査し、現世代のACK後だけ状態を確定する。
+// 内部STREAM/PINGも生成した送信経路を使う。ローカル購読sensors.streamとは別の操作である。
 // BLE/Wi-Fiの既存パケット、認証、転送、Snapshot、JPEGの形式は各既存アダプターを維持する。
 // host_type付きmessageは復号後の既存型やローカル所有者の参照であり、通信に直列化しない。
 // host_typeの実体・同一Receipt/Snapshotの所有検査は既存ソースが担当する。
@@ -29,17 +35,29 @@ option (uroa.max_pending) = 32;
 // 現行Command v1の操作番号。RPCメソッド番号とは別の既存番号である。
 enum CommandOpcode {
     COMMAND_UNSPECIFIED = 0;
-    ARM = 1;
-    MOVE = 2;
-    STOP = 3;
+    ARM = 1 [(uroa.command_trace) = true];
+    MOVE = 2 [(uroa.command_trace) = true];
+    STOP = 3 [(uroa.command_trace) = true];
     STREAM = 4;
     PING = 5;
     INFO = 6;
-    DISABLE = 7;
-    ARM_SPEED = 8;
-    SET_SPEED = 9;
+    DISABLE = 7 [(uroa.command_trace) = true];
+    ARM_SPEED = 8 [(uroa.command_trace) = true];
+    SET_SPEED = 9 [(uroa.command_trace) = true];
     VM_START = 10;
     VM_STOP = 11;
+}
+
+// 未知の結果番号も復号し、番号を含む機器エラーとして返す。
+enum StatusCode {
+    CODE_OK = 0 [(uroa.result_message) = "成功"];
+    CODE_FORMAT = 1 [(uroa.result_message) = "指令形式が不正（速度制御には対応ファームウェアが必要です）"];
+    CODE_RANGE = 2 [(uroa.result_message) = "範囲外の指令"];
+    CODE_NOT_ARMED = 3 [(uroa.result_message) = "サーボが無効／応答タイムアウト"];
+    CODE_HARDWARE = 4 [(uroa.result_message) = "デバイスが見つかりません"];
+    CODE_BUSY = 5 [(uroa.result_message) = "指令が混雑しています"];
+    CODE_IO_ERROR = 6 [(uroa.result_message) = "I²C通信エラー"];
+    CODE_MODE = 7 [(uroa.result_message) = "角度／速度モードが異なります。無効化してから有効化してください。"];
 }
 
 // valueはSET_SPEEDだけ符号付き0.01%のビット列。角度は0.01度、durationはms。
@@ -50,15 +68,16 @@ message CommandPacket {
     uint32 version = 1 [(uroa.bits) = 8, (uroa.fixed_value) = 1];
     CommandOpcode opcode = 2 [(uroa.bits) = 8, (uroa.min_value) = 1];
     uint32 sequence = 3 [(uroa.bits) = 16];
-    uint32 channel = 4 [(uroa.bits) = 8];
+    uint32 channel = 4 [(uroa.bits) = 8, (uroa.wire_default) = 255];
     uint32 reserved = 5 [(uroa.bits) = 8, (uroa.fixed_value) = 0];
-    uint32 value = 6 [(uroa.bits) = 16];
-    uint32 duration = 7 [(uroa.bits) = 16];
+    uint32 value = 6 [(uroa.bits) = 16, (uroa.wire_default) = 0];
+    uint32 duration = 7 [(uroa.bits) = 16, (uroa.wire_default) = 0];
 }
 message StatusPacket {
     option (uroa.wire_packet) = true;
     option (uroa.ts_codec) = "decode";
     option (uroa.cpp_codec) = "encode";
+    option (uroa.result_enum) = "StatusCode";
     uint32 version = 1 [(uroa.bits) = 8, (uroa.fixed_value) = 1];
     uint32 code = 2 [(uroa.bits) = 8];
     uint32 sequence = 3 [(uroa.bits) = 16];
@@ -242,6 +261,7 @@ service Device {
     rpc Info(Empty) returns (Empty) {
         option (uroa.method_id) = 2;
         option (uroa.api_name) = "device.info";
+        option (uroa.command) = { cases: { opcode: "INFO" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -249,6 +269,7 @@ service Device {
     rpc Ping(Empty) returns (Empty) {
         option (uroa.method_id) = 3;
         option (uroa.api_name) = "device.ping";
+        option (uroa.command) = { cases: { opcode: "PING" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -265,6 +286,11 @@ service Servo {
     rpc Arm(ArmRequest) returns (Empty) {
         option (uroa.method_id) = 1;
         option (uroa.api_name) = "servo.arm";
+        option (uroa.command) = {
+            selector: "mode"
+            cases: { equals: "angle" opcode: "ARM" channel: "channel" constant_value: 9000 }
+            cases: { equals: "speed" opcode: "ARM_SPEED" channel: "channel" }
+        };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -272,6 +298,7 @@ service Servo {
     rpc Move(MoveRequest) returns (Empty) {
         option (uroa.method_id) = 2;
         option (uroa.api_name) = "servo.move";
+        option (uroa.command) = { cases: { opcode: "MOVE" channel: "channel" value: "angle" scale: 100 duration: "duration" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -279,6 +306,7 @@ service Servo {
     rpc Speed(SpeedRequest) returns (Empty) {
         option (uroa.method_id) = 3;
         option (uroa.api_name) = "servo.speed";
+        option (uroa.command) = { cases: { opcode: "SET_SPEED" channel: "channel" value: "percent" scale: 100 signed_value: true } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -286,6 +314,7 @@ service Servo {
     rpc Disable(Channel) returns (Empty) {
         option (uroa.method_id) = 4;
         option (uroa.api_name) = "servo.disable";
+        option (uroa.command) = { cases: { opcode: "DISABLE" channel: "channel" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -293,6 +322,7 @@ service Servo {
     rpc Stop(Empty) returns (Empty) {
         option (uroa.method_id) = 5;
         option (uroa.api_name) = "servo.stop";
+        option (uroa.command) = { cases: { opcode: "STOP" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -311,6 +341,7 @@ service Program {
     rpc Start(ProgramRequest) returns (Empty) {
         option (uroa.method_id) = 2;
         option (uroa.api_name) = "program.start";
+        option (uroa.command) = { cases: { opcode: "VM_START" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "initialized";
         option (uroa.io_timeout_ms) = 2500;
@@ -318,6 +349,7 @@ service Program {
     rpc Stop(Empty) returns (Empty) {
         option (uroa.method_id) = 3;
         option (uroa.api_name) = "program.stop";
+        option (uroa.command) = { cases: { opcode: "VM_STOP" } };
         option (uroa.transport) = "both";
         option (uroa.completion) = "ack";
         option (uroa.io_timeout_ms) = 2500;
@@ -464,5 +496,22 @@ service Sensors {
         option (uroa.api_name) = "sensors.stream";
         option (uroa.transport) = "local";
         option (uroa.subscription) = "owner";
+    }
+}
+
+// 共有STREAMの内部要求。ブロック所有者の購読APIとは分け、公開DeviceRpcCallsへ加えない。
+message StreamRate {
+    uint32 rate = 1 [(uroa.bits) = 16];
+}
+service Control {
+    option (uroa.service_id) = 11;
+    option (uroa.scope) = "internal";
+    rpc Stream(StreamRate) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "control.stream";
+        option (uroa.command) = { cases: { opcode: "STREAM" value: "rate" } };
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
     }
 }

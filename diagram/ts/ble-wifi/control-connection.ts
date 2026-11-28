@@ -7,7 +7,8 @@
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
  * RPCはBLE専用の遅延窓口を用意する。各GATT操作は通常指令と同じ待ち列で直列化する。
  * 操作番号・Command符号化・Status復号/形式検査はdevice.protoから生成する。
- * 値の単位・符号の変換とACK/接続管理は本層。STOP/VM_STOPは進行中の1操作後に優先し、
+ * 要求の単位・符号・優先度・期限・Status結果はdevice-control.generated.tsから渡す。
+ * 本層は現在の経路、世代、ACKと待ち列を所有する。STOP/VM_STOPは進行中の1操作後に優先し、
  * 待ち列は32件まで。満杯時のSTOPは未開始の通常操作を1件取り消して場所を確保する。
  * 全件が優先操作なら混雑を返す。GATTを並行実行せず、切断時に未開始操作を失効させる。
  */
@@ -15,9 +16,10 @@ import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from 
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
 import type { RpcChannel } from "./rpc-protocol";
-import { CommandOpcode as ControlOpcode, packetLayouts, rpcMaxPending, type StatusPacket } from "./device-rpc.generated";
-import { decodeStatusPacket, encodeCommandPacket } from "./device-rpc-codec.generated";
-import { RpcCode, RpcError } from "./rpc-client";
+import { packetLayouts, rpcMaxPending, type StatusPacket } from "./device-rpc.generated";
+import { decodeStatusPacket } from "./device-rpc-codec.generated";
+import { createInternalControlCalls, controlMaxSequence } from "./device-control.generated";
+import { RpcCode, RpcError, type RpcCallOptions } from "./rpc-client";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
 export type ControlPacketKind = "status" | "telemetry";
@@ -62,34 +64,19 @@ export interface ControlTransport {
     subscribePackets(listener: (data: DataView | undefined, kind?: ControlPacketKind) => void): () => void;
 }
 
-/** diagram-controlのProtocol::Opと共有する番号。VM操作の利用条件はdevice-connection.tsが検査する。 */
-export { CommandOpcode as ControlOpcode } from "./device-rpc.generated";
+/** 生成した操作から渡す配送条件。新しい経路やキューは作らない。 */
+export interface ControlExchangePolicy {
+    priority: boolean;
+    ioTimeoutMs: number;
+}
 
-/** Command v1は10バイト、little endian。Status v1は12バイトでsequenceをACKへ使う。 */
-export const ControlCommand = {
-    byteLength: packetLayouts.CommandPacket.byteLength,
-    version: packetLayouts.CommandPacket.fixed.version,
-    allChannels: 255,
-    maxSequence: 65535,
-    offset: packetLayouts.CommandPacket.offset,
-} as const;
-
-/**
- * 通常指令の結果番号を利用者向けメッセージへ対応付ける一覧。
- */
-const errors = ["成功", "指令形式が不正（速度制御には対応ファームウェアが必要です）", "範囲外の指令", "サーボが無効／応答タイムアウト", "デバイスが見つかりません", "指令が混雑しています", "I²C通信エラー", "角度／速度モードが異なります。無効化してから有効化してください。"];
-
-/**
- * サーボ指令の操作番号を診断用の操作名へ対応付ける表。
- */
-const servoOperations: Partial<Record<ControlOpcode, string>> = {
-    [ControlOpcode.ARM]: "ARM",
-    [ControlOpcode.MOVE]: "MOVE",
-    [ControlOpcode.STOP]: "STOP",
-    [ControlOpcode.DISABLE]: "DISABLE",
-    [ControlOpcode.ARM_SPEED]: "ARM_SPEED",
-    [ControlOpcode.SET_SPEED]: "SET_SPEED",
-};
+/** 機能側の状態管理。ACKと書込みが完了し、取消・世代を照合した後だけacceptedを呼ぶ。 */
+export interface ControlCallContext {
+    skip?: boolean;
+    isCurrent?: () => boolean;
+    accepted?: () => void;
+    failed?: (error: unknown) => void;
+}
 
 /** 通知は形式検証後に渡す。telemetryの登録件数・順序の照合とブロック反映は呼出元が行う。 */
 interface ControlCallbacks {
@@ -116,7 +103,7 @@ interface PendingCommand {
     /**
      * 対応する指令の受付結果待ちを成功として完了する。
      */
-    resolve(): void;
+    resolve(status: StatusPacket): void;
     /**
      * 対応する指令の受付結果待ちを失敗として完了する。
      */
@@ -134,6 +121,8 @@ interface PendingCommand {
  * 転送全体ではなく各フレームを並べ、PING・STOPを間に処理できるようにする。
  */
 export class ControlConnection {
+    /** 共有センサー通知の内部要求。公開の所有者購読APIとは分ける。 */
+    readonly internalCalls = createInternalControlCalls(this);
     /**
      * 現在採用している経路別の通信窓口。
      */
@@ -526,13 +515,7 @@ export class ControlConnection {
             if (pending) {
                 clearTimeout(pending.timer);
                 this.pending.delete(sequence);
-                const code = status.code;
-                if (code) {
-                    pending.reject(new RpcError(RpcCode.Device, errors[code] ?? `機器エラー ${code}`, code));
-                }
-                else {
-                    pending.resolve();
-                }
+                pending.resolve(status);
             }
         }
         catch (error) {
@@ -541,32 +524,32 @@ export class ControlConnection {
     }
 
     /**
-     * 1指令ずつ書込みと最大2.5秒のACKを待つ。SET_SPEEDのvalueだけ符号付き0.01%。
-     * 書込み前後で接続世代と操作の有効性を照合する。ACK期限超過では接続終了を要求する。
-     * ネイティブ書込みが未完了でも、ACK拒否によって共通待ち列の待機を終了する。
+     * 生成した要求を現在の経路へ送り、sequence一致のStatusを生成した結果処理へ渡す。
+     * 書込み完了と機器ACKは独立して待ち、ACKエラーなら未完了Writeを待たず拒否できる。
+     * signal・呼出元/機能/接続の世代は開始前、書込み直前、完了後に共通検査する。
+     * 開始済みのネイティブWriteや機器の処理は取り消せず、ACK待ちは応答または期限まで待つ。
+     * 期限超過は現接続の終了を要求する。STOP優先とキュー上限はenqueue()だけが管理する。
      */
-    send(opcode: ControlOpcode, value = 0, channel: number = ControlCommand.allChannels, duration = 0,
-        isCurrent = () => true, accepted?: () => void): Promise<void> {
+    exchange<Result>(encode: (sequence: number) => Uint8Array, result: (status: StatusPacket) => Result,
+        policy: ControlExchangePolicy, context: ControlCallContext, options?: RpcCallOptions,
+        diagnostic?: { operation: string; channel: number; value: number; duration: number }): Promise<Result> {
         const generation = this.generation;
         const transport = this.transport;
         const check = () => {
+            options?.signal?.throwIfAborted();
             if (generation !== this.generation || !transport || transport !== this.transport || !transport.connected) {
                 throw new RpcError(RpcCode.Unavailable, "機器の接続が切れました。");
             }
-            if (!isCurrent()) {
+            if (options?.isCurrent?.() === false || context.isCurrent?.() === false) {
                 throw new DOMException("機器操作を取り消しました。", "AbortError");
             }
         };
         return this.enqueue(async () => {
             check();
-            const sequence = this.sequence = this.sequence % ControlCommand.maxSequence + 1;
-            const bytes = encodeCommandPacket({
-                version: ControlCommand.version, opcode, sequence, channel, reserved: packetLayouts.CommandPacket.fixed.reserved,
-                value: opcode === ControlOpcode.SET_SPEED ? value & 0xFFFF : value, duration,
-            });
-            const operation = servoOperations[opcode];
-            const details = { operation, sequence, channel, value, duration, transport: transport!.kind };
-            const ack = new Promise<void>((resolve, reject) => {
+            const sequence = this.sequence = this.sequence % controlMaxSequence + 1;
+            const bytes = encode(sequence);
+            const details = diagnostic ? { ...diagnostic, sequence, transport: transport!.kind } : undefined;
+            const ack = new Promise<Result>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     this.pending.delete(sequence);
                     const error = new RpcError(RpcCode.DeadlineExceeded, "ESP32の応答がありません。再接続してください。");
@@ -574,15 +557,21 @@ export class ControlConnection {
                     if (generation === this.generation) {
                         this.callbacks.failed(error);
                     }
-                }, 2500);
-                this.pending.set(sequence, { resolve, reject, timer });
+                }, policy.ioTimeoutMs);
+                this.pending.set(sequence, { resolve: status => {
+                    try {
+                        resolve(result(status));
+                    }
+                    catch (error) {
+                        reject(error);
+                    }
+                }, reject, timer });
             });
             void ack.catch(() => {
             });
-            if (operation) {
+            if (details) {
                 console.log("Device servo send", details);
             }
-            // 同期例外もACK待機を解除する。通信API完了と機器ACKは独立して待つ。
             const write = Promise.resolve().then(() => {
                 check();
                 return transport!.write(bytes);
@@ -595,29 +584,31 @@ export class ControlConnection {
                 }
                 throw error;
             });
+            let response: Result;
             try {
-                await Promise.all([write, ack]);
+                [response] = await Promise.all([ack, write]);
             }
             catch (error) {
-                if (operation) {
+                if (details) {
                     console.error("Device servo error", details, error);
                 }
                 throw error;
             }
             check();
-            if (operation) {
+            if (details) {
                 console.log("Device servo ACK", details);
             }
-            accepted?.();
-        }, opcode === ControlOpcode.STOP || opcode === ControlOpcode.VM_STOP);
+            context.accepted?.();
+            return response;
+        }, policy.priority);
     }
 
-    /** 1.5秒周期で共通待ち列へPINGを追加する。経路交換・切断ではタイマーを解除する。 */
-    startHeartbeat(): void {
+    /** 所有者が渡す生成PINGを1.5秒周期で共通待ち列へ送る。経路交換・切断ではタイマーを解除する。 */
+    startHeartbeat(ping: () => Promise<void>): void {
         this.stopHeartbeat();
         const generation = this.generation;
         this.heartbeat = setInterval(() => {
-            void this.send(ControlOpcode.PING).catch(error => {
+            void ping().catch(error => {
                 if (generation === this.generation) {
                     this.callbacks.failed(error instanceof Error ? error : new Error("機器の応答がありません。"));
                 }

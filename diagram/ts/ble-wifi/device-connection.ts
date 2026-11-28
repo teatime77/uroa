@@ -1,6 +1,7 @@
 /**
  * diagramの機器接続UI・機器登録・サーボ状態とPythonプログラムの通信窓口をまとめる。
- * 呼出元はdevice-rpc.tsの型付きRPC APIを使い、本ファイルが既存処理へ対応付ける。
+ * 呼出元はdevice-rpc.tsの型付きRPC APIを使う。通常指令は生成した呼出し表へサービス単位で状態検査を接続する。
+ * opcode・単位・Status結果の対応はdevice.proto、配送・ACKはControlConnectionを参照する。
  * 経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
  * 通常StatusはControlConnectionが生成codecで復号・検査した値を使い、生バイトの再解釈を行わない。
  */
@@ -13,15 +14,16 @@ import { RobotWifiDialog } from "./robot-wifi-dialog";
 import { setCameraProvider } from "../camera/camera-feed";
 import { theEditor } from "../json-util";
 import { DeviceInfoMaxLength, type DeviceTelemetry } from "./device-telemetry";
-import { ControlConnection, ControlOpcode, ControlCommand } from "./control-connection";
+import { ControlConnection, type ControlCallContext } from "./control-connection";
+import { createControlCalls, type ServoControlInvocation, type ProgramControlInvocation } from "./device-control.generated";
 import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-transport";
 import { checkBytecodeTransfer, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
 import type { RpcChannel } from "./rpc-protocol";
 import { RpcTransport } from "./rpc-protocol";
-import { RpcClient, RpcCode, RpcError, rpcCurrent, rpcSignal } from "./rpc-client";
+import { RpcClient, RpcCode, RpcError, rpcSignal } from "./rpc-client";
 import type { DeviceRpcCalls, DeviceRpcClient, DeviceRpcSubscriptions, RemoteRpcCalls } from "./device-rpc";
-import type { StatusPacket } from "./device-rpc.generated";
+import { StatusCode, type StatusPacket } from "./device-rpc.generated";
 
 // GATT service shared with esp32/app/diagram-control.
 /**
@@ -230,9 +232,15 @@ export class DeviceConnection {
     private actuators : FunctionBlock[] = [];
 
     /**
-     * 全通信の呼出し・購読API。既存の待ち列へ新たな直列化を重ねず、STOP・取消・ユーザー操作を維持する。
-     * 認証と制御権はconnection/wifi、PINGと通知の配送は既存の共通通信層が管理する。
+     * 通常指令の生成表へServo・Program単位で機能状態のフックを接続する。
+     * 数値変換・送信・結果処理は生成側、ACK・世代・待ち列はControlConnectionが所有する。
      */
+    private readonly commandCalls = createControlCalls(this.control, {
+        Servo: invocation => this.prepareServoCommand(invocation),
+        Program: invocation => this.prepareProgramCommand(invocation),
+    });
+
+    /** 通常指令は生成した表、未移行の転送・設定等は既存アダプターへ接続する。 */
     readonly rpc: DeviceRpcClient = new RpcClient<DeviceRpcCalls, DeviceRpcSubscriptions>({
         "connection.connect": async () => {
             await this.connect();
@@ -242,21 +250,8 @@ export class DeviceConnection {
         },
         "connection.disconnect": request => this.disconnect(request.reason),
         "device.register": () => this.sendDeviceInfo(),
-        "device.info": () => this.sendControl(ControlOpcode.INFO),
-        "device.ping": () => this.sendControl(ControlOpcode.PING),
-        "servo.arm": (request, options) => {
-            if (request.mode !== "angle" && request.mode !== "speed") {
-                throw new RpcError(RpcCode.InvalidArgument, "サーボのモードが不正です。");
-            }
-            return this.armServo(request.channel, rpcCurrent(options), request.mode);
-        },
-        "servo.move": (request, options) => this.moveAngle(request.channel, request.angle, request.duration, rpcCurrent(options)),
-        "servo.speed": (request, options) => this.setSpeed(request.channel, request.percent, rpcCurrent(options)),
-        "servo.disable": request => this.disableServo(request.channel),
-        "servo.stop": () => this.stopServos(),
+        ...this.commandCalls,
         "program.upload": (request, options) => this.sendBytecode(request.code, options?.signal, request.deployment),
-        "program.start": (request, options) => this.startBytecode(request.receipt, rpcCurrent(options)),
-        "program.stop": () => this.stopBytecode(),
         "debug.breakpoints": (request, options) => this.sendBreakpoints(request.receipt, request.pcs, options?.signal, request.stepPcs),
         "debug.observe": (request, options) => this.observeDeployment(request.receipt, options?.signal),
         "debug.execute": (request, options) => {
@@ -354,95 +349,77 @@ export class DeviceConnection {
             throw new RpcError(RpcCode.Unavailable, "機器接続ブロックでESP32へ接続してください。");
         }
         if (!this.state.pcaAvailable) {
-            throw new RpcError(RpcCode.Device, "PCA9685が見つかりません。", 4);
+            throw new RpcError(RpcCode.Device, "PCA9685が見つかりません。", StatusCode.CODE_HARDWARE);
         }
     }
 
-    /**
-     * 指定CHを角度90度または速度0%で有効化し、現世代のACKだけを記録する。
-     *
-     * @param channel 操作対象のサーボCH番号。
-     */
-    private async armServo(channel: number, isCurrent = () => true, mode: ServoMode = "angle"): Promise<void> {
-        this.checkChannel(channel);
-        this.checkServoConnection();
-        const version = ++this.servoVersions[channel];
-        await this.sendControl(mode === "speed" ? ControlOpcode.ARM_SPEED : ControlOpcode.ARM, mode === "speed" ? 0 : 9000, channel, 0,
-            () => version === this.servoVersions[channel] && isCurrent(),
-            () => { this.armedChannels.set(channel, mode); this.notify(); });
-    }
-
-    /**
-     * 度単位の角度指令を送る。受付範囲は0〜180度（両端を含む）。
-     * diagram-control/include/config.hのMIN_ANGLE/MAX_ANGLEと合わせる。
-     * hardware/servo.tsは同じ範囲を表示し、ファームウェアの共有サーボドライバーでも検査する。
-     */
-    private async moveAngle(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
-        this.checkChannel(channel);
-        this.checkServoConnection();
-        if (!Number.isFinite(angle) || angle < 0 || angle > 180) {
-            throw new RpcError(RpcCode.InvalidArgument, "角度は0～180°で指定してください。");
-        }
-        if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
-        if (!this.isServoArmed(channel, "angle")) throw new Error("先に角度モードで90°の有効化を行ってください。");
-        const version = this.servoVersions[channel];
-        await this.sendControl(ControlOpcode.MOVE, Math.round(angle * 100), channel, duration,
-            () => version === this.servoVersions[channel] && this.isServoArmed(channel, "angle") && isCurrent());
-    }
-
-    /** 速度は方向付きの指令%。0%はPWMを維持して中立パルスを送る。 */
-    private async setSpeed(channel: number, percent: number, isCurrent = () => true): Promise<void> {
-        this.checkChannel(channel);
-        this.checkServoConnection();
-        if (!Number.isFinite(percent) || percent < -100 || percent > 100) {
-            throw new Error("速度は−100～100%で指定してください。");
-        }
-        if (!this.isServoArmed(channel, "speed")) {
-            throw new Error("先に速度モードで0%の有効化を行ってください。");
-        }
-        const version = this.servoVersions[channel];
-        await this.sendControl(ControlOpcode.SET_SPEED, Math.round(percent * 100), channel, 0,
-            () => version === this.servoVersions[channel] && this.isServoArmed(channel, "speed") && isCurrent());
-    }
-
-    /**
-     * 指定CHの有効化状態を失効させ、PWM無効化を要求する。
-     *
-     * @param channel 操作対象のサーボCH番号。
-     */
-    private async disableServo(channel: number): Promise<void> {
-        this.checkChannel(channel);
-        // Cancel queued ARM/MOVE before placing DISABLE behind any in-flight write.
-        this.servoVersions[channel]++;
-        this.armedChannels.delete(channel);
-        this.notify();
-        if (this.state.phase !== "connected") return;
+    /** 停止操作の未接続時の省略と、現接続での失敗時だけ閉じる処理を共用する。 */
+    private stopContext(message: string): ControlCallContext {
         const generation = this.generation;
-        try {
-            await this.sendControl(ControlOpcode.DISABLE, 0, channel);
-        }
-        catch (error) {
-            if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
-            throw error;
-        }
+        return {
+            skip: this.state.phase !== "connected",
+            failed: () => {
+                if (generation === this.generation) {
+                    this.close("error", message);
+                }
+            },
+        };
     }
 
     /**
-     * 全CHの操作世代を失効させ、通常経路で全サーボ停止を要求する。
+     * サーボの機能状態だけを検査・更新する。要求の数値変換と送信は生成呼出し表が担当する。
+     * armのmodeは生成側のselectorで検査済み。角度は0〜180度、移動時間0〜10000ms、速度−100〜100%。
+     * 範囲はdiagram-control/include/config.hと共有ドライバーに合わせる。有効化は現世代のACK後だけ記録する。
      */
-    private async stopServos(): Promise<void> {
-        this.debugger?.invalidateSnapshot();
-        this.resetServos();
-        this.notify();
-        if (this.state.phase !== "connected") return;
-        const generation = this.generation;
-        try {
-            await this.sendControl(ControlOpcode.STOP);
+    private prepareServoCommand(invocation: ServoControlInvocation): ControlCallContext {
+        if (invocation.name === "servo.stop") {
+            this.debugger?.invalidateSnapshot();
+            this.resetServos();
+            this.notify();
+            return this.stopContext("サーボの停止を確認できません。再接続してください。");
         }
-        catch (error) {
-            if (generation === this.generation) this.close("error", "サーボの停止を確認できません。再接続してください。");
-            throw error;
+        const channel = invocation.request.channel;
+        this.checkChannel(channel);
+        if (invocation.name === "servo.disable") {
+            this.servoVersions[channel]++;
+            this.armedChannels.delete(channel);
+            this.notify();
+            return this.stopContext("サーボの停止を確認できません。再接続してください。");
         }
+        this.checkServoConnection();
+        if (invocation.name === "servo.arm") {
+            const mode = invocation.request.mode as ServoMode;
+            const version = ++this.servoVersions[channel];
+            return {
+                isCurrent: () => version === this.servoVersions[channel],
+                accepted: () => {
+                    this.armedChannels.set(channel, mode);
+                    this.notify();
+                },
+            };
+        }
+        const mode = invocation.name === "servo.move" ? "angle" : "speed";
+        if (invocation.name === "servo.move") {
+            const angle = invocation.request.angle;
+            const duration = invocation.request.duration;
+            if (!Number.isFinite(angle) || angle < 0 || angle > 180) {
+                throw new RpcError(RpcCode.InvalidArgument, "角度は0～180°で指定してください。");
+            }
+            if (!Number.isInteger(duration) || duration < 0 || duration > 10000) {
+                throw new Error("移動時間は0～10000msの整数で指定してください。");
+            }
+        }
+        else {
+            const percent = invocation.request.percent;
+            if (!Number.isFinite(percent) || percent < -100 || percent > 100) {
+                throw new Error("速度は−100～100%で指定してください。");
+            }
+        }
+        if (!this.isServoArmed(channel, mode)) {
+            throw new Error(mode === "angle" ? "先に角度モードで90°の有効化を行ってください。" : "先に速度モードで0%の有効化を行ってください。");
+        }
+        const version = this.servoVersions[channel];
+        return { isCurrent: () => version === this.servoVersions[channel] && this.isServoArmed(channel, mode) };
     }
 
     /**
@@ -500,7 +477,7 @@ export class DeviceConnection {
         if (rate === this.requestedRate) return;
         this.requestedRate = rate;
         const generation = this.generation;
-        void this.sendControl(ControlOpcode.STREAM, rate).catch(error => {
+        void this.control.internalCalls["control.stream"]({ rate }).catch(error => {
             if (generation === this.generation) this.close("error", error.message);
         });
     }
@@ -534,7 +511,7 @@ export class DeviceConnection {
             this.servoVersions[channel]++;
             this.notify();
         }
-        const channelStopped = data.code === 3 && channel < 16 && this.armedChannels.delete(channel);
+        const channelStopped = data.code === StatusCode.CODE_NOT_ARMED && channel < 16 && this.armedChannels.delete(channel);
         if (channelStopped) this.servoVersions[channel]++;
         if (stopped || channelStopped || this.state.pcaAvailable !== pcaAvailable || this.state.imuAvailable !== imuAvailable || this.state.streaming !== streaming) {
             this.state = { ...this.state, pcaAvailable, imuAvailable, streaming };
@@ -740,7 +717,7 @@ export class DeviceConnection {
             this.control.receive(initialStatus, "status");
             check();
             stage = "INFO応答確認";
-            await this.sendControl(ControlOpcode.INFO); // INFO ACK confirms application readiness, not motion completion.
+            await this.commandCalls["device.info"](); // INFO ACK confirms application readiness, not motion completion.
             check();
             stage = "機器情報登録";
             await this.sendDeviceInfo();
@@ -748,7 +725,7 @@ export class DeviceConnection {
             clearTimeout(this.connectTimer); this.connectTimer = undefined;
             this.publish("connected", selected.name || "名前のない機器");
             this.updateStream();
-            this.control.startHeartbeat();
+            this.control.startHeartbeat(() => this.commandCalls["device.ping"]());
         } catch (error) {
             if (this.generation !== generation) return;
             const name = error instanceof Error ? error.name : "";
@@ -778,8 +755,8 @@ export class DeviceConnection {
             this.resetDebugger();
             this.provisioning = true;
             this.control.stopHeartbeat();
-            await this.stopServos();
-            await this.sendControl(ControlOpcode.STREAM, 0);
+            await this.commandCalls["servo.stop"]();
+            await this.control.internalCalls["control.stream"]({ rate: 0 });
             this.requestedRate = 0;
             const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
             const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
@@ -795,7 +772,7 @@ export class DeviceConnection {
                     this.provisioning = false;
                     if (!this.closing && this.device?.gatt?.connected && this.state.phase === "connected") {
                         this.updateStream();
-                        this.control.startHeartbeat();
+                        this.control.startHeartbeat(() => this.commandCalls["device.ping"]());
                     }
                 });
             dialog.open();
@@ -804,7 +781,7 @@ export class DeviceConnection {
             this.provisioning = false;
             if (this.device?.gatt?.connected && this.state.phase === "connected") {
                 this.updateStream();
-                this.control.startHeartbeat();
+                this.control.startHeartbeat(() => this.commandCalls["device.ping"]());
             }
             if (generation === this.generation) { this.state = { ...this.state, message: "Wi-Fi設定を開けません。対応するファームウェアとBLE接続を確認してください。" }; this.notify(); }
         }
@@ -839,7 +816,7 @@ export class DeviceConnection {
             this.control.bind(wifi);
             wifi.onLost = message => { if (this.generation === generation) this.close("error", message); };
             this.state = { phase: "connecting", deviceName: actual.name, transport: "wifi", message: "", pcaAvailable: false, imuAvailable: false, streaming: false };
-            await this.sendControl(ControlOpcode.INFO);
+            await this.commandCalls["device.info"]();
             signal.throwIfAborted();
             if (generation !== this.generation) throw new Error("接続を取り消しました。");
             // Wi-Fiでも現在の図を登録し、BLE接続時点の一覧だけに依存しない。
@@ -852,19 +829,13 @@ export class DeviceConnection {
             this.provisioning = false;
             if (actual.camera) setCameraProvider(cameraSignal => this.rpc.call("camera.capture", { signal: cameraSignal }));
             this.updateStream();
-            this.control.startHeartbeat();
+            this.control.startHeartbeat(() => this.commandCalls["device.ping"]());
         } catch (error) {
             wifi.close();
             if (this.wifi === wifi) this.close("error", "Wi-Fiの制御接続を確認できません。再接続してください。");
             else { this.state = { ...this.state, message: originalMessage }; this.notify(); }
             throw error;
         }
-    }
-
-    /** 通常指令は通信経路を選別せず、ACK照合と共通待ち列を持つ層へ渡す。 */
-    private sendControl(opcode: ControlOpcode, value = 0, channel: number = ControlCommand.allChannels, duration = 0,
-        isCurrent = () => true, accepted?: () => void): Promise<void> {
-        return this.control.send(opcode, value, channel, duration, isCurrent, accepted);
     }
 
     /** バイナリ全体を現在のBLE／Wi-Fiで分割転送し、ESP32の検証・RAM保持の完了を待つ。
@@ -1078,38 +1049,25 @@ export class DeviceConnection {
         }
     }
 
-    /** 保持済みコードを先頭から実行する。通信形式とPythonBlockとの分担はpython-block.tsを参照。
-     * 同じ接続・最後の転送だけを許し、キュー待機中の上書き・取消も書込み直前に検査する。
-     * ACKはVM初期化の成否までを表し、HALT・実行時エラーはdebug.stateのEventで確認する。
+    /**
+     * 保持済みコードの所有Receipt・準備状態を検査する。VM開始ACKは初期化までで、実行終了はdebug.stateで確認する。
+     * 実際のVM指令は生成呼出し表が送る。上書き・取消・接続変更は共通exchangeの直前・完了後にも照合する。
      */
-    private async startBytecode(receipt: BytecodeReceipt, isCurrent = () => true): Promise<void> {
-        const current = () => isCurrent() && this.bytecodeReceipt === receipt && !this.bytecodeSending && !this.debuggerSending
+    private prepareProgramCommand(invocation: ProgramControlInvocation): ControlCallContext {
+        if (invocation.name === "program.stop") {
+            this.debugger?.invalidateSnapshot();
+            this.resetServos();
+            this.notify();
+            return this.stopContext("VMの停止を確認できません。再接続してください。");
+        }
+        const receipt = invocation.request.receipt;
+        const current = () => this.bytecodeReceipt === receipt && !this.bytecodeSending && !this.debuggerSending
             && !this.provisioning && this.state.phase === "connected";
         if (!current()) {
             throw new Error("現在のESP32へPythonを送信してから開始してください。");
         }
         this.debugger?.invalidateSnapshot();
-        await this.sendControl(ControlOpcode.VM_START, 0, ControlCommand.allChannels, 0, current);
-    }
-
-    /** VMとその所有する機器を停止する。保持コードは残す。全体STOPは既存のstopServos()も使う。 */
-    private async stopBytecode(): Promise<void> {
-        this.debugger?.invalidateSnapshot();
-        this.resetServos();
-        this.notify();
-        if (this.state.phase !== "connected") {
-            return;
-        }
-        const generation = this.generation;
-        try {
-            await this.sendControl(ControlOpcode.VM_STOP);
-        }
-        catch (error) {
-            if (generation === this.generation) {
-                this.close("error", "VMの停止を確認できません。再接続してください。");
-            }
-            throw error;
-        }
+        return { isCurrent: current };
     }
 
     /** 両経路で現在の図の一覧を送り、同じ接続の書込み完了後に通知の受信先を更新する。 */

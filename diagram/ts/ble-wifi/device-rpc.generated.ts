@@ -32,7 +32,7 @@ export const rpcApiVersion = 1;
 
 export const rpcMaxPending = 32;
 
-export const rpcSchemaFingerprint = "96abe482f3caf69b9da8c28e3bea8dd753a5b1787a0d944c45a0d635e1ab6dc6";
+export const rpcSchemaFingerprint = "0689de5820168058524a9dfa6ac952941e4a441ae08fb7dd967838c6e53cd10c";
 
 
 
@@ -49,6 +49,17 @@ export enum CommandOpcode {
     SET_SPEED = 9,
     VM_START = 10,
     VM_STOP = 11,
+}
+
+export enum StatusCode {
+    CODE_OK = 0,
+    CODE_FORMAT = 1,
+    CODE_RANGE = 2,
+    CODE_NOT_ARMED = 3,
+    CODE_HARDWARE = 4,
+    CODE_BUSY = 5,
+    CODE_IO_ERROR = 6,
+    CODE_MODE = 7,
 }
 
 /** device.protoのCommandPacketから生成した値型。 */
@@ -230,6 +241,11 @@ export interface RequestId {
     id: number;
 }
 
+/** device.protoのStreamRateから生成した値型。 */
+export interface StreamRate {
+    rate: number;
+}
+
 export interface DeviceRpcCalls {
     /** Connection.Connect: connectedまで。 */
     "connection.connect": (options?: RpcCallOptions) => Promise<Empty>;
@@ -292,6 +308,11 @@ export interface RemoteRpcCalls {
     "request.acknowledge": (request: RequestId, options?: RpcCallOptions) => Promise<Empty>;
     /** RemoteSession.End: unregisteredまで。 */
     "registry.end": (options?: RpcCallOptions) => Promise<Empty>;
+}
+
+export interface InternalControlRpcCalls {
+    /** Control.Stream: ackまで。 */
+    "control.stream": (request: StreamRate, options?: RpcCallOptions) => Promise<Empty>;
 }
 
 export interface DeviceRpcSubscriptions {
@@ -368,6 +389,7 @@ export const packetLayouts = {
                 "signed": false,
                 "minimum": 0,
                 "maximum": 255,
+                "default": 255,
                 "min": 0
             },
             {
@@ -387,6 +409,7 @@ export const packetLayouts = {
                 "signed": false,
                 "minimum": 0,
                 "maximum": 65535,
+                "default": 0,
                 "min": 0
             },
             {
@@ -396,6 +419,7 @@ export const packetLayouts = {
                 "signed": false,
                 "minimum": 0,
                 "maximum": 65535,
+                "default": 0,
                 "min": 0
             }
         ],
@@ -1149,6 +1173,16 @@ export const rpcMessages = {
             "bits": 32,
             "maxLength": 0
         }
+    ],
+    "StreamRate": [
+        {
+            "name": "rate",
+            "type": "uint32",
+            "repeated": false,
+            "optional": false,
+            "bits": 16,
+            "maxLength": 0
+        }
     ]
 } as const;
 
@@ -1219,7 +1253,14 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "Empty",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "INFO"
+                }
+            ]
+        }
     },
     "device.ping": {
         "name": "device.ping",
@@ -1236,7 +1277,14 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "Empty",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "PING"
+                }
+            ]
+        }
     },
     "device.state": {
         "name": "device.state",
@@ -1270,7 +1318,23 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "ArmRequest",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "selector": "mode",
+            "cases": [
+                {
+                    "equals": "angle",
+                    "opcode": "ARM",
+                    "channel": "channel",
+                    "constant_value": 9000
+                },
+                {
+                    "equals": "speed",
+                    "opcode": "ARM_SPEED",
+                    "channel": "channel"
+                }
+            ]
+        }
     },
     "servo.move": {
         "name": "servo.move",
@@ -1287,7 +1351,18 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "MoveRequest",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "MOVE",
+                    "channel": "channel",
+                    "value": "angle",
+                    "scale": 100,
+                    "duration": "duration"
+                }
+            ]
+        }
     },
     "servo.speed": {
         "name": "servo.speed",
@@ -1304,7 +1379,18 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "SpeedRequest",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "SET_SPEED",
+                    "channel": "channel",
+                    "value": "percent",
+                    "scale": 100,
+                    "signed_value": true
+                }
+            ]
+        }
     },
     "servo.disable": {
         "name": "servo.disable",
@@ -1321,7 +1407,15 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "Channel",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "DISABLE",
+                    "channel": "channel"
+                }
+            ]
+        }
     },
     "servo.stop": {
         "name": "servo.stop",
@@ -1338,7 +1432,14 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "Empty",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "STOP"
+                }
+            ]
+        }
     },
     "program.upload": {
         "name": "program.upload",
@@ -1372,7 +1473,14 @@ export const rpcMethods = {
         "completion": "initialized",
         "ioTimeoutMs": 2500,
         "request": "ProgramRequest",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "VM_START"
+                }
+            ]
+        }
     },
     "program.stop": {
         "name": "program.stop",
@@ -1389,7 +1497,14 @@ export const rpcMethods = {
         "completion": "ack",
         "ioTimeoutMs": 2500,
         "request": "Empty",
-        "response": "Empty"
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "VM_STOP"
+                }
+            ]
+        }
     },
     "debug.breakpoints": {
         "name": "debug.breakpoints",
@@ -1696,6 +1811,31 @@ export const rpcMethods = {
         "ioTimeoutMs": 0,
         "request": "SensorOwner",
         "response": "SensorSample"
+    },
+    "control.stream": {
+        "name": "control.stream",
+        "service": "Control",
+        "method": "Stream",
+        "serviceId": 11,
+        "methodId": 1,
+        "transport": "both",
+        "scope": "internal",
+        "subscription": "",
+        "hasRequest": true,
+        "synchronous": false,
+        "priority": false,
+        "completion": "ack",
+        "ioTimeoutMs": 2500,
+        "request": "StreamRate",
+        "response": "Empty",
+        "command": {
+            "cases": [
+                {
+                    "opcode": "STREAM",
+                    "value": "rate"
+                }
+            ]
+        }
     }
 } as const;
 

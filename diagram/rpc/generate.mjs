@@ -4,6 +4,8 @@
  * TypeScriptのホスト型は既存の復号済み値と所有参照を保ち、wire_packetだけ固定長codecの対象にする。
  * 未対応の型・属性不足・番号重複は生成前に拒否する。--checkは書き込まず成果物の一致を検査する。
  * codecは各messageのts_codec/cpp_codec方向だけを生成し、未使用の逆方向は出力しない。
+ * command付きRPCは宣言的な分岐・フィールド参照・倍率から通常指令のクライアントを生成する。
+ * 操作ごとのJavaScript実装文字列は持たず、機能状態は生成したサービス型のフックへ委譲する。
  * 固定値・enum・下限は通常の形式検査へ生成する。C++復号は値を保持し、検査は別関数とする。
  * 既定はWebだけを生成する。--esp32で隣接ESP32のヘッダー・実装も更新・照合する。
  */
@@ -36,6 +38,14 @@ const services = schema.nestedArray.filter(item => item instanceof protobuf.Serv
 /** 独自オプションを名前で読む。明示値がない場合だけ共通の既定値を使う。 */
 function option(item, name, fallback) {
     return item.options?.[`(uroa.${name})`] ?? fallback;
+}
+
+/** protobufjsが保持するaggregate optionを読む。繰返し宣言は曖昧に結合せず拒否する。 */
+function aggregateOption(item, name) {
+    const key = `(uroa.${name})`;
+    const values = (item.parsedOptions ?? []).filter(entry => Object.hasOwn(entry, key));
+    requireCondition(values.length <= 1, `複数の${name}指定: ${item.fullName}`);
+    return values[0]?.[key];
 }
 
 /** 型や属性の不足を見逃さず、生成元の名前を含むエラーにする。 */
@@ -103,12 +113,17 @@ for (const message of messages) {
         result.minimum = result.signed ? -(2 ** (bits - 1)) : 0;
         result.maximum = 2 ** (bits - (result.signed ? 1 : 0)) - 1;
         result.fixed = option(field, "fixed_value");
+        result.default = option(field, "wire_default");
         result.min = option(field, "min_value", result.minimum);
         requireCondition(Number.isInteger(result.min) && result.min >= result.minimum && result.min <= result.maximum,
             `受理下限が不正: ${field.fullName}`);
         if (result.fixed !== undefined) {
             requireCondition(Number.isInteger(result.fixed) && result.fixed >= result.min && result.fixed <= result.maximum,
                 `固定値が格納幅の範囲外: ${field.fullName}`);
+        }
+        if (result.default !== undefined) {
+            requireCondition(Number.isInteger(result.default) && result.default >= result.min && result.default <= result.maximum,
+                `既定値が格納幅の範囲外: ${field.fullName}`);
         }
         if (enumType) {
             requireCondition(Object.values(enumType.values).every(value => value >= result.minimum && value <= result.maximum),
@@ -130,6 +145,8 @@ const serviceIds = new Set();
 const names = new Set();
 for (const service of services) {
     const serviceId = option(service, "service_id");
+    const scope = option(service, "scope", "device");
+    requireCondition(["device", "remote", "internal"].includes(scope), `未対応のサービス範囲: ${service.name}`);
     requireCondition(Number.isInteger(serviceId) && serviceId > 0 && serviceId <= 65535 && !serviceIds.has(serviceId),
         `サービス番号が不正または重複: ${service.name}`);
     serviceIds.add(serviceId);
@@ -149,12 +166,61 @@ for (const service of services) {
         methodIds.add(methodId);
         names.add(name);
         methods.push({ name, service: service.name, method: method.name, serviceId, methodId, transport,
-            scope: option(service, "scope", "device"), subscription, hasRequest: method.resolvedRequestType.name !== "Empty",
+            scope, subscription, hasRequest: method.resolvedRequestType.name !== "Empty",
             synchronous: option(method, "synchronous", false), priority: option(method, "priority", false),
             completion: option(method, "completion", "subscription"), ioTimeoutMs: option(method, "io_timeout_ms", 0),
-            request: method.resolvedRequestType.name, response: method.resolvedResponseType.name });
+            request: method.resolvedRequestType.name, response: method.resolvedResponseType.name,
+            command: aggregateOption(method, "command") });
     }
 }
+
+/** Commandの宣言はフィールド参照・定数・倍率だけを許可する。操作ごとの実装文字列を受け付けない。 */
+const commandMethods = methods.filter(method => method.command);
+const commandLayout = packets.CommandPacket;
+const opcodeEnum = schema.lookupEnum("CommandOpcode");
+for (const method of commandMethods) {
+    const binding = method.command;
+    requireCondition(Object.keys(binding).every(key => ["selector", "cases"].includes(key)) && binding.cases,
+        `Command対応が不正: ${method.name}`);
+    const request = schema.lookupType(method.request);
+    requireCondition(["device", "internal"].includes(method.scope) && !method.subscription && !method.synchronous && method.response === "Empty"
+        && ["ack", "initialized"].includes(method.completion) && method.transport === "both" && Number.isInteger(method.ioTimeoutMs) && method.ioTimeoutMs > 0,
+        `Commandの経路・完了条件・期限が不正: ${method.name}`);
+    const variants = Array.isArray(binding.cases) ? binding.cases : [binding.cases];
+    requireCondition(binding.selector ? request.fields[binding.selector]?.type === "string" : variants.length === 1,
+        `Commandの分岐フィールドが不正: ${method.name}`);
+    const selections = new Set();
+    for (const variant of variants) {
+        requireCondition(Object.keys(variant).every(key => ["equals", "opcode", "channel", "value", "constant_value", "scale", "signed_value", "duration"].includes(key)),
+            `未対応のCommand属性: ${method.name}`);
+        requireCondition(Object.hasOwn(opcodeEnum.values, variant.opcode) && opcodeEnum.values[variant.opcode] > 0,
+            `Command操作番号が不正: ${method.name}`);
+        if (binding.selector) {
+            requireCondition(typeof variant.equals === "string" && !selections.has(variant.equals), `Command分岐が不正または重複: ${method.name}`);
+            selections.add(variant.equals);
+        }
+        else {
+            requireCondition(variant.equals === undefined, `分岐なしのequals指定: ${method.name}`);
+        }
+        for (const target of ["channel", "value", "duration"]) {
+            if (!variant[target]) {
+                continue;
+            }
+            const field = request.fields[variant[target]];
+            requireCondition(field && !field.repeated && !option(field, "host_optional", false)
+                && (target === "value" ? ["uint32", "sint32", "double", "float"] : ["uint32"]).includes(field.type),
+                `Commandフィールド参照が不正: ${method.name}.${target}`);
+        }
+        requireCondition(!(variant.value && variant.constant_value !== undefined)
+            && (variant.constant_value === undefined || Number.isInteger(variant.constant_value) && variant.constant_value >= 0
+                && variant.constant_value <= commandLayout.fields.find(field => field.name === "value").maximum)
+            && (variant.scale === undefined || variant.value && Number.isInteger(variant.scale) && variant.scale > 0)
+            && (variant.signed_value === undefined || typeof variant.signed_value === "boolean" && (!variant.signed_value || variant.value)),
+            `Commandの値・倍率・符号指定が不正: ${method.name}`);
+    }
+    method.command = { ...binding, cases: variants };
+}
+requireCondition(methods.filter(method => method.scope === "internal").every(method => method.command), "内部操作のCommand対応がありません");
 
 /** 定義の指紋はコメント・絶対パスを含めず、型・配置・番号・契約から生成する。 */
 const fingerprint = createHash("sha256").update(JSON.stringify({ schema: schema.toJSON(), packets, methods })).digest("hex");
@@ -252,6 +318,7 @@ const ts = [header, 'import type { RpcCallOptions } from "./rpc-client";', ...ho
     ...declarations,
     interfaceText("DeviceRpcCalls", methods.filter(method => method.scope === "device" && !method.subscription)),
     interfaceText("RemoteRpcCalls", methods.filter(method => method.scope === "remote")),
+    interfaceText("InternalControlRpcCalls", methods.filter(method => method.scope === "internal")),
     interfaceText("DeviceRpcSubscriptions", methods.filter(method => method.subscription), true),
     `export const packetLayouts = ${JSON.stringify(packets, null, 4)} as const;`,
     `/** フィールドの検査と操作の対応に使う生成済み定義。 */\nexport const rpcMessages = ${JSON.stringify(Object.fromEntries(messages.filter(message => !option(message, "host_type")).map(message => [message.name,
@@ -278,7 +345,7 @@ function cppCodecDeclarations(name, layout) {
 const cpp = ["/**", " * @file uroa_rpc.generated.h", " * @brief device.protoから生成した既存パケットの番号・配置・方向別codec。手動編集しない。", " */", "#pragma once", "#include <stddef.h>", "#include <stdint.h>", "", "namespace uroa {", "    namespace rpc {",
     `        constexpr uint32_t ApiVersion = ${option(schema, "api_version")}; ///< 呼出しAPIの版。既存Commandの版とは別。`,
     `        constexpr char SchemaFingerprint[] = "${fingerprint}"; ///< 生成物整合用。現在の通信で交換しない。`,
-    ...enums.flatMap(item => ["        /**", "         * @brief 既存パケットの操作番号。", "         */", `        enum class ${item.name} : uint8_t {`,
+    ...enums.flatMap(item => ["        /**", "         * @brief 既存パケットの操作・結果番号。", "         */", `        enum class ${item.name} : uint8_t {`,
         ...Object.entries(item.values).map(([name, value]) => `            ${name} = ${value},`), "        };", ""]),
     "        /**", "         * @brief ローカルRPCのサービスと操作の識別番号。既存パケットへは追加しない。", "         */", "        enum class Method : uint32_t {",
     ...methods.map(method => `            ${method.service}${method.method} = ${(method.serviceId << 16) | method.methodId},`), "        };", "",
@@ -327,8 +394,105 @@ const cppSource = ["/**", " * @file uroa_rpc.generated.cpp", " * @brief device.p
 const tsCodecSource = [header, 'import { RpcCode, RpcError } from "./rpc-client";',
     `import type { ${Object.entries(packets).filter(([, layout]) => layout.directions.ts).map(([name]) => name).join(", ")} } from "./device-rpc.generated";`,
     ...tsCodecs, ""].join("\n\n");
+
+/** 宣言済みのフィールド参照・倍率・定数からCommandの値を作る。任意の式や操作名分岐は持たない。 */
+function commandValueText(variant) {
+    const valueField = commandLayout.fields.find(field => field.name === "value");
+    const value = variant.value ? (variant.scale ? `Math.round(request.${variant.value} * ${variant.scale})` : `request.${variant.value}`)
+        : variant.constant_value ?? valueField.default;
+    const values = {
+        version: commandLayout.fixed.version, reserved: commandLayout.fixed.reserved,
+        opcode: `CommandOpcode.${variant.opcode}`, channel: variant.channel ? `request.${variant.channel}` : commandLayout.fields.find(field => field.name === "channel").default,
+        value, duration: variant.duration ? `request.${variant.duration}` : commandLayout.fields.find(field => field.name === "duration").default,
+    };
+    requireCondition(Object.values(values).every(value => value !== undefined), "Commandの固定値または既定値が不足しています");
+    return `{ ${Object.entries(values).map(([name, value]) => `${name}: ${value}`).join(", ")} }`;
+}
+
+/** 公開RPCと内部STREAMを分けて生成する。サービス単位のフックにはwire情報を渡さない。 */
+function controlFactoryText(name, selected, internal = false) {
+    const resultType = internal ? "InternalControlRpcCalls" : "ControlRpcCalls";
+    const lines = ["/** 既存Commandへ接続した型付き呼出し表。接続選択やドメイン状態を所有しない。 */",
+        `export function ${name}(transport: ControlConnection${internal ? "" : ", hooks: ControlServiceHooks = {}"}): ${resultType} {`, "    return {"];
+    for (const method of selected) {
+        lines.push(`        ${JSON.stringify(method.name)}: async (${method.hasRequest ? "request, " : ""}options) => {`);
+        const variants = method.command.cases;
+        if (method.command.selector) {
+            lines.push('            let packet: Omit<CommandPacket, "sequence">;', "            let signed: boolean;");
+            variants.forEach((variant, index) => {
+                lines.push(`            ${index ? "else if" : "if"} (request.${method.command.selector} === ${JSON.stringify(variant.equals)}) {`,
+                    `                packet = ${commandValueText(variant)};`, `                signed = ${!!variant.signed_value};`, "            }");
+            });
+            lines.push("            else {", `                throw new RpcError(RpcCode.InvalidArgument, "${method.request}.${method.command.selector}が不正です。");`, "            }");
+        }
+        else {
+            lines.push(`            const packet = ${commandValueText(variants[0])};`, `            const signed = ${!!variants[0].signed_value};`);
+        }
+        lines.push(internal ? "            const context: ControlCallContext = {};"
+            : `            const context = hooks.${method.service}?.({ name: ${JSON.stringify(method.name)}, request: ${method.hasRequest ? "request" : "undefined"} }, options) ?? {};`,
+            `            return invokeControl(transport, packet, signed, rpcMethods[${JSON.stringify(method.name)}], context, options);`, "        },");
+    }
+    return [...lines, "    };", "}"].join("\n");
+}
+
+const publicCommands = commandMethods.filter(method => method.scope === "device");
+const internalCommands = commandMethods.filter(method => method.scope === "internal");
+const controlServices = [...new Set(publicCommands.map(method => method.service))];
+const resultEnum = schema.lookupEnum(option(schema.lookupType("StatusPacket"), "result_enum"));
+const resultMessages = Object.fromEntries(Object.entries(resultEnum.values).map(([name, value]) => {
+    const message = option({ options: resultEnum.valuesOptions?.[name] }, "result_message");
+    requireCondition(typeof message === "string", `結果メッセージがありません: ${name}`);
+    return [value, message];
+}));
+const success = Object.entries(resultEnum.values).find(([, value]) => value === 0)?.[0];
+requireCondition(success, "成功結果0がありません");
+const traceNames = Object.fromEntries(Object.entries(opcodeEnum.values).filter(([name]) =>
+    option({ options: opcodeEnum.valuesOptions?.[name] }, "command_trace", false)).map(([name, value]) => [value, name]));
+const controlSource = [header,
+    '/** 通常Commandの要求作成・送信・Status結果を生成する。機器状態はサービスフック、ACK待ちは共通exchangeが所有する。 */',
+    'import { RpcCode, RpcError, type RpcCallOptions } from "./rpc-client";',
+    'import type { ControlConnection, ControlCallContext, ControlExchangePolicy } from "./control-connection";',
+    'import { encodeCommandPacket } from "./device-rpc-codec.generated";',
+    `import { CommandOpcode, ${resultEnum.name}, rpcMethods, type CommandPacket, type StatusPacket, type DeviceRpcCalls, type InternalControlRpcCalls, ${[...new Set(publicCommands.map(method => method.request))].map(name => `type ${name}`).join(", ")} } from "./device-rpc.generated";`,
+    `/** sequence 0を自発通知用に残し、最大値の次は1へ戻す。 */\nexport const controlMaxSequence = ${commandLayout.fields.find(field => field.name === "sequence").maximum};`,
+    `export type ControlRpcCalls = Pick<DeviceRpcCalls, ${publicCommands.map(method => JSON.stringify(method.name)).join(" | ")}>;`,
+    ...controlServices.map(service => `/** ${service}の機能状態を検査する値。opcode・配置・倍率を含めない。 */\nexport type ${service}ControlInvocation =\n${publicCommands.filter(method => method.service === service).map(method => `    | { name: ${JSON.stringify(method.name)}; request: ${method.request} }`).join("\n")};`),
+    `export interface ControlServiceHooks {\n${controlServices.map(service => `    ${service}?: (invocation: ${service}ControlInvocation, options?: RpcCallOptions) => ControlCallContext;`).join("\n")}\n}`,
+    `const resultMessages: Readonly<Record<number, string>> = ${JSON.stringify(resultMessages, null, 4)};`,
+    `const traceNames: Readonly<Partial<Record<CommandOpcode, string>>> = ${JSON.stringify(traceNames, null, 4)};`,
+    `/** Statusは機器受付まで。VMの初期化成功もHALTや動作完了を表さない。未知の番号を保持する。 */
+function commandResult(status: StatusPacket): void {
+    if (status.code !== ${resultEnum.name}.${success}) {
+        throw new RpcError(RpcCode.Device, resultMessages[status.code] ?? \`機器エラー \${status.code}\`, status.code);
+    }
+}`,
+    `/** 宣言から作った要求を現在の経路へ送る。取消・世代の最終検査後に共通exchangeがACKフックを実行する。 */
+async function invokeControl(transport: ControlConnection, packet: Omit<CommandPacket, "sequence">, signed: boolean,
+    policy: ControlExchangePolicy, context: ControlCallContext, options?: RpcCallOptions): Promise<void> {
+    if (context.skip) {
+        return;
+    }
+    try {
+        if (signed && (!Number.isInteger(packet.value) || packet.value < ${-(2 ** (commandLayout.fields.find(field => field.name === "value").bits - 1))}
+            || packet.value > ${2 ** (commandLayout.fields.find(field => field.name === "value").bits - 1) - 1})) {
+            throw new RpcError(RpcCode.InvalidArgument, "Commandの符号付き値が格納幅の範囲外です。");
+        }
+        const operation = traceNames[packet.opcode];
+        const diagnostic = operation ? { operation, channel: packet.channel, value: packet.value, duration: packet.duration } : undefined;
+        await transport.exchange(sequence => encodeCommandPacket({ ...packet, sequence,
+            value: signed ? packet.value & ${commandLayout.fields.find(field => field.name === "value").maximum} : packet.value }),
+            commandResult, policy, context, options, diagnostic);
+    }
+    catch (error) {
+        context.failed?.(error);
+        throw error;
+    }
+}`,
+    controlFactoryText("createControlCalls", publicCommands),
+    controlFactoryText("createInternalControlCalls", internalCommands, true), ""].join("\n\n");
 const outputs = [[resolve(directory, "../ts/ble-wifi/device-rpc.generated.ts"), ts],
-    [resolve(directory, "../ts/ble-wifi/device-rpc-codec.generated.ts"), tsCodecSource]];
+    [resolve(directory, "../ts/ble-wifi/device-rpc-codec.generated.ts"), tsCodecSource],
+    [resolve(directory, "../ts/ble-wifi/device-control.generated.ts"), controlSource]];
 if (flags.has("--esp32")) {
     outputs.push([resolve(directory, "../../../esp32/lib/protocol/include/uroa_rpc.generated.h"), cpp]);
     outputs.push([resolve(directory, "../../../esp32/lib/protocol/src/uroa_rpc.generated.cpp"), cppSource]);

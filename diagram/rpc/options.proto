@@ -2,6 +2,22 @@ syntax = "proto3";
 package uroa;
 import "google/protobuf/descriptor.proto";
 
+// Command v1への宣言的な対応。フィールド名だけを参照し、実装コードは指定しない。
+message CommandCase {
+    string equals = 1;
+    string opcode = 2;
+    string channel = 3;
+    string value = 4;
+    uint32 constant_value = 5;
+    uint32 scale = 6;
+    bool signed_value = 7;
+    string duration = 8;
+}
+message CommandBinding {
+    string selector = 1;
+    repeated CommandCase cases = 2;
+}
+
 // 生成時だけ使う属性。Protocol Buffersのシリアライズは通信に使わない。
 extend google.protobuf.FileOptions {
     uint32 api_version = 51001;
@@ -13,6 +29,7 @@ extend google.protobuf.MessageOptions {
     string host_import = 51103;
     string ts_codec = 51104; // 未指定なら生成しない。encodeまたはdecode。
     string cpp_codec = 51105; // 未指定なら生成しない。encodeまたはdecode。
+    string result_enum = 51106; // 結果番号とメッセージを持つenum。
 }
 extend google.protobuf.FieldOptions {
     uint32 bits = 51201;
@@ -20,6 +37,7 @@ extend google.protobuf.FieldOptions {
     bool host_optional = 51203;
     uint32 fixed_value = 51204; // 固定値。受信の形式検査にも使う。
     uint32 min_value = 51205; // 整数・enumの受理下限。未指定なら型の下限。
+    uint32 wire_default = 51206; // 要求へ明示指定しない場合の既存値。
 }
 extend google.protobuf.ServiceOptions {
     uint32 service_id = 51301;
@@ -34,4 +52,9 @@ extend google.protobuf.MethodOptions {
     bool synchronous = 51406;
     bool priority = 51407;
     string subscription = 51408;
+    CommandBinding command = 51409;
+}
+extend google.protobuf.EnumValueOptions {
+    string result_message = 51501;
+    bool command_trace = 51502;
 }
