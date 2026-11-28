@@ -3,13 +3,19 @@ package uroa.device;
 import "options.proto";
 
 // 機器通信APIと既存固定長パケットの中心契約。
-// generate.mjsがTypeScriptの型・API・メタデータ・固定長codecとC++の番号・配置を生成する。
+// generate.mjsがTypeScriptの型・API・メタデータとC++の番号・配置・値型を生成する。
+// ts_codec/cpp_codecは実際に使う固定長codecの方向。CommandはTS書込み/C++読出し、Statusは逆。
+// Command/Statusの長さ・固定値・opcodeの形式検査も生成する。CH・単位変換・機器範囲は機能側。
+// C++の読出しは長さだけを検査して値を保持し、validateCommandPacketが通常の形式を検査する。
+// 不正形式でもsequenceを応答へ使う。長さ不正はゼロ値とし、優先STOPはProtocol::urgentStopが別途判定する。
+// control-connection.tsは生成したTS codec、uroa_protocol.cpp/main.cppは生成したC++ codec/値型を使う。
 // device-connection.tsがAPIと既存通信を接続し、control-connection.tsが指令のACK・待ち列を扱う。
 // BLE/Wi-Fiの既存パケット、認証、転送、Snapshot、JPEGの形式は各既存アダプターを維持する。
 // host_type付きmessageは復号後の既存型やローカル所有者の参照であり、通信に直列化しない。
 // host_typeの実体・同一Receipt/Snapshotの所有検査は既存ソースが担当する。
 // wire_packetだけを宣言順・little endian・パディングなしで配置する。番号は位置ではない。
 // bitsを省略したuint32/sint32は32bit。可変長APIデータのUTF-8長・要素数はmax_length以下。
+// wire_packetのenumは指定幅の符号なし整数。fixed_valueとmin_value/enum所属は通常形式の受理条件。
 // Call IDはローカル識別用。既存sequence/転送ID/stopId/nonceへはアダプターが対応付ける。
 // 応答喪失は未実行を保証しない。自動再送・再接続後の自動再実行は行わない。
 // AbortSignal/isCurrentはローカル呼出しコンテキスト。取消は既存処理の境界で検査し、動作の巻戻しはしない。
@@ -39,17 +45,21 @@ enum CommandOpcode {
 // valueはSET_SPEEDだけ符号付き0.01%のビット列。角度は0.01度、durationはms。
 message CommandPacket {
     option (uroa.wire_packet) = true;
-    uint32 version = 1 [(uroa.bits) = 8];
-    uint32 opcode = 2 [(uroa.bits) = 8];
+    option (uroa.ts_codec) = "encode";
+    option (uroa.cpp_codec) = "decode";
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.fixed_value) = 1];
+    CommandOpcode opcode = 2 [(uroa.bits) = 8, (uroa.min_value) = 1];
     uint32 sequence = 3 [(uroa.bits) = 16];
     uint32 channel = 4 [(uroa.bits) = 8];
-    uint32 reserved = 5 [(uroa.bits) = 8];
+    uint32 reserved = 5 [(uroa.bits) = 8, (uroa.fixed_value) = 0];
     uint32 value = 6 [(uroa.bits) = 16];
     uint32 duration = 7 [(uroa.bits) = 16];
 }
 message StatusPacket {
     option (uroa.wire_packet) = true;
-    uint32 version = 1 [(uroa.bits) = 8];
+    option (uroa.ts_codec) = "decode";
+    option (uroa.cpp_codec) = "encode";
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.fixed_value) = 1];
     uint32 code = 2 [(uroa.bits) = 8];
     uint32 sequence = 3 [(uroa.bits) = 16];
     uint32 flags = 4 [(uroa.bits) = 8];
@@ -60,6 +70,7 @@ message StatusPacket {
 }
 message TelemetryHeader {
     option (uroa.wire_packet) = true;
+    option (uroa.cpp_codec) = "encode";
     uint32 version = 1 [(uroa.bits) = 8];
     uint32 flags = 2 [(uroa.bits) = 8];
     uint32 sequence = 3 [(uroa.bits) = 16];

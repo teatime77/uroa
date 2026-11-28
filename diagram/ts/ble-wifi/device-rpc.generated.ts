@@ -32,7 +32,7 @@ export const rpcApiVersion = 1;
 
 export const rpcMaxPending = 32;
 
-export const rpcSchemaFingerprint = "9b6d122783bfd1d23f220efa049c42290ff38ff269f495305092d0ef84bd4c41";
+export const rpcSchemaFingerprint = "96abe482f3caf69b9da8c28e3bea8dd753a5b1787a0d944c45a0d635e1ab6dc6";
 
 
 
@@ -54,7 +54,7 @@ export enum CommandOpcode {
 /** device.protoのCommandPacketから生成した値型。 */
 export interface CommandPacket {
     version: number;
-    opcode: number;
+    opcode: CommandOpcode;
     sequence: number;
     channel: number;
     reserved: number;
@@ -303,15 +303,6 @@ export interface DeviceRpcSubscriptions {
     "sensors.stream": (owner: SensorOwner) => () => void;
 }
 
-/** 固定長パケットの型。バイナリ表現はpacketLayoutsに従う。 */
-export interface PacketTypes {
-    CommandPacket: CommandPacket;
-    StatusPacket: StatusPacket;
-    TelemetryHeader: TelemetryHeader;
-    ImuRecord: ImuRecord;
-    DistanceRecord: DistanceRecord;
-}
-
 export const packetLayouts = {
     "CommandPacket": {
         "byteLength": 10,
@@ -324,50 +315,94 @@ export const packetLayouts = {
             "value": 6,
             "duration": 8
         },
+        "fixed": {
+            "version": 1,
+            "reserved": 0
+        },
         "fields": [
             {
                 "name": "version",
                 "offset": 0,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "fixed": 1,
+                "min": 0
             },
             {
                 "name": "opcode",
                 "offset": 1,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 1,
+                "values": [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11
+                ]
             },
             {
                 "name": "sequence",
                 "offset": 2,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             },
             {
                 "name": "channel",
                 "offset": 4,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "reserved",
                 "offset": 5,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "fixed": 0,
+                "min": 0
             },
             {
                 "name": "value",
                 "offset": 6,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             },
             {
                 "name": "duration",
                 "offset": 8,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             }
-        ]
+        ],
+        "directions": {
+            "ts": "encode",
+            "cpp": "decode"
+        }
     },
     "StatusPacket": {
         "byteLength": 12,
@@ -381,56 +416,88 @@ export const packetLayouts = {
             "target": 8,
             "remaining": 10
         },
+        "fixed": {
+            "version": 1
+        },
         "fields": [
             {
                 "name": "version",
                 "offset": 0,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "fixed": 1,
+                "min": 0
             },
             {
                 "name": "code",
                 "offset": 1,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "sequence",
                 "offset": 2,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             },
             {
                 "name": "flags",
                 "offset": 4,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "channel",
                 "offset": 5,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "current",
                 "offset": 6,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             },
             {
                 "name": "target",
                 "offset": 8,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             },
             {
                 "name": "remaining",
                 "offset": 10,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             }
-        ]
+        ],
+        "directions": {
+            "ts": "decode",
+            "cpp": "encode"
+        }
     },
     "TelemetryHeader": {
         "byteLength": 8,
@@ -440,32 +507,49 @@ export const packetLayouts = {
             "sequence": 2,
             "millis": 4
         },
+        "fixed": {},
         "fields": [
             {
                 "name": "version",
                 "offset": 0,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "flags",
                 "offset": 1,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "sequence",
                 "offset": 2,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             },
             {
                 "name": "millis",
                 "offset": 4,
                 "bits": 32,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 4294967295,
+                "min": 0
             }
-        ]
+        ],
+        "directions": {
+            "ts": "",
+            "cpp": "encode"
+        }
     },
     "ImuRecord": {
         "byteLength": 13,
@@ -478,50 +562,76 @@ export const packetLayouts = {
             "gyroY": 9,
             "gyroZ": 11
         },
+        "fixed": {},
         "fields": [
             {
                 "name": "deviceType",
                 "offset": 0,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "accX",
                 "offset": 1,
                 "bits": 16,
-                "signed": true
+                "signed": true,
+                "minimum": -32768,
+                "maximum": 32767,
+                "min": -32768
             },
             {
                 "name": "accY",
                 "offset": 3,
                 "bits": 16,
-                "signed": true
+                "signed": true,
+                "minimum": -32768,
+                "maximum": 32767,
+                "min": -32768
             },
             {
                 "name": "accZ",
                 "offset": 5,
                 "bits": 16,
-                "signed": true
+                "signed": true,
+                "minimum": -32768,
+                "maximum": 32767,
+                "min": -32768
             },
             {
                 "name": "gyroX",
                 "offset": 7,
                 "bits": 16,
-                "signed": true
+                "signed": true,
+                "minimum": -32768,
+                "maximum": 32767,
+                "min": -32768
             },
             {
                 "name": "gyroY",
                 "offset": 9,
                 "bits": 16,
-                "signed": true
+                "signed": true,
+                "minimum": -32768,
+                "maximum": 32767,
+                "min": -32768
             },
             {
                 "name": "gyroZ",
                 "offset": 11,
                 "bits": 16,
-                "signed": true
+                "signed": true,
+                "minimum": -32768,
+                "maximum": 32767,
+                "min": -32768
             }
-        ]
+        ],
+        "directions": {
+            "ts": "",
+            "cpp": ""
+        }
     },
     "DistanceRecord": {
         "byteLength": 3,
@@ -529,20 +639,31 @@ export const packetLayouts = {
             "deviceType": 0,
             "distanceMm": 1
         },
+        "fixed": {},
         "fields": [
             {
                 "name": "deviceType",
                 "offset": 0,
                 "bits": 8,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 255,
+                "min": 0
             },
             {
                 "name": "distanceMm",
                 "offset": 1,
                 "bits": 16,
-                "signed": false
+                "signed": false,
+                "minimum": 0,
+                "maximum": 65535,
+                "min": 0
             }
-        ]
+        ],
+        "directions": {
+            "ts": "",
+            "cpp": ""
+        }
     }
 } as const;
 
@@ -559,7 +680,7 @@ export const rpcMessages = {
         },
         {
             "name": "opcode",
-            "type": "uint32",
+            "type": "CommandOpcode",
             "repeated": false,
             "optional": false,
             "bits": 8,

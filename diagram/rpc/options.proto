@@ -11,11 +11,15 @@ extend google.protobuf.MessageOptions {
     bool wire_packet = 51101;
     string host_type = 51102;
     string host_import = 51103;
+    string ts_codec = 51104; // 未指定なら生成しない。encodeまたはdecode。
+    string cpp_codec = 51105; // 未指定なら生成しない。encodeまたはdecode。
 }
 extend google.protobuf.FieldOptions {
     uint32 bits = 51201;
     uint32 max_length = 51202;
     bool host_optional = 51203;
+    uint32 fixed_value = 51204; // 固定値。受信の形式検査にも使う。
+    uint32 min_value = 51205; // 整数・enumの受理下限。未指定なら型の下限。
 }
 extend google.protobuf.ServiceOptions {
     uint32 service_id = 51301;

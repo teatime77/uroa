@@ -1,5 +1,21 @@
 # ビルドと回帰テスト
 
+## RPC生成化2：Command／Status codecの置換（2026-11-28）
+
+[生成化計画](diagram/python/rpc-implementation-plan.md)の生成化2を実施した。[device.proto](../diagram/rpc/device.proto)から、実際に使う方向のTS／C++ codecと通常形式の検査を生成し、[共通通信層](../diagram/ts/ble-wifi/control-connection.ts)とESP32の指令復号へ接続した。TSのcodecは[別の生成ファイル](../diagram/ts/ble-wifi/device-rpc-codec.generated.ts)へ分けた。旧手書きcodecとStatusの重複読出しを削除し、未使用のC++書込み関数を生成対象から除外した。契約は生成元と各ソースのコメントを参照する。
+
+uroaルートで以下を実行し、両リポジトリーの生成物照合、型・公開ビルド・配布資産の静的確認に成功した。
+
+```powershell
+node diagram/rpc/generate.mjs --esp32
+node diagram/rpc/generate.mjs --check --esp32
+npm.cmd run verify
+```
+
+既存の5配置について、変更前の生成物と長さ・フィールド位置・整数幅・符号が一致することを静的に確認した。Commandの通常受理条件、優先STOPの別判定、速度値のビット列と単位変換、Statusの未知の結果番号を保持する扱いをソースで照合した。最終Webビルドは成功（Vite 24.06秒、92 WebGPU資産を含む成果物確認）。game import混在2件とBinaryenのNode分岐外部化の既存警告は継続。ESP32の結果は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)を参照する。
+
+手書き保守対象は基準JSONと同じ集計で80物理行減少した。定義・生成器・生成物は別集計で、総行数が減ったという意味ではない。従来の指定に従いテストは作成・実行せず、codecの実行比較、ブラウザ・実BLE／Wi-Fi・Upload・実機確認は未実施。生成化3以降とPython Future・配列・Wi-Fi配送は未着手。
+
 ## .protoからの機器RPC API生成（2026-11-28）
 
 呼出し契約の正本を[device.proto](../diagram/rpc/device.proto)と[options.proto](../diagram/rpc/options.proto)へ置き、[generate.mjs](../diagram/rpc/generate.mjs)でTypeScriptの型・32操作/購読・5固定長配置とC++の番号・配置・書込みを生成する。仕様本文と既存形式への対応範囲は定義と各ソースのコメントを参照する。[機器接続](../diagram/ts/ble-wifi/device-connection.ts)が既存処理へ対応付け、サーボ・センサー・Python・Wi-Fi設定・カメラの呼出元を共通APIへ移した。

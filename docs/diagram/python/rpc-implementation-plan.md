@@ -1,6 +1,6 @@
 # ESP32 VM → ブラウザVMのRPC：段階別実装計画
 
-作成日：2026-11-27、更新日：2026-11-28（日本時間）。第0段階の方針はユーザー承認済み。第1段階の独立した解析・生成、第2段階のブラウザVM受付、第3段階のBLE整数通知と2ソースの開始UIを実装した。2026-11-28に追加した共通RPC APIへ、このPython RPCの呼出しも接続した。第4〜7段階は未着手であり、今回のAPI統一で進捗段階を繰り上げない。Future更新・配列・Python RPCのWi-Fi配送は未対応で、ブラウザ・実通信・実機での動作確認は未実施。
+作成日：2026-11-27、更新日：2026-11-28（日本時間）。第0段階の方針はユーザー承認済み。第1段階の独立した解析・生成、第2段階のブラウザVM受付、第3段階のBLE整数通知と2ソースの開始UIを実装した。2026-11-28に追加した共通RPC APIへ、このPython RPCの呼出しも接続した。ただし送受信処理の自動生成による置換は一部だけであり、手書き実装を減らすための生成化計画を本書に追加した。生成化1の現状整理と生成化2のCommand／Status codec置換・ビルドを完了し、生成化3〜6と第4〜7段階は未着手。今回のAPI統一や静的調査でPython RPCの進捗段階を繰り上げない。Future更新・配列・Python RPCのWi-Fi配送は未対応で、ブラウザ・実通信・実機での動作確認は未実施。
 
 対象はuroaと、別リポジトリーの`D:\usr\prj\esp32\app\diagram-control`。本書は作業順、変更候補、決定が必要な事項、完了条件を整理する。実装済み仕様の正本はソースの定義とコメントとし、共通APIは`.proto`、Python RPCの既存配送は`rpc-protocol.ts`等を参照する。各段階で実装と同時に正本を更新し、本書へパケットのバイト配置や命令の詳細仕様を追加・重複記載しない。
 
@@ -61,6 +61,8 @@ RPC完了後の別作業とするもの：
 
 機器制御・センサー購読・プログラム転送・デバッグ・Wi-Fi設定・カメラ取得の呼出しAPIを共通化した。Python RPCの公開定義抽出・VM実行・専用BLE配送は、この共通APIへ接続した既存実装として残る。
 
+現状の自動生成は型・操作表・固定長配置とC++の一部書込み処理が中心である。TypeScriptの汎用codec、操作ごとの既存処理への対応付け、C++の受信復号・指令振分けなどは手書きで残っている。呼出しAPIの共通化は、送受信処理を生成コードへ置き換えて手書き実装を削減する作業の完了を意味しない。
+
 | 対象 | 現在の分担と参照先 |
 |---|---|
 | 共通の操作・型・生成対象の固定長配置 | [device.proto](../../../diagram/rpc/device.proto)・[options.proto](../../../diagram/rpc/options.proto)を正本とし、[generate.mjs](../../../diagram/rpc/generate.mjs)がTypeScriptとC++を生成する。既存ホスト型へ参照を渡す定義もあり、すべての既存転送形式を`.proto`のcodecへ置き換えたものではない。 |
@@ -109,6 +111,151 @@ RPC完了後の別作業とするもの：
 | 形式変更の反映 | `bytecode.ts`、`bytecode-transfer.ts`、ESP32の`bytecode_format.h/.cpp`、`bytecode_receiver.cpp`、`bytecode_debugger.cpp`。必要な場合だけ機器API宣言・生成器へ反映する。 |
 
 後続段階で共通APIの型や対応経路を変える場合は、`.proto`と生成物・アダプターを同じ段階で揃える。Python固有の配送形式・VMの値と寿命に関する仕様は担当ソースへ記述し、本書には変更先と完了条件を残す。
+
+### 送受信コードの自動生成と手書き実装削減の計画
+
+状態：生成化1と生成化2を完了。生成化2ではCommand／Statusの方向別codec・通常形式検査を生成し、実際の送受信へ接続した。生成化3〜6は未着手。Python RPCの第0〜7段階とは別の共通基盤の移行作業として扱い、第3段階の機能を維持したまま進める。先に通常指令をクライアントからサーバーまで生成化し、同じ仕組みを既存通信へ展開してから、第4段階のFuture拡張へ進む。
+
+目標は、`.proto`から要求・応答の型、符号化・復号、クライアントの送受信処理、サーバーの要求振分けと応答処理まで生成し、対応する手書き実装を削除すること。生成済みの型へ既存処理を渡すラッパーを増やすだけでは完了としない。gRPCのサービス定義とコード生成の考え方を使い、Protocol Buffersとのバイナリ互換や実際のgRPC／HTTP/2への移行は要件に加えない。
+
+既存のBLE／Wi-Fi通信形式を維持する方針を引き継ぐ。既存の操作番号・パケット配置・UUID・HTTP窓口・応答先への対応を`.proto`の宣言と共通の生成規則で表し、同じバイト列と配送先を扱うコードを生成する。既存パケットへ共通RPCのサービスIDや呼出しIDを追加することは、本生成化には含めない。型定義だけで既存形式への変換を推測せず、生成に必要な対応情報が不足する場合は生成元で明示する。
+
+#### 生成する範囲と手書きで残す範囲
+
+| 区分 | 生成・共通化する処理 | 手書きで残す処理 |
+|---|---|---|
+| データの表現 | 両側の通信型、符号化・復号、格納幅・長さ・版・予約値等の通信上の検査。必要な単位変換や既存パケットへの対応も生成元から決める。 | サーボの利用状態、機器の存在、VM命令の妥当性など、機能・実行状態に依存する検査。 |
+| クライアント | 操作ごとの要求作成・送信・応答復号を行うメソッドと、既存sequence等を共有の応答待ち処理へ接続するコード。 | 機器・ユーザー操作・実行世代の所有管理と、画面やブロックへの結果反映。 |
+| サーバー | 要求の種類判定・引数復号・型付きハンドラーへの振分け・応答符号化・送信元への返送。 | サーボ操作、センサー測定、VM開始・停止などの処理本体。通信コールバックから機器やVMを直接操作しない責任分担も維持する。 |
+| 通信経路 | サービス／操作と既存GATT特性・HTTP窓口等の対応表、経路に応じた生成済み呼出しコード。 | BLE接続・Read/Write/Notify、HTTP/WebSocketの入出力、認証・HMAC・制御権・切断処理。 |
+| 通知・大きなデータ | 購読・解除、通知復号、分割データのヘッダーや結果の読み書きと、共有の転送処理への接続。 | 待ち列、期限・取消・再構築・ACK待ちなどの共通ランタイムを1か所で実装する。バイトコード検証・Snapshotの作成・画像取得等の処理本体は残す。 |
+
+`host_type`はブロック・Receipt・Snapshot等のローカル参照や所有権を扱う用途と、実際に通信する値型を分けて整理する。通信する内容を型名だけで外部の手書きcodecへ委譲して生成済みとは扱わず、その通信型と上限・変換に必要な情報を生成元へ揃える。ローカルオブジェクトやVM内部アドレスをそのまま送信する変更は行わない。
+
+#### 移行順と段階ごとの完了条件
+
+| 段階 | 作業 | 完了条件 |
+|---|---|---|
+| 生成化1：現状と置換対象の整理 | 既存の操作・要求・応答・通知・分割転送と、その手書きの生成・復号・振分け箇所を一覧化する。生成対象・共通ランタイム・機能本体を分け、現時点の手書き行数と残す理由を記録する。 | 各通信について生成元、送信側、受信側、削除候補が対応付いている。既存形式を再現するための定義不足と、必要な共通処理が判明している。 |
+| 生成化2：両側のcodec生成 | まずCommand／Statusを対象に、TypeScriptとC++それぞれに必要な符号化・復号を生成する。生成方向を定義し、使わないC++の送信関数等を常に出力する構成も見直す。移行後は対応する手書きのフィールド読み書き・同じ通信検査を削除する。 | 同じ定義から両側のcodecを生成でき、既存の配置・符号・単位・長さとの静的な対応確認と両側のビルドが完了する。旧codecへ迂回する呼出しが残らない。実際の送受信結果の一致は、実機確認を行った場合だけ確認済みとする。 |
+| 生成化3：クライアント送受信生成 | 通常指令の要求作成、経路選択、送信、応答復号、完了条件に応じた戻り値への変換を生成する。ACK照合・期限・取消は共通ランタイムへ集約し、操作ごとの同じ待機処理と対応付けラッパーを削除する。 | 呼出元は生成APIを使い、操作を1個追加するたびにTypeScriptの送信・応答解釈を別途手書きする必要がない。BLEのユーザー操作からの接続開始、世代検査、STOP優先を維持する。 |
+| 生成化4：サーバー振分け・応答生成 | 既存の受信窓口から要求を受け、生成した復号と振分けを通して型付きの機能ハンドラーへ渡す。ハンドラーの結果から応答を作る処理も生成し、opcodeやフィールド位置を手で判定する同じ処理を置き換える。 | C++側は機能ハンドラーと通信・キューの共通基盤を実装し、各操作の受信復号・応答パケット作成を重複記述しない。I2C・VMの実行タスク、接続世代・優先STOPの境界を保つ。 |
+| 生成化5：既存通信への展開 | センサー通知・機器一覧、コード転送、デバッグ、Python RPCの登録・要求・受付確認、Wi-Fi設定、カメラ取得へ順次展開する。複数操作の転送手順は共通ランタイムの手順として整理し、必要な接続を生成する。 | 固定長指令だけに限定せず、各通信の型・送受信・通知の処理と削除箇所が揃う。Wi-Fiの認証、既存の分割順序・検証後開始、Worker受付とメソッド完了の違いを維持する。JPEGやコード本体は必要なバイト列として扱い、汎用化のための不要な全体コピーや別形式への変換を増やさない。 |
+| 生成化6：旧実装の削除と削減確認 | 移行した手書きcodec・操作別ラッパー・重複したID/配置/通信型・未使用の生成関数を削除する。残るコードと維持理由を一覧化し、生成前後の行数と責任分担を比較する。 | 生成とビルドの確認に加え、機能別の手書き通信コードが着手時より減り、同じ通信形式を生成元と手書き実装の両方で管理していない。未移行の通信は個別に列挙し、すべて完了したとは報告しない。 |
+
+移行中の併存は対象を切り替える段階だけに限定する。生成済みコードの外側へ旧処理をそのまま残す恒久的なラッパーや、生成器の中へ操作ごとの手書きコードを文字列で移すだけの方式は採らない。宣言・共通規則から処理を生成し、機能本体の登録は型付きサービスの単位等で行い、現在の操作ごとの対応付けをそのまま別ファイルへ複製しない。
+
+#### 既存ソースの置換候補
+
+以下は削除・縮小する処理の候補であり、ファイル全体を削除する指定ではない。移行時に現在の参照元を再確認し、機能本体・UI・所有管理と通信の重複部分を分ける。
+
+| 対象 | 置換・削除する候補 | 維持する責任 |
+|---|---|---|
+| [device-connection.ts](../../../diagram/ts/ble-wifi/device-connection.ts) | 操作ごとの送受信対応付け、パケット固有の引数・結果変換、専用窓口への同型の接続。 | 接続UI、通信経路の所有、機器一覧・サーボ状態、プログラム・デバッグの所有と世代検査。 |
+| [control-connection.ts](../../../diagram/ts/ble-wifi/control-connection.ts)・[生成codec](../../../diagram/ts/ble-wifi/device-rpc-codec.generated.ts)（旧`rpc-codec.ts`は生成化2で削除） | 手書きのパケット作成・復号と、操作別に重複する送信・応答解釈を生成した型別の読み書きへ置き換える。汎用codecを補助処理として残す場合も生成APIの内部から共用し、呼出元が手で配置表を選んで読み書きする対応付けを残さない。 | 共通の待ち列・ACK照合・PING・期限監視・STOP優先。生成された各操作から同じ基盤を利用する。 |
+| [ble-control-transport.ts](../../../diagram/ts/ble-wifi/ble-control-transport.ts)・[robot-wifi.ts](../../../diagram/ts/ble-wifi/robot-wifi.ts) | 操作ごとに手書きした窓口選択や配送分岐、同型の応答読出し。 | BLE／HTTP／WebSocketの入出力、認証、制御権、画像を含む接続資源の寿命。 |
+| [bytecode-transfer.ts](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)・[debug-protocol.ts](../../../diagram/ts/ble-wifi/debug-protocol.ts)・[rpc-protocol.ts](../../../diagram/ts/ble-wifi/rpc-protocol.ts) | 転送フレーム・一覧・イベント・結果等の手書きのフィールド配置、同じ通信検査、専用窓口への接続。 | 転送・停止・プログラム世代・実行nonceの状態と、機能固有の検証。共用できる転送手順は共通基盤へまとめる。 |
+| ESP32の[uroa_protocol.h](../../../../esp32/lib/protocol/include/uroa_protocol.h)・[uroa_protocol.cpp](../../../../esp32/lib/protocol/src/uroa_protocol.cpp) | 手書きで残る固定長の読出し・書込みと、生成済み定義と重複した型・番号・配置。 | 機器側の意味・状態に依存する処理があれば機能本体へ整理し、単なる旧codecの互換窓口として残さない。 |
+| ESP32の[main.cpp](../../../../esp32/app/diagram-control/src/main.cpp)・[control_transport.cpp](../../../../esp32/app/diagram-control/src/control_transport.cpp) | 通信バイト列からの手書きの操作判定・引数取出し・結果パケット作成。 | キュー、STOP、機器操作、周期処理、接続元と世代の検査、VM・センサー・サーボの処理本体。 |
+| ESP32の[bytecode_receiver.cpp](../../../../esp32/app/diagram-control/src/bytecode_receiver.cpp)・[bytecode_debugger.cpp](../../../../esp32/app/diagram-control/src/bytecode_debugger.cpp)・[bytecode_rpc.cpp](../../../../esp32/app/diagram-control/src/bytecode_rpc.cpp)、`lib/ble`・`lib/wifi` | それぞれの通信形式の手書き復号・符号化と、生成側と重複する配送分岐。 | バイトコード・PC検証、停止値の作成、Python RPCの登録・要求管理、通信タスク・認証と接続の責任。 |
+
+Pythonソースから抽出する公開オブジェクト・メソッドの登録情報は、引き続き[remote.ts](../../../diagram/ts/python/remote.ts)で生成する。利用者のPythonメソッドを固定の`.proto`へ重複記述せず、Python呼出しを運ぶ共通の通信型・送受信処理を生成対象にする。Futureや配列という新機能の追加は既存の第4〜5段階で行い、今回の生成化に混ぜて実装済みとは扱わない。
+
+#### 削減の判定と確認範囲
+
+行数は、生成コード、`.proto`・生成器、手書きの共通ランタイム、機能別の手書き通信コードを分けて記録する。生成ファイルを含む総行数の減少だけを目標にせず、機能別の手書き通信コードの実際の削除と、通信定義の重複解消を必須とする。生成器や共通基盤の増加量も併記し、手書き全体で増える場合は理由と未削減部分を明示する。着手時の作業ツリーを基準に比較し、他の作業中の変更を削減量へ含めない。
+
+生成対象と削除対象が対応し、`.proto`を修正して再生成すると両側の型・送受信処理・振分けが追従することを完了条件にする。実装時は`.proto`と中心ソースのコメントへ契約を反映し、本書にパケットのバイト配置を重複記述しない。既存の生成・照合コマンドは[生成・検証記録](../../build-and-test.md)を参照する。
+
+検証は、生成物の整合、既存形式との静的な対応、リンク・差分、型、Webと現在の既定環境のESP32ビルドを基本とする。従来の指定に従って自動テスト・模擬テストは作成・実行せず、実通信・実機・性能・バイト列の実行比較は実施の有無を別に記録する。静的な配置確認やビルド成功だけで通信互換・実動作を確認済みとは扱わない。本書の計画追加で生成化の実装・検証が完了したとは報告しない。
+
+#### 生成化1の実施記録（2026-11-28）
+
+状態：着手時ソースの静的な棚卸しを完了。以下の表とJSONは生成化2より前の基準記録であり、生成化2の結果は次の実施記録を参照する。以下は生成化2以降の入力であり、送受信処理の置換・削除を実施した結果ではない。着手時のソースはuroaの`d0822e7`とESP32の`f606501`。uroaでは本計画書だけに既存の作業中の差分があり、ESP32は差分なしだった。既存の計画書の変更を保持して記録を追記した。
+
+測定対象48ファイルの分類・物理行数・非空行数・SHA-256と、置換を検討する82の関数／プロパティ範囲を[rpc-generation-baseline.json](rpc-generation-baseline.json)へ保存した。範囲はTypeScriptの構文木とC++の定義位置から抽出した静的な調査単位で、先行する説明コメントを含めない。関数内には維持する状態管理等も混在するため、範囲の全行が削除できるという見積りではない。
+
+##### 行数の基準値と維持する理由
+
+物理行数は空行・コメントを含めて数え、改行形式による差は付けない。非空行数もコメントを含み、実行コードだけの行数ではない。ファイル単位の値と関数範囲の値を重ねて合計しない。
+
+| 分類（JSONのcategory） | ファイル数 | 物理行数 | 非空行数 | 主な対象と残す理由 |
+|---|---:|---:|---:|---|
+| 定義（`schema`） | 2 | 490 | 484 | `device.proto`・`options.proto`。生成の正本として維持・拡張する。 |
+| 生成器（`generator`） | 1 | 226 | 214 | `generate.mjs`。型・配置表中心の出力を両側の送受信処理へ拡張する。 |
+| 生成物（`generated`） | 3 | 1,930 | 1,842 | TypeScriptの生成定義とC++の生成ヘッダー・実装。手で保守する行数と分ける。 |
+| 共通手書き（`manual_shared`） | 3 | 323 | 304 | `rpc-client.ts`・`rpc-codec.ts`・`control_session.h`。取消・上限・接続識別等を共通基盤として残す。codecの配置選択は生成APIの内部へ移す。 |
+| 通信形式・状態の混在（`manual_protocol_mixed`） | 8 | 2,397 | 2,308 | `control-connection.ts`、Telemetry・転送・デバッグ・RPC、C++の`uroa_protocol`等。フィールド処理を生成化し、ACK・転送状態・機能固有検査を残す。 |
+| 通信経路との混在（`manual_transport_mixed`） | 8 | 3,228 | 3,103 | BLE／Wi-FiアダプターとC++のBLE・Wi-Fi・ControlTransport。窓口ごとの分岐は置換候補、認証・通信API・接続寿命は維持する。 |
+| 機能・UIとの混在（`manual_feature_mixed`） | 17 | 5,369 | 5,143 | DeviceConnection、センサーブロック、main、Receiver／Debugger／Rpc、カメラ等。引数の読出し・応答作成を置換し、UI・機器・VM・所有管理を維持する。 |
+| 周辺の生成元・利用先（`support_only`） | 6 | 4,632 | 4,343 | `block.ts`・`remote.ts`・カメラ取得・Wi-Fi画面・VM。必要な接点だけを変更し、VMやPython解析全体を削減対象にしない。 |
+
+手書き保守対象の基準は`manual_*`の36ファイル・11,317物理行（非空10,858行）。この値には機能・UI・状態管理が含まれ、通信処理だけで11,317行を削除できるという意味ではない。周辺6ファイルはこの小計から除外する。個々のファイルと候補範囲の数値はJSONを参照し、以後の段階では実際に削除した部分と追加した共通処理を分けて比較する。
+
+##### 通信別の定義元・送受信・置換候補
+
+以下の関数名は調査時点のもの。既存のバイト配置・版・制約の本文はリンク先のソースコメントを正本とし、ここには生成元から不足している事項と変更箇所を記録する。
+
+| 通信 | 現行の定義元・生成状態 | ブラウザ側 | ESP32側 | 置換候補と維持する責任 |
+|---|---|---|---|---|
+| 通常指令・Status（サーボ、STREAM、PING、INFO、VM開始・停止） | `.proto`の`CommandPacket`・`StatusPacket`と既存Protocol。APIと実パケットの対応は手書き。 | [control-connection.ts](../../../diagram/ts/ble-wifi/control-connection.ts)の`send()`／`receive()`、[device-connection.ts](../../../diagram/ts/ble-wifi/device-connection.ts)の`rpc`・`hardwareStatus()`・サーボ操作。 | [main.cpp](../../../../esp32/app/diagram-control/src/main.cpp)の`receive()`→`handle()`／`status()`、[uroa_protocol.cpp](../../../../esp32/lib/protocol/src/uroa_protocol.cpp)の`command()`／`valid()`／`status()`。 | 操作と実パケットの対応、引数の符号・単位変換、復号・応答作成を生成する。ACK待ち・接続世代・有効CH・VMやサーボの処理本体を残す。 |
+| DeviceInfo | [device-telemetry.ts](../../../diagram/ts/ble-wifi/device-telemetry.ts)の説明とブロック側の`writeDeviceInfo()`。共通APIの`device.register`は図からの登録操作であり、一覧の通信型そのものではない。 | `DeviceConnection.sendDeviceInfo()`、[servo.ts](../../../diagram/ts/hardware/servo.ts)・[imu.ts](../../../diagram/ts/hardware/imu.ts)・[ultrasonic.ts](../../../diagram/ts/hardware/ultrasonic.ts)・[block.ts](../../../diagram/ts/block.ts)のレコード書込み。 | mainの`receiveDeviceInfo()`／`handleDeviceInfo()`。 | 種別ごとの可変長レコードと一覧の読み書きを生成する。図からの収集順・ブロック参照・全件受理後の置換とSTREAM再要求を維持する。 |
+| センサー通知 | `.proto`の`TelemetryHeader`・`ImuRecord`・`DistanceRecord`はあるが、混在通知全体の生成は未接続。 | `parseDeviceTelemetry()`→`DeviceConnection.sampleChanged()`→IMU／距離ブロックの`readStatus()`。 | mainの`publishDeviceTelemetry()`→`Protocol::deviceTelemetry()`→[ControlTransport](../../../../esp32/app/diagram-control/src/control_transport.cpp)の通知配送。 | ヘッダー・レコードの読み書きと種別分岐を生成する。登録順の照合、計測、物理量・ポートへの反映を分けて残す。 |
+| プログラムの一括転送とResult | [bytecode-transfer.ts](../../../diagram/ts/ble-wifi/bytecode-transfer.ts)の`uploadBytecode()`が中心契約。`.proto`には上位のUpload要求があるが、転送フレームと最終結果の実形式は未定義。 | `ControlConnection.sendBytecode()`、`uploadBytecode()`、経路別の`openBytecode()`。 | [bytecode_receiver.cpp](../../../../esp32/app/diagram-control/src/bytecode_receiver.cpp)の`enqueue()`／`adopt()`／`publishResult()`とmainの検証後開始。 | フレーム・一括本体ヘッダー・PC列・結果の読み書きを生成する。分割手順・進捗・CRCの共通処理と、バイトコード／PCの意味検証・RAM所有・開始条件を区別して残す。バイトコード命令形式自体の生成し直しは対象外。 |
+| デバッグの一覧設定・継続／ステップ・ACK | [debug-protocol.ts](../../../diagram/ts/ble-wifi/debug-protocol.ts)の`PythonDebugTransport`。 | `sendPcList()`／`request()`／`execute()`。 | [bytecode_debugger.cpp](../../../../esp32/app/diagram-control/src/bytecode_debugger.cpp)の`handle()`／`reply()`。 | 操作ごとの引数と結果の読み書きを生成する。PC検証、停止ID・所有コードの照合、ステップ実行を機能側に残す。 |
+| デバッグEvent | 同ファイルの`parseEvent()`。共通APIの`debug.state`は復号後の通知であり、実Eventの定義ではない。 | `parseEvent()`と状態監視、DeviceConnectionのデバッグ購読。 | `BytecodeDebugger::publishState()`、BLEのEvent Read／NotifyとWi-FiのEvent読出し。 | 状態によって異なるEventの解釈と書込みを生成する。実行状態・進捗の取得と公開タイミングは機能側に残す。 |
+| Snapshot・選択チャンク | 同ファイルの`decodeSnapshot()`とVMの直列化処理。`.proto`の`Snapshot`は既存ホスト型の参照だけ。 | `PythonDebugTransport.download()`／`decodeSnapshot()`。 | Debuggerの選択処理に加え、[bytecode_vm.cpp](../../../../esp32/app/diagram-control/src/bytecode_vm.cpp)の`snapshotValue()`／`BytecodeVM::copyDebugSnapshot()`が生成元。 | Snapshotのヘッダー・値スロット・文字列・選択データの読み書きを生成する。Paused中の値取得・文字列の列挙・VM／GC参照の寿命は残す。VM内部のアドレスや本体参照の直接転送へ変えない。 |
+| Python RPCの公開定義登録 | [rpc-protocol.ts](../../../diagram/ts/ble-wifi/rpc-protocol.ts)の登録形式と、[remote.ts](../../../diagram/ts/python/remote.ts)の公開定義生成。 | `encodeRpcConfiguration()`／`RpcTransport.configure()`、[remote-session.ts](../../../diagram/ts/python/remote-session.ts)からの登録。 | [bytecode_rpc.cpp](../../../../esp32/app/diagram-control/src/bytecode_rpc.cpp)の`configure()`／`handle()`／`result()`。 | 登録表・転送フレーム・Resultの読み書きを生成する。Pythonからの公開署名抽出、API指紋の照合、動的nativeへの結合は維持する。 |
+| Python RPCの要求・Worker受付確認 | 同ファイルのEvent／ACK。`.proto`の`RemoteRequest`は既存型への参照であり、Eventの実形式を表さない。 | `RpcTransport.read()`／`acknowledge()`、`RemoteBleSession.deliver()`→Worker受付。 | `BytecodeRpc::invoke()`→要求キュー、`publish()`／`handle()`／`result()`。 | 要求・受付確認の符号化・復号・配送を生成する。要求キュー・nonce・要求IDとWorker寿命は残す。メソッドの戻り値やFuture配送は、まだ追加しない。 |
+| BLE経由のWi-Fi設定・検索・設定結果 | [robot-wifi.ts](../../../diagram/ts/ble-wifi/robot-wifi.ts)の`BLEWifiSetup`とESP32の設定処理。`.proto`のEndpoint等はホスト型の参照。 | `request()`／`info()`／`scan()`／`configure()`、Wi-Fi画面からの共通API呼出し。 | [uroa_ble.cpp](../../../../esp32/lib/ble/src/uroa_ble.cpp)の`Configuration::onWrite()`／`onRead()`→[uroa_wifi.cpp](../../../../esp32/lib/wifi/src/uroa_wifi.cpp)の`configure()`。 | 分割設定フレームとJSONの要求・結果型、操作名の対応を生成する。ペアリング認証・資格情報の寿命・Wi-Fiタスク・NVS操作を残す。 |
+| Wi-Fi認証・制御権・HTTP／WebSocketの外側の形式 | `RobotWifi`と`WifiNetwork`。既存バイト列の16進表現・署名付き要求／応答等の扱いは手書き。 | `json()`／`connectSocket()`／`writeControl()`／`receive()`／`poll()`／`readControlValue()`。 | `claimReply()`／`dispatchControl()`／`controlHTTP()`／`controlValueHTTP()`／`eventsHTTP()`／`socketEvent()`。 | JSONの型・窓口・応答種別とその対応付けを生成する。HMAC、counter、認証済み接続の照合、CORS、制御権の取得・解除は共通経路側に残す。署名対象の表現を生成時に勝手に変えない。 |
+| JPEG取得 | `RobotWifi.image()`とカメラ用HTTP。`.proto`の`Image`はBlobへの参照。 | `camera.capture`→`image()`→[camera-feed.ts](../../../diagram/ts/camera/camera-feed.ts)の共有取得。 | `WifiNetwork::imageHTTP()`→[network.cpp](../../../../esp32/app/diagram-control/src/network.cpp)の接続→[camera.cpp](../../../../esp32/app/diagram-control/src/camera.cpp)の`cameraServe()`。 | 取得メソッド・窓口・応答の型の接続を生成する。JPEG本体は既存の生データを維持し、認証、画像フレームの取得・返却とBlobの共有寿命を残す。 |
+
+`connection.connect`／`disconnect`、Wi-Fi画面の開閉、ローカル状態購読・センサーブロックの保持は、機器へ同名RPCを送る操作ではない。`.proto`のローカル操作として扱い、ESP32側の要求振分けや通信パケットを不要に生成しない。ブラウザWorker内のABI、Pythonの解析・VM命令形式、外部AIサービスとの通信、UARTログは本生成化の通信置換対象から除外する。
+
+##### 生成に不足している定義と必要な共通処理
+
+| 不足・注意点 | 次の段階で揃える内容 | 現行の正本・維持する処理 |
+|---|---|---|
+| APIと既存形式への対応 | メソッドと既存opcode／定数・既定値・引数字段・単位／符号変換、送信方向、UUID／HTTP窓口・結果窓口の対応。APIの要求型をそのまま実パケットと見なさない。 | DeviceConnectionの操作対応、ControlConnection、BLE／Wi-Fiの窓口処理。新たな共通ヘッダーを既存パケットへ追加しない。 |
+| 固定長codecの生成範囲 | 版・予約値・種別・結果コード等の通信上の規則と必要な方向を明示し、両側の必要な読出し／書込みを生成する。 | 現状は5種類の配置とC++の5書込み関数まで。対象プロジェクトではStatusとTelemetryヘッダーだけがC++の生成関数へ接続され、Command・IMU・距離の生成書込みは未接続。C++の復号は未生成。TypeScriptは手書きの汎用codecを利用。 |
+| 可変長・状態依存の形式 | DeviceInfoの種別別レコード、Telemetryの混在列、Debug Eventの状態別内容、Snapshotの値・文字列等を具体的な通信型として表す。 | 登録順の照合、Pausedの値取得、機器・VM状態や所有権の検査を単なるフィールド検査へ押し込まない。 |
+| 分割転送と確認の境界 | 転送フレーム・最終結果・選択チャンク・受付確認の型と、共通の転送手順へ接続するための情報。 | 分割送信、CRC、受信位置、期限、取消、ACK待ち、再構築の共通基盤。コード検証・検証後開始と、Worker受付／メソッド完了の区別は機能側に残す。 |
+| `.proto`のホスト型参照 | 14個の`host_type`付きmessageを、ローカル所有参照と実通信のデータ型に分類する。Snapshot・RPC登録／Event・Endpoint・Wi-Fi応答・画像等の実形式を名前だけで省略しない。 | 構造体やBlob、ブロック、Receiptの同一性を保ち、VM内部の借用ポインターを自動的に直列化しない。 |
+| 識別子・結果の名前空間 | 共通APIのサービス／メソッド番号・ローカルIDと、既存sequence・転送ID・stopId・実行nonce・Pythonの動的IDの対応箇所。機器側の結果番号と共通エラーの対応。 | 共通APIの32操作／購読は既存パケットの32種類の要求という意味ではない。要求と応答の照合は既存の識別子を使う。 |
+| 認証・外側の表現 | Wi-Fi設定のJSONと、認証付きHTTP／WebSocketの型・窓口・署名に使う表現。JPEGは生データとして扱う接続情報。 | HMACとペアリング、CORS、NVS、制御権、接続・認証世代、秘密情報の保存制約は共通処理として維持する。 |
+| 優先STOP・実行タスク・期限 | 生成した受信入口も、認証・接続世代の検査とキューへのコピー、優先STOP、loop()での機器・VM処理を通す。通常の形式検査と優先STOPの受理条件の違いを保持する。 | 型付きハンドラーを通信コールバックから直接実行しない。1通信操作・最終確認・転送無進捗・ペアリング待ち等の期限は別の責任であり、単一の`io_timeout_ms`で一律に置換しない。 |
+
+加えて、`uroa_protocol.h`のVM_START説明にある「COMMITだけでは開始しない」は、一括転送の検証後開始フラグを含む現在の経路との適用範囲を明確にする必要がある。開始の中心契約は`bytecode-transfer.ts`とmainの一括転送処理を照合し、該当機能を移行する段階でコメントを揃える。生成化1ではコメントを含めソースを修正していない。
+
+必要な共通ランタイムは、経路と接続世代の照合、有限長の送信待ち列とSTOP優先、既存識別子によるACK／Read結果待ち、期限・取消、購読の寿命、分割・再構築とCRCの処理である。機器操作・VM・Pythonの公開定義・値の所有処理はこれと分け、生成器へ機能ごとの実装文字列を移す方式を避ける。
+
+##### 生成化2へ渡す最初の対象と確認範囲
+
+最初の対象は、ブラウザのCommand符号化・Status復号と、ESP32のCommand復号・Status符号化。既存の配置と通常の形式検査に必要な定義を補い、生成したcodecへ実際の呼出しを接続して、対応する手書き処理を削除する。サーバー全体の操作振分けや機能本体の変更は生成化4で扱い、型付きcodecの導入と混同しない。型・配置表の追加だけ、または未使用の書込み関数追加だけでは生成化2を完了としない。
+
+生成化1では、両リポジトリーのソースと現行定義の読取り、行数・ハッシュ・候補範囲の記録、文書とJSONの整合・リンク・差分確認を行った。ソース・`.proto`・生成物・ファームウェアは変更せず、生成器による再生成、ビルド、自動／模擬テスト、ブラウザ・BLE／Wi-Fi・実機確認は行っていない。上記は現在のソースからの静的な対応付けであり、通信互換や動作の再検証結果ではない。
+
+#### 生成化2の実施記録（2026-11-28）
+
+状態：Command／Statusのcodec生成・呼出し置換と両側ビルドを完了。生成化3〜6とPython RPCの第4段階以降は未着手。仕様の正本は[device.proto](../../../diagram/rpc/device.proto)と[Protocol](../../../../esp32/lib/protocol/include/uroa_protocol.h)等のソースコメントを参照する。
+
+[生成器](../../../diagram/rpc/generate.mjs)に方向指定と通常形式の検査条件を追加し、ブラウザのCommand符号化・Status復号、ESP32のCommand復号・形式検査と既存のStatus符号化へ接続した。Statusは復号した値を機器接続へ渡し、生バイトの二重読出しを削除した。旧手書きの汎用codecを削除し、未使用だったC++のCommand・IMU・距離の符号化関数も生成対象から除いた。Telemetryヘッダーの既存の生成符号化は維持する。
+
+TSの型・メタデータとcodecは別の生成ファイルにし、共通エラー処理との循環依存を避けた。機器の範囲・単位変換、ACK・世代・待ち列、優先STOPとloop()での機器／VM処理は既存の責任として維持した。操作別の要求組立て・送信手順とサーバー全体の振分けは、生成化3・4で扱う。
+
+生成化1の分類・物理行数の数え方で比較した。基準JSONは着手時のまま保存し、削除済みファイルを除き、新しい生成codecを生成物へ加えた。
+
+| 分類 | 生成化1の基準 | 生成化2の結果 | 差分 |
+|---|---|---|---|
+| 手書き保守対象（`manual_*`） | 36ファイル・11,317行 | 35ファイル・11,237行 | −80行（非空行は10,858→10,781） |
+| 定義（`schema`） | 2ファイル・490行 | 2ファイル・505行 | ＋15行 |
+| 生成器（`generator`） | 1ファイル・226行 | 1ファイル・351行 | ＋125行 |
+| 生成物（`generated`） | 3ファイル・1,930行 | 4ファイル・2,080行 | ＋150行 |
+
+手書きの値には維持するUI・機能本体・共通ランタイムを含む。今回の−80行はコメント・空行を含む差分であり、80行すべてが通信の実行文という意味ではない。定義・生成器・生成物を含む総行数は増えたが、Command／Statusのフィールド読み書き・通常形式検査を手書きで重複保守する箇所を置き換えた。
+
+5種類の既存配置について長さ・位置・整数幅・符号の静的な一致を確認した。生成物の両リポジトリー照合、Webの`npm.cmd run verify`とESP32の現在のdefault_envsビルドを実施した。実行結果とコマンドは[Webの検証記録](../../build-and-test.md)・[ESP32の検証記録](../../../../esp32/docs/build-and-test.md)へ記載する。従来の指定に従いテストを作成・実行しておらず、codecの実行比較、ブラウザ・BLE／Wi-Fi・実機確認とUploadは未実施。
 
 ## 4. 段階別計画
 
@@ -310,12 +457,13 @@ Set-Location D:\usr\prj\esp32\app\diagram-control
 | 第1段階：構文・独立解析・生成 | 実装・ビルド完了 | スカラーの専用解析・未実行成果物まで。RPC実行と2ソースUIは未接続。解析／生成の実行試験は未実施。 |
 | 第2段階：ブラウザ受付・メソッド入口 | 実装・ビルド完了 | 専用Runtimeのスカラー受付、順次実行、要求間GCと停止まで。ブラウザ実行・実通信は未確認。 |
 | 第3段階：BLE通知呼出し | 実装・ビルド完了 | 整数0〜1引数・None戻り値、専用BLE窓口と2ソース開始・停止を接続。サンプル1組を追加。実配送・実機は未確認。 |
-| 補足：共通RPC API化（2026-11-28） | 実装・ビルド完了 | `.proto`からのAPI生成と既存BLE／Wi-Fi処理への対応付けを追加し、第3段階のPython RPCも接続した。型・Web公開ビルド・生成物照合・既定環境のESP32ビルドが成功。実行・実通信・実機は未確認。第4〜7段階の完了には含めない。 |
+| 補足：共通RPC API化（2026-11-28） | 呼出しAPIの実装・ビルド完了 | `.proto`からの型・操作表と一部codecの生成、既存BLE／Wi-Fi処理への対応付けを追加し、第3段階のPython RPCも接続した。型・Web公開ビルド・生成物照合・既定環境のESP32ビルドが成功。送受信処理の生成・置換による手書き削減は未完了。実行・実通信・実機は未確認。第4〜7段階の完了には含めない。 |
+| 補足：送受信の自動生成・手書き実装削減 | 生成化1・2完了、3〜6未着手 | 48ファイル・82候補範囲の基準を保存し、Command／Statusのcodecと通常形式検査を生成・接続した。手書き汎用codecを削除し、両側のビルドと配置の静的照合を完了。実通信は未確認。 |
 | 第4段階：整数Future | 未着手 | — |
 | 第5段階：数値配列・複数要求 | 未着手 | — |
 | 第6段階：Wi-Fi配送 | 未着手 | — |
 | 第7段階：終了・互換性・仕上げ | 未着手 | — |
 
-2026-11-28の本書更新では、共通APIの位置付け・担当先・後続段階の接続方針を現行ソースへ合わせた。文書内のリンク・記述・差分を確認し、ソース変更・生成・ビルド・実行確認は行っていない。補足行のビルド結果は共通API実装時の記録であり、この文書更新で再実行した結果ではない。
+2026-11-28の本書更新では、共通APIの位置付け・担当先・後続段階の接続方針を現行ソースへ合わせ、送受信の自動生成によって手書き実装を削減する計画を追加した。続いて生成化1の棚卸しを行い、通信別の置換対象・不足する定義と行数の基準JSONを記録した。リンク・記述・差分と基準値の整合を確認し、生成化1ではソース変更・再生成・ビルド・実行確認を行っていない。生成化2ではCommand／Statusの置換・再生成・両側ビルドまで実施し、各実施記録と検証記録へ区別して記載した。実通信・実機の確認結果ではない。
 
 関連する現行の作業案内・ビルド・終了処理は、[ESP32連携ガイド](../esp32-integration.md)、[Webのビルドと確認](../../build-and-test.md)、[起動・終了](../../app-lifecycle.md)、[オブジェクト・配列対応の経緯](object-array-change-map.md)を参照する。過去のビルド・実機結果を今回のRPCの検証結果として扱わない。

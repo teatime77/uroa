@@ -2,6 +2,7 @@
  * diagramの機器接続UI・機器登録・サーボ状態とPythonプログラムの通信窓口をまとめる。
  * 呼出元はdevice-rpc.tsの型付きRPC APIを使い、本ファイルが既存処理へ対応付ける。
  * 経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
+ * 通常StatusはControlConnectionが生成codecで復号・検査した値を使い、生バイトの再解釈を行わない。
  */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
@@ -20,6 +21,7 @@ import type { RpcChannel } from "./rpc-protocol";
 import { RpcTransport } from "./rpc-protocol";
 import { RpcClient, RpcCode, RpcError, rpcCurrent, rpcSignal } from "./rpc-client";
 import type { DeviceRpcCalls, DeviceRpcClient, DeviceRpcSubscriptions, RemoteRpcCalls } from "./device-rpc";
+import type { StatusPacket } from "./device-rpc.generated";
 
 // GATT service shared with esp32/app/diagram-control.
 /**
@@ -518,21 +520,21 @@ export class DeviceConnection {
     /**
      * 検証済みStatusからPCA・IMU・STREAMの状態を反映する。
      *
-     * @param data 初期属性または処理対象のデータ。
+     * @param data 生成codecで検証・復号済みのStatus値。
      */
-    private hardwareStatus(data: DataView): void {
-        const flags = data.getUint8(4);
+    private hardwareStatus(data: StatusPacket): void {
+        const flags = data.flags;
         const pcaAvailable = !!(flags & 1), imuAvailable = !!(flags & 2), streaming = !!(flags & 8);
-        const stopped = !pcaAvailable || (!(flags & 4) && (this.armedChannels.size > 0 || data.getUint16(2, true) === 0));
+        const stopped = !pcaAvailable || (!(flags & 4) && (this.armedChannels.size > 0 || data.sequence === 0));
         if (stopped) this.resetServos();
-        const channel = data.getUint8(5);
+        const channel = data.channel;
         const mode: ServoMode = flags & 0x10 ? "speed" : "angle";
         if (channel < 16 && this.armedChannels.has(channel) && this.armedChannels.get(channel) !== mode) {
             this.armedChannels.delete(channel);
             this.servoVersions[channel]++;
             this.notify();
         }
-        const channelStopped = data.getUint8(1) === 3 && channel < 16 && this.armedChannels.delete(channel);
+        const channelStopped = data.code === 3 && channel < 16 && this.armedChannels.delete(channel);
         if (channelStopped) this.servoVersions[channel]++;
         if (stopped || channelStopped || this.state.pcaAvailable !== pcaAvailable || this.state.imuAvailable !== imuAvailable || this.state.streaming !== streaming) {
             this.state = { ...this.state, pcaAvailable, imuAvailable, streaming };

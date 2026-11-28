@@ -6,7 +6,8 @@
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
  * RPCはBLE専用の遅延窓口を用意する。各GATT操作は通常指令と同じ待ち列で直列化する。
- * 操作番号と固定長配置はdevice.protoから生成する。STOP/VM_STOPは進行中の1操作後に優先し、
+ * 操作番号・Command符号化・Status復号/形式検査はdevice.protoから生成する。
+ * 値の単位・符号の変換とACK/接続管理は本層。STOP/VM_STOPは進行中の1操作後に優先し、
  * 待ち列は32件まで。満杯時のSTOPは未開始の通常操作を1件取り消して場所を確保する。
  * 全件が優先操作なら混雑を返す。GATTを並行実行せず、切断時に未開始操作を失効させる。
  */
@@ -14,8 +15,8 @@ import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from 
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
 import type { RpcChannel } from "./rpc-protocol";
-import { CommandOpcode as ControlOpcode, packetLayouts, rpcMaxPending } from "./device-rpc.generated";
-import { decodeRpcPacket, encodeRpcPacket } from "./rpc-codec";
+import { CommandOpcode as ControlOpcode, packetLayouts, rpcMaxPending, type StatusPacket } from "./device-rpc.generated";
+import { decodeStatusPacket, encodeCommandPacket } from "./device-rpc-codec.generated";
 import { RpcCode, RpcError } from "./rpc-client";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
@@ -67,7 +68,7 @@ export { CommandOpcode as ControlOpcode } from "./device-rpc.generated";
 /** Command v1は10バイト、little endian。Status v1は12バイトでsequenceをACKへ使う。 */
 export const ControlCommand = {
     byteLength: packetLayouts.CommandPacket.byteLength,
-    version: 1,
+    version: packetLayouts.CommandPacket.fixed.version,
     allChannels: 255,
     maxSequence: 65535,
     offset: packetLayouts.CommandPacket.offset,
@@ -97,7 +98,7 @@ interface ControlCallbacks {
      *
      * @param data 初期属性または処理対象のデータ。
      */
-    status(data: DataView): void;
+    status(data: StatusPacket): void;
     /**
      * 全件検証済みのセンサー通知を所有元へ渡す。
      *
@@ -509,17 +510,14 @@ export class ControlConnection {
             if (!data || !data.byteLength) {
                 throw new Error("機器の通知データがありません。");
             }
-            const packetKind = kind ?? (data.getUint8(0) === 1 ? "status" : "telemetry");
+            const packetKind = kind ?? (data.getUint8(0) === packetLayouts.StatusPacket.fixed.version ? "status" : "telemetry");
             if (packetKind === "telemetry") {
                 const telemetry = parseDeviceTelemetry(data);
                 this.callbacks.telemetry(data, telemetry);
                 return;
             }
-            const status = decodeRpcPacket("StatusPacket", data);
-            if (status.version !== 1) {
-                throw new Error("状態データの形式が正しくありません。");
-            }
-            this.callbacks.status(data);
+            const status = decodeStatusPacket(data);
+            this.callbacks.status(status);
             if (generation !== this.generation) {
                 return;
             }
@@ -562,8 +560,8 @@ export class ControlConnection {
         return this.enqueue(async () => {
             check();
             const sequence = this.sequence = this.sequence % ControlCommand.maxSequence + 1;
-            const bytes = encodeRpcPacket("CommandPacket", {
-                version: ControlCommand.version, opcode, sequence, channel, reserved: 0,
+            const bytes = encodeCommandPacket({
+                version: ControlCommand.version, opcode, sequence, channel, reserved: packetLayouts.CommandPacket.fixed.reserved,
                 value: opcode === ControlOpcode.SET_SPEED ? value & 0xFFFF : value, duration,
             });
             const operation = servoOperations[opcode];
