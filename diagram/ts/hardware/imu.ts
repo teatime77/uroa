@@ -1,8 +1,8 @@
-import * as wire from "../ble-wifi/device-wire.generated";
 /**
  * ESP32のIMU通知から時刻・角速度・加速度を構造体ポートへ出力する。
  * 状態・共有STREAMはdevice.protoのRPC購読APIへ渡し、登録と配送はdevice-connection.tsへ委譲する。
  */
+import * as wire from "../ble-wifi/device-wire.generated";
 import { assert, Vec2, Vec3 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramDevice, type DeviceConnectionState } from "../ble-wifi/device-connection";

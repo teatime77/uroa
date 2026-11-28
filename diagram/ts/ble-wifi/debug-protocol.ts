@@ -1,10 +1,13 @@
-import * as wire from "./device-wire.generated";
 /**
  * Python BLE／Wi-Fiデバッグ通信の中心契約。Control/Resultはversion=1、Eventはversion=2。
  * device-connection.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
  * 本ファイルが一覧転送と停止値の復号を行う。PythonのStart時の一覧はbytecode-transfer.tsの一括転送に含める。
  * ESP32のbytecode_debugger.cppがloop()で要求を処理し、bytecode_vm.cppが停止値を作る。
+ * 要求・結果・Event・Snapshotの固定領域はwire.protoの生成codecを使う。
+ * 分割反復はwire-transfer.tsを共有し、PC・停止ID・所有コード・CRCの照合は本ファイルに残す。
  */
+import { forWireChunks } from "./wire-transfer";
+import * as wire from "./device-wire.generated";
 import { bytecodeCrc32, type BytecodeReceipt } from "./bytecode-transfer";
 
 /**
@@ -519,14 +522,14 @@ export class PythonDebugTransport {
         const begin = wire.encodeDebugListBody({ count: sorted.length, crc: bytecodeCrc32(bytes), imageCrc: receipt.crc32 });
         await this.request(base + 1, this.revision, begin, signal);
         try {
-            for (let index = 0; index < sorted.length; index += 4) {
-                const part = bytes.slice(index * 2, Math.min(index + 4, sorted.length) * 2);
+            await forWireChunks(bytes, 8, () => this.check(signal), async (part, offset) => {
+                const index = offset / wire.wireLayouts.Pc.byteLength;
                 const body = wire.encodeWord32({ value: index }, part);
                 const ack = await this.request(base + 2, this.revision, body, signal);
                 if (ack.value !== index + part.length / 2) {
                     throw new Error("ブレークポイントの受付件数が不正です。");
                 }
-            }
+            });
             const ack = await this.request(base + 3, this.revision, undefined, signal);
             if (ack.value !== sorted.length) {
                 throw new Error("ブレークポイントの確定件数が不正です。");

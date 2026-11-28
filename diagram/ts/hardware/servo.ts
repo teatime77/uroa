@@ -1,8 +1,8 @@
-import * as wire from "../ble-wifi/device-wire.generated";
 /**
  * CHごとの角度・連続回転速度の明示的な有効化と指令UIを提供する。
  * 通信はdevice.protoから生成したRPC APIへ渡し、ACKと機器固有の入力検査はdevice-connection.tsへ委譲する。
  */
+import * as wire from "../ble-wifi/device-wire.generated";
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramDevice, type ServoMode } from "../ble-wifi/device-connection";

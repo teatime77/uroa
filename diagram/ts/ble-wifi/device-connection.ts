@@ -5,6 +5,7 @@
  * 経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
  * 通常StatusはControlConnectionが生成codecで復号・検査した値を使い、生バイトの再解釈を行わない。
  */
+import { readTransferResult } from "./device-wire.generated";
 import { gattUuids as BLE_UUID } from "./device-wire.generated";
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
@@ -644,10 +645,14 @@ export class DeviceConnection {
                     check();
                     const capability = await result.readValue();
                     check();
-                    if (capability.byteLength !== 20 || capability.getUint8(0) !== 2) {
+                    if (capability.byteLength !== 20) {
+                        throw new Error("コード転送対応のファームウェアへ更新してください。");
+                    }
+                    const transfer = readTransferResult(capability);
+                    if (transfer.version !== 2) {
                         throw new Error("一括転送対応のファームウェアへ更新してください。");
                     }
-                    const packetLength = capability.getUint16(4, true);
+                    const packetLength = transfer.frame;
                     if (packetLength < 20 || packetLength > 244) {
                         throw new Error(`ESP32のBLE転送サイズが不正です: ${packetLength}バイト。`);
                     }

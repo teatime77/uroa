@@ -1,5 +1,24 @@
 # ビルドと回帰テスト
 
+## RPC生成化5：既存通信への展開（2026-11-28）
+
+[生成化計画](diagram/python/rpc-implementation-plan.md)の生成化5を実施した。機器一覧・混在通知・コード転送・デバッグ／Snapshot・Python RPCとBLE Wi-Fi設定の固定領域、JSON・HTTP経路・Wi-Fi転送窓口へ生成処理を接続した。生成元は[wire.proto](../diagram/rpc/wire.proto)・[transport.proto](../diagram/rpc/transport.proto)、状態・所有と認証の責任は各ソースのコメントを参照する。既存形式とJPEGの生配送を維持する。
+
+uroaルートで以下を実行し、生成物13ファイルの照合、型・公開ビルド・成果物の静的確認に成功した。
+
+```powershell
+node diagram/rpc/generate.mjs --esp32
+node diagram/rpc/generate.mjs --check --esp32
+npm.cmd run verify
+```
+
+Emscripten 4.0.23でも共通VMへ生成C++を含めて再ビルドした。JSは9,771バイト、Wasmは46,474バイトで、配布資産とassets.jsonに差分は生じなかった。ESP32側のコマンドと結果は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)を参照する。
+
+既存5配置の長さ・位置・整数幅・符号は生成化4と静的に一致した。認証、HMAC対象・counter型、転送順序・CRC・検証後開始、Worker受付ACKの意味とJPEG取得をソース差分で確認した。Web最終ビルドは成功（Vite 21.77秒、92 WebGPU資産を含む成果物確認）。game import混在2件とBinaryenのNode分岐外部化の既存警告は継続。手書き保守対象は今回165物理行、基準から累計227行減少した。定義・生成物を含む総行数は増加し、内訳は計画書へ記録した。
+
+従来の指定に従いテストは作成・実行していない。codecの実行比較・ブラウザ操作・実BLE／Wi-Fi・JPEGの取得・Upload・実機確認は未実施。現在のdefault_envsはSuperMiniであり、XIAO専用のカメラ実装は今回ビルド対象に含まれない。生成化6とPython Future・配列・Wi-Fi配送は未着手。
+
+
 ## RPC生成化4：サーバー振分け・応答（2026-11-28）
 
 [生成化計画](diagram/python/rpc-implementation-plan.md)の生成化4を実施した。[device.proto](../diagram/rpc/device.proto)のサーバー対応からESP32の[型付きサービスと振分け](../../esp32/app/diagram-control/include/control_rpc.generated.h)を生成し、既存11 opcodeの受理・変換・結果通知をloop()へ接続した。main.cppの機能本体と状態取得は維持し、opcode分岐と応答作成を生成処理へ置き換えた。仕様本文は生成元と各ソースのコメントを参照する。

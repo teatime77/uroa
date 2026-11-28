@@ -1,8 +1,9 @@
-import * as wire from "./device-wire.generated";
 /**
  * ESP32→ブラウザRPC第3段階の中心契約。BLE専用で、戻り値なし・整数0〜1引数を扱う。
  * bytecode_rpc.h/.cppが設定・要求キュー、uroa_ble.h/.cppがGATT、device-connection.tsが接続世代と
  * 通常指令との共通待ち列、python/remote-session.tsがブラウザVMとの仲介を担当する。
+ * 固定領域と登録レコードの読み書きはwire.protoの生成codec、分割反復はwire-transfer.tsを使う。
+ * 動的署名・指紋・連番・nonce・Worker受付ACKは本ファイルと既存の所有者が検査する。
  * Control=f364140d(Write)、Result=f364140e(Read)、Event=f364140f(Read)。UUID末尾は既存Serviceと共通。
  * 全パケットは20バイト以下、整数はlittle endian。Controlはversion:u8=1,op:u8,seq:u16,nonce:u32。
  * BEGIN(1)はtotal:u16@8,CRC32:u32@10で14バイト。DATA(2)はoffset:u16@8,data@10で11〜20バイト。
@@ -22,6 +23,8 @@ import * as wire from "./device-wire.generated";
  * baseApiHashは既存バックエンドと照合し、rpcApiHashは登録表とコードの対応を照合する。
  * 署名のハッシュ生成はremote.tsが担当し、ファームウェアは受信した公開名のハッシュを再計算しない。
  */
+import { forWireChunks } from "./wire-transfer";
+import * as wire from "./device-wire.generated";
 import type { RemoteProgramBuild } from "../python/remote";
 import { bytecodeCrc32 } from "./bytecode-transfer";
 
@@ -117,12 +120,9 @@ export class RpcTransport {
         const begin = wire.encodeRemoteBeginBody({ total: data.length, crc: bytecodeCrc32(data) });
         signal.throwIfAborted();
         await this.send(rpcProtocol.begin, begin);
-        for (let offset = 0; offset < data.length; offset += 10) {
-            signal.throwIfAborted();
-            const chunk = data.subarray(offset, offset + 10);
-            const payload = wire.encodeOffset16({ value: offset }, chunk);
-            await this.send(rpcProtocol.data, payload);
-        }
+        await forWireChunks(data, 10, () => signal.throwIfAborted(), async (chunk, offset) => {
+            await this.send(rpcProtocol.data, wire.encodeOffset16({ value: offset }, chunk));
+        });
         signal.throwIfAborted();
         await this.send(rpcProtocol.commit);
     }

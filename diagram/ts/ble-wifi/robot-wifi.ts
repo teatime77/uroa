@@ -1,8 +1,11 @@
-import * as jsonwire from "./device-json.generated";
-import * as wire from "./device-wire.generated";
 /**
  * BLEによるWi-Fi設定と、LAN内機器とのHMAC認証付きHTTP/WebSocket通信を担当する。カメラ画像の取得は通常の制御パケットから分離する。
+ * JSONのフィールド・経路・転送窓口はtransport.proto、BLE設定フレームはwire.protoの生成物を使う。
+ * 認証文字列の組立て・検証、接続世代、資格情報の消去と中断はこの通信所有者が管理する。
  */
+import * as jsonwire from "./device-json.generated";
+import * as wire from "./device-wire.generated";
+import { forWireChunks } from "./wire-transfer";
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import { DeviceInfoMaxLength } from "./device-telemetry";
 import { bytecodeTransfer, type BytecodeChannel } from "./bytecode-transfer";
@@ -163,10 +166,9 @@ export class BLEWifiSetup {
             if (bytes.length > 380) throw new Error("Wi-Fi設定が長すぎます。");
             try {
                 await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 0 })), signal, 90000);
-                for (let offset = 0; offset < bytes.length; offset += 19) {
-                    signal.throwIfAborted();
-                    await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 1 }, bytes.subarray(offset, offset + 19))), signal);
-                }
+                await forWireChunks(bytes, 19, () => signal.throwIfAborted(), async chunk => {
+                    await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 1 }, chunk)), signal);
+                });
                 await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 2 })), signal);
                 const value = await deadline(this.rx.readValue(), signal);
                 const reply = JSON.parse(decoder.decode(value));
@@ -414,8 +416,7 @@ export class RobotWifi implements ControlTransport {
             ws.onmessage = event => {
                 this.inbound = this.inbound.then(async () => {
                     if (this.closed || ws !== this.socket) return;
-                    const rawReply = JSON.parse(String(event.data));
-                    const reply = rawReply;
+                    const reply = JSON.parse(String(event.data));
                     if (!nonce) {
                         if (endpoint(reply).id !== target.id || typeof reply.challenge !== "string") throw new Error("別の機器が応答しました。");
                         nonce = reply.challenge;

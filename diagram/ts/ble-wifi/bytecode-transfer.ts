@@ -1,9 +1,12 @@
-import * as wire from "./device-wire.generated";
 /**
  * Python一括転送version=2の中心契約。バイナリversion=7だけを扱う。形式はpython/bytecode.tsを参照する。
  * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
  * python-block.tsが同一生成のコードとPC一覧、ESP32のbytecode_receiver.cppが検証、main.cppが開始を担当する。
+ * フレーム・Bundle・Resultの配置はwire.protoから生成し、分割反復はwire-transfer.tsを共有する。
+ * CRC・連番・確定結果の照合・開始順序は本ファイルとESP32の受信側が管理する。
  */
+import { forWireChunks } from "./wire-transfer";
+import * as wire from "./device-wire.generated";
 import {
     bytecodeFunctionRecordLength, bytecodeHeaderLength, bytecodeMaxLength,
     bytecodeSignature, bytecodeStringRecordLength, bytecodeVersion, bytecodeTypeRecordLength
@@ -269,7 +272,7 @@ export async function uploadBytecode(
         throw new Error("転送サイズが不正です。ファームウェアを更新して再接続してください。");
     }
     let sequence = 0;
-    const send = async (operation: number, position: number, payload = new Uint8Array()): Promise<void> => {
+    const send = async (operation: number, position: number, payload: Uint8Array = new Uint8Array()): Promise<void> => {
         const packet = wire.encodeTransferHeader({ version: 2, op: operation, transfer: transferId,
             sequence: ++sequence, position }, payload);
         await run(async () => {
@@ -295,11 +298,10 @@ export async function uploadBytecode(
     const crc = wire.encodeWord32({ value: bytecodeCrc32(bundle) });
     await send(bytecodeTransfer.begin, bundle.length, crc);
     const chunkLength = frameLength - 10;
-    for (let offset = 0; offset < bundle.length; offset += chunkLength) {
-        const chunk = bundle.subarray(offset, offset + chunkLength);
+    await forWireChunks(bundle, chunkLength, check, async (chunk, offset) => {
         await send(bytecodeTransfer.data, offset, chunk);
         report(Math.max(0, Math.min(bytes.byteLength, offset + chunk.length - 24)), "sending");
-    }
+    });
     report(bytes.byteLength, "validating", true);
     await send(bytecodeTransfer.commit, bundle.length);
     const deadline = performance.now() + 10000;

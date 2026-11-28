@@ -1,8 +1,8 @@
-import * as wire from "../ble-wifi/device-wire.generated";
 /**
  * ESP32の距離通知をmmの数値へ変換する。未測定・失敗・切断時の出力はundefinedにする。
  * 接続状態・共有STREAMはdevice.protoから生成したRPC購読APIを使う。
  */
+import * as wire from "../ble-wifi/device-wire.generated";
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { diagramDevice, type DeviceConnectionState } from "../ble-wifi/device-connection";

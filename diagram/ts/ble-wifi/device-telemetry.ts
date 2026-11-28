@@ -1,6 +1,7 @@
 /**
  * 機器一覧とセンサー通知の共通定数、および通知全件の検証を担当する。ブロックへの反映は呼出し元が登録順を照合してから行う。
- * 固定長ヘッダーとレコード長はdevice.protoから生成した配置を使う。登録順・変換・検証は本層が担当する。
+ * ヘッダー・値はdevice.proto、混在レコードの種別・長さ・制約はwire.protoの生成codecで全件検証する。
+ * 登録順との照合・物理単位への変換・ポート反映は各ブロックが担当する。
  */
 import { wireLayouts as packetLayouts, readTelemetryRecords, DeviceInfoRecordsLimits, wireDefaults, wireBounds } from "./device-wire.generated";
 /**

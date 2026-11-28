@@ -314,3 +314,27 @@ enum GattUuid {
     RPC_RESULT = 14 [(uroa.json_name) = "f364140e-00b0-4240-ba50-05ca45bf8abc"];
     RPC_EVENT = 15 [(uroa.json_name) = "f364140f-00b0-4240-ba50-05ca45bf8abc"];
 }
+
+// 可変長の全体構造。固定領域のcodecと共有転送処理を接続し、所有バッファーの全体コピーを増やさない。
+// Frameのpayload長は受信したフレーム長からHeader長を引く。position/offsetは分割手順が照合する。
+message ProgramFrame { TransferHeader header = 1; bytes payload = 2 [(uroa.max_length) = 1014]; }
+message ProgramBundle {
+    BundleHeader header = 1;
+    bytes image = 2 [(uroa.max_length) = 131072];
+    // imageの直後を偶数位置に0埋めしてから、headerの個数に一致するPC列を連結する。
+    repeated uint32 breakpoints = 3 [(uroa.bits) = 16, (uroa.max_length) = 4096];
+    repeated uint32 points = 4 [(uroa.bits) = 16, (uroa.max_length) = 65536];
+}
+message DebugFrame { DebugHeader header = 1; bytes payload = 2 [(uroa.max_length) = 12]; }
+message RemoteFrame { RemoteHeader header = 1; bytes payload = 2 [(uroa.max_length) = 12]; }
+message Registry { RegistryHeader header = 1; repeated RegistryRecord records = 2 [(uroa.max_length) = 32]; }
+message SnapshotString { StringHeader header = 1; bytes utf8 = 2 [(uroa.max_length) = 262144]; }
+message SnapshotBody {
+    SnapshotHeader header = 1;
+    // globals+stackのValue、文字列数Word32、文字列レコードの順。UTF-8長は各StringHeaderに従う。
+    repeated SnapshotValue values = 2 [(uroa.max_length) = 2048];
+    Word32 string_count = 3;
+    repeated SnapshotString strings = 4 [(uroa.max_length) = 2048];
+}
+// BLE設定の累積JSONは383バイトまで。ブラウザは既定MTUでも送れる19バイトずつに分割する。
+message ProvisionBody { ProvisionFrame header = 1; bytes json_utf8 = 2 [(uroa.max_length) = 383]; }

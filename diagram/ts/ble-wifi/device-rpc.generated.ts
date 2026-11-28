@@ -32,7 +32,7 @@ export const rpcApiVersion = 1;
 
 export const rpcMaxPending = 32;
 
-export const rpcSchemaFingerprint = "99d8eab721a50d2deda1e415c268665dc3730d66c80a19104a87439d890d8730";
+export const rpcSchemaFingerprint = "e63a208abaad21d1e3eb8b386df79c77d692008c4b41a685e4afb2b99cb3007f";
 
 
 

@@ -6,6 +6,9 @@
  * codecは各messageのts_codec/cpp_codec方向だけを生成し、未使用の逆方向は出力しない。
  * command付きRPCは宣言的な分岐・フィールド参照・倍率・受理条件から通常指令の両側を生成する。
  * 操作ごとのJavaScript実装文字列は持たず、機能状態は生成したサービス型のフックへ委譲する。
+ * wire.protoの固定領域・種別付きレコードはwire-generator/records-generator、
+ * transport.protoのJSON・HTTP経路・転送窓口はjson-generatorから生成する。
+ * CRC・分割手順・認証・セッション世代・VMの状態遷移は既存の通信所有者に残す。
  * 固定値・enum・下限は通常の形式検査へ生成する。C++復号は値を保持し、検査は別関数とする。
  * 既定はWebだけを生成する。--esp32で隣接ESP32のヘッダー・実装も更新・照合する。
  */
@@ -683,4 +686,4 @@ for (const [path, content] of outputs) {
         writeFileSync(path, content, "utf8");
     }
 }
-console.log(`RPC ${flags.has("--check") ? "checked" : "generated"}: ${methods.length} methods, ${Object.keys(packets).length} packet layouts, ${fingerprint.slice(0, 12)}`);
+console.log(`RPC ${flags.has("--check") ? "checked" : "generated"}: ${methods.length} methods, ${outputs.length} files (control/wire/JSON), ${fingerprint.slice(0, 12)}`);
