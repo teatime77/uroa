@@ -1,6 +1,8 @@
 /**
  * 機器一覧とセンサー通知の共通定数、および通知全件の検証を担当する。ブロックへの反映は呼出し元が登録順を照合してから行う。
+ * 固定長ヘッダーとレコード長はdevice.protoから生成した配置を使う。登録順・変換・検証は本層が担当する。
  */
+import { packetLayouts } from "./device-rpc.generated";
 /**
  * ESP32と共有する機器一覧の最大バイト数。
  * DeviceInfoは版番号・件数を付けず、センサー→アクチュエータの順にレコードを連結する。
@@ -17,15 +19,15 @@ export const DeviceTelemetryVersion = 3;
 /**
  * 通知の版・状態・連番・時刻が占めるヘッダーのバイト長。
  */
-export const DeviceTelemetryHeaderLength = 8;
+export const DeviceTelemetryHeaderLength = packetLayouts.TelemetryHeader.byteLength;
 /**
  * 種別と加速度・角速度の生値を含むIMUレコードのバイト長。
  */
-export const IMU6AxisRecordLength = 13;
+export const IMU6AxisRecordLength = packetLayouts.ImuRecord.byteLength;
 /**
  * 種別と距離uint16を含む超音波レコードのバイト長。
  */
-export const UltrasonicRecordLength = 3;
+export const UltrasonicRecordLength = packetLayouts.DistanceRecord.byteLength;
 /**
  * 全機器が最大長のIMUレコードだった場合の通知上限。
  */

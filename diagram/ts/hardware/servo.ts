@@ -1,5 +1,6 @@
 /**
- * CHごとの角度・連続回転速度の明示的な有効化と指令UIを提供する。ACKと入力検査はdevice-connection.tsへ委譲する。
+ * CHごとの角度・連続回転速度の明示的な有効化と指令UIを提供する。
+ * 通信はdevice.protoから生成したRPC APIへ渡し、ACKと機器固有の入力検査はdevice-connection.tsへ委譲する。
  */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
@@ -127,7 +128,7 @@ export class ServoMotorBlock extends FunctionBlock {
             this.actionVersion++; this.moveVersion++;
             this.busy = false; this.message = "";
             if (Number.isInteger(previous) && previous >= 0 && previous < 16 && previous !== this.configuredChannel) {
-                void diagramDevice.disableServo(previous).catch(error => this.showError(error));
+                void diagramDevice.rpc.call("servo.disable", { channel: previous }).catch(error => this.showError(error));
             }
             this.refresh();
         });
@@ -137,7 +138,7 @@ export class ServoMotorBlock extends FunctionBlock {
         this.stopButton = new Button({ text: "全サーボ停止", click: () => this.stop() });
         this.zeroButton = new Button({ text: "速度0で停止", fontSize: "14px", click: () => this.zeroSpeed() });
         this.setBoxSize();
-        if (!this.inToolbox) this.unsubscribe = diagramDevice.subscribe(state => {
+        if (!this.inToolbox) this.unsubscribe = diagramDevice.rpc.subscribe("device.state", state => {
             if (state.phase !== "connected") {
                 this.actionVersion++; this.moveVersion++;
                 this.busy = false;
@@ -304,7 +305,7 @@ export class ServoMotorBlock extends FunctionBlock {
         this.message = "";
         this.refresh();
         try {
-            await diagramDevice.disableServo(this.input.valueAsNumber);
+            await diagramDevice.rpc.call("servo.disable", { channel: this.input.valueAsNumber });
         }
         catch (error) {
             if (version === this.actionVersion) {
@@ -338,7 +339,7 @@ export class ServoMotorBlock extends FunctionBlock {
         const current = () => !this.removed && version === this.actionVersion && channel === this.input.valueAsNumber;
         this.busy = true; this.message = ""; this.refresh();
         try {
-            await diagramDevice.armServo(channel, current, this.mode);
+            await diagramDevice.rpc.call("servo.arm", { channel, mode: this.mode }, { isCurrent: current });
             if (current()) this.message = this.mode === "speed" ? "0%の指令で有効化しました。" : "90°の指令を受け付けました。";
         } catch (error) { if (current()) this.showError(error); }
         finally { if (current()) { this.busy = false; this.refresh(); } }
@@ -358,10 +359,10 @@ export class ServoMotorBlock extends FunctionBlock {
                 throw new Error(mode === "speed" ? "入力ポートへ速度（−100～100%）を接続してください。" : "入力ポートへ角度（0～180°）を接続してください。");
             }
             if (mode === "speed") {
-                await diagramDevice.setSpeed(channel, angle, current);
+                await diagramDevice.rpc.call("servo.speed", { channel, percent: angle }, { isCurrent: current });
             }
             else {
-                await diagramDevice.moveAngle(channel, angle, this.durationInput.valueAsNumber, current);
+                await diagramDevice.rpc.call("servo.move", { channel, angle, duration: this.durationInput.valueAsNumber }, { isCurrent: current });
             }
             if (current()) {
                 this.message = mode === "speed" ? `${angle}%の速度指令を受け付けました。` : `${angle}°の移動指令を受け付けました。`;
@@ -379,7 +380,7 @@ export class ServoMotorBlock extends FunctionBlock {
         const channel = this.input.valueAsNumber;
         const current = () => !this.removed && version === this.moveVersion && channel === this.input.valueAsNumber && this.mode === "speed";
         try {
-            await diagramDevice.setSpeed(channel, 0, current);
+            await diagramDevice.rpc.call("servo.speed", { channel, percent: 0 }, { isCurrent: current });
             if (current()) {
                 this.message = "速度0%（中立）の指令を受け付けました。";
             }
@@ -401,7 +402,7 @@ export class ServoMotorBlock extends FunctionBlock {
     async disable(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.actionVersion++; this.moveVersion++; this.busy = false; this.message = "";
-        try { await diagramDevice.disableServo(this.input.valueAsNumber); }
+        try { await diagramDevice.rpc.call("servo.disable", { channel: this.input.valueAsNumber }); }
         catch (error) { this.showError(error); }
         this.refresh();
     }
@@ -412,7 +413,7 @@ export class ServoMotorBlock extends FunctionBlock {
     async stop(): Promise<void> {
         if (this.removed || this.inToolbox) return;
         this.actionVersion++; this.moveVersion++; this.busy = false; this.message = "";
-        try { await diagramDevice.stopServos(); }
+        try { await diagramDevice.rpc.call("servo.stop"); }
         catch (error) { this.showError(error); }
         this.refresh();
     }
@@ -459,7 +460,7 @@ export class ServoMotorBlock extends FunctionBlock {
         this.children().forEach(button => { (button as Button).disabled = true; });
         const channel = this.input.valueAsNumber;
         if (!this.inToolbox && Number.isInteger(channel) && channel >= 0 && channel < 16) {
-            void diagramDevice.disableServo(channel).catch(error => console.error("Servo removal failed", error));
+            void diagramDevice.rpc.call("servo.disable", { channel }).catch(error => console.error("Servo removal failed", error));
         }
         this.unsubscribe?.(); this.unsubscribe = undefined;
         this.releaseConnection?.(); this.releaseConnection = undefined;

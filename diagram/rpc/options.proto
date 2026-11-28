@@ -1,0 +1,33 @@
+syntax = "proto3";
+package uroa;
+import "google/protobuf/descriptor.proto";
+
+// 生成時だけ使う属性。Protocol Buffersのシリアライズは通信に使わない。
+extend google.protobuf.FileOptions {
+    uint32 api_version = 51001;
+    uint32 max_pending = 51002;
+}
+extend google.protobuf.MessageOptions {
+    bool wire_packet = 51101;
+    string host_type = 51102;
+    string host_import = 51103;
+}
+extend google.protobuf.FieldOptions {
+    uint32 bits = 51201;
+    uint32 max_length = 51202;
+    bool host_optional = 51203;
+}
+extend google.protobuf.ServiceOptions {
+    uint32 service_id = 51301;
+    string scope = 51302;
+}
+extend google.protobuf.MethodOptions {
+    uint32 method_id = 51401;
+    string api_name = 51402;
+    string transport = 51403;
+    string completion = 51404;
+    uint32 io_timeout_ms = 51405;
+    bool synchronous = 51406;
+    bool priority = 51407;
+    string subscription = 51408;
+}

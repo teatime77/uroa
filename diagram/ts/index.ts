@@ -1,5 +1,6 @@
 /**
  * diagramの初期化・破棄、ツール番号とブロックの対応、Start操作と保存図の復元を担当する。実行状態はruntime.ts、キャンバスはcanvas.tsが管理する。
+ * ESP32への全体停止と破棄時の切断はdevice.protoから生成したRPC APIへ渡す。
  */
 import { msg, assert, $, sleep, MyError } from "@i18n";
 import { InputTextBlock, InputNumberBlock, CompareBlock, InputRangeBlock, CameraBlock, FaceDetectionBlock, CalcBlock, ConditionGate, InputBlock } from "./block";
@@ -31,7 +32,7 @@ import { testPython } from "./python/parser";
 export function stopDiagram(): void {
     stopProcedures();
     if (diagramDevice.state.phase === "connected") {
-        void diagramDevice.stopServos().catch(error => console.error("Servo stop failed", error));
+        void diagramDevice.rpc.call("servo.stop").catch(error => console.error("Servo stop failed", error));
     }
 }
 
@@ -464,7 +465,7 @@ function setDragDrop(canvas : HTMLCanvasElement){
  */
 export function disposeDiagram(): void {
     stopDiagram();
-    diagramDevice.disconnect();
+    diagramDevice.rpc.call("connection.disconnect", {});
     theEditor?.clearBlock();
     listeners.abort();
     clearTimeout(periodicTimer);

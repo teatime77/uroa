@@ -1,5 +1,7 @@
 /**
- * diagramの機器接続UI・機器登録・サーボ状態とPythonプログラムの通信窓口をまとめる。経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
+ * diagramの機器接続UI・機器登録・サーボ状態とPythonプログラムの通信窓口をまとめる。
+ * 呼出元はdevice-rpc.tsの型付きRPC APIを使い、本ファイルが既存処理へ対応付ける。
+ * 経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
  */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
@@ -15,6 +17,9 @@ import { BLEControlTransport, type ControlCharacteristic } from "./ble-control-t
 import { checkBytecodeTransfer, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import { PythonDebugTransport, type DebugSnapshot, type DebugEvent, type DebugAction } from "./debug-protocol";
 import type { RpcChannel } from "./rpc-protocol";
+import { RpcTransport } from "./rpc-protocol";
+import { RpcClient, RpcCode, RpcError, rpcCurrent, rpcSignal } from "./rpc-client";
+import type { DeviceRpcCalls, DeviceRpcClient, DeviceRpcSubscriptions, RemoteRpcCalls } from "./device-rpc";
 
 // GATT service shared with esp32/app/diagram-control.
 /**
@@ -106,7 +111,8 @@ export type ServoMode = "angle" | "speed";
 
 /**
  * 図の接続UI・機器登録・機器状態・プログラム通信の窓口。GATT参照は保存しない。
- * 共通APIはDeviceConnection、DeviceConnectionState、diagramDevice、DeviceConnectionBlockと呼ぶ。
+ * 呼出しと購読の公開APIはdiagramDevice.rpc。型と操作定義はdevice.protoから生成する。
+ * DeviceConnectionStateと状態判定は通信を起こさないローカル参照として公開する。
  * BLEControlTransport・BLEのGATT型・UUID・BLEWifiSetupは実際にBLE固有の処理なので区別する。
  * index.tsの型番号0とアイコンはDeviceConnectionBlock。旧保存型名BLEConnectionBlockは
  * 読込み用の別名だけを登録し、Block.makeObj()による新規保存・コピーは新しい型名を使う。
@@ -162,6 +168,8 @@ export class DeviceConnection {
      * 現在開いているWi-Fi設定・接続の入力ダイアログ。
      */
     private wifiDialog?: RobotWifiDialog;
+    /** 開いているダイアログのBLE設定窓口。終了時に破棄し、RPC APIからのみ利用する。 */
+    private wifiSetup?: BLEWifiSetup;
     /**
      * BLE経由のWi-Fi設定または接続準備を行っている状態。
      */
@@ -220,6 +228,90 @@ export class DeviceConnection {
     private actuators : FunctionBlock[] = [];
 
     /**
+     * 全通信の呼出し・購読API。既存の待ち列へ新たな直列化を重ねず、STOP・取消・ユーザー操作を維持する。
+     * 認証と制御権はconnection/wifi、PINGと通知の配送は既存の共通通信層が管理する。
+     */
+    readonly rpc: DeviceRpcClient = new RpcClient<DeviceRpcCalls, DeviceRpcSubscriptions>({
+        "connection.connect": async () => {
+            await this.connect();
+            if (this.state.phase !== "connected") {
+                throw new RpcError(RpcCode.Unavailable, this.state.message || "ESP32へ接続できませんでした。");
+            }
+        },
+        "connection.disconnect": request => this.disconnect(request.reason),
+        "device.register": () => this.sendDeviceInfo(),
+        "device.info": () => this.sendControl(ControlOpcode.INFO),
+        "device.ping": () => this.sendControl(ControlOpcode.PING),
+        "servo.arm": (request, options) => {
+            if (request.mode !== "angle" && request.mode !== "speed") {
+                throw new RpcError(RpcCode.InvalidArgument, "サーボのモードが不正です。");
+            }
+            return this.armServo(request.channel, rpcCurrent(options), request.mode);
+        },
+        "servo.move": (request, options) => this.moveAngle(request.channel, request.angle, request.duration, rpcCurrent(options)),
+        "servo.speed": (request, options) => this.setSpeed(request.channel, request.percent, rpcCurrent(options)),
+        "servo.disable": request => this.disableServo(request.channel),
+        "servo.stop": () => this.stopServos(),
+        "program.upload": (request, options) => this.sendBytecode(request.code, options?.signal, request.deployment),
+        "program.start": (request, options) => this.startBytecode(request.receipt, rpcCurrent(options)),
+        "program.stop": () => this.stopBytecode(),
+        "debug.breakpoints": (request, options) => this.sendBreakpoints(request.receipt, request.pcs, options?.signal, request.stepPcs),
+        "debug.observe": (request, options) => this.observeDeployment(request.receipt, options?.signal),
+        "debug.execute": (request, options) => {
+            if (request.action !== "continue" && request.action !== "over" && request.action !== "in" && request.action !== "out") {
+                throw new RpcError(RpcCode.InvalidArgument, "デバッグ操作が不正です。");
+            }
+            return this.executeDebug(request.receipt, request.snapshot, request.action, options?.signal);
+        },
+        "remote.open": request => this.openRemote(request.nonce),
+        "wifi.open": async () => {
+            await this.openWifi();
+            if (!this.wifiDialog) {
+                throw new RpcError(RpcCode.Unavailable, this.state.message || "Wi-Fi設定を開けませんでした。");
+            }
+        },
+        "wifi.close": () => this.cancelWifiSetup(),
+        "wifi.info": options => this.requireWifiSetup().info(rpcSignal(options)),
+        "wifi.scan": async options => ({ networks: await this.requireWifiSetup().scan(rpcSignal(options)) }),
+        "wifi.configure": (request, options) => this.requireWifiSetup().configure(request.ssid, request.password, rpcSignal(options)),
+        "wifi.forget": options => this.requireWifiSetup().request({ op: "forget" }, rpcSignal(options)),
+        "wifi.connect": (target, options) => this.connectWifi(target, rpcSignal(options)),
+        "camera.capture": options => this.captureImage(rpcSignal(options)),
+    }, {
+        "device.state": listener => this.subscribe(listener),
+        "debug.state": listener => this.subscribeDebugSnapshots((snapshot, error, event) => listener({ snapshot, error, event })),
+        "sensors.stream": sensor => this.retainSensorStream(sensor),
+    }, () => this.state.phase === "connected" ? this.state.transport : undefined);
+
+    /** 現ダイアログが所有する設定窓口だけを返す。BLE認証と取消はBLEWifiSetupが検査する。 */
+    private requireWifiSetup(): BLEWifiSetup {
+        if (!this.wifiSetup) {
+            throw new RpcError(RpcCode.Unavailable, "BLE接続先のWi-Fi設定を開いてください。");
+        }
+        return this.wifiSetup;
+    }
+
+    /** 認証済みJPEGの既存HTTP取得へ渡す。画像の共有と反復取得はcamera-feed.tsが所有する。 */
+    private captureImage(signal: AbortSignal): Promise<Blob> {
+        if (!this.wifi) {
+            return Promise.reject(new Error("Wi-Fiカメラへ接続してください。"));
+        }
+        return this.wifi.image(signal);
+    }
+
+    /** Python Remoteの実行ごとに窓口を束縛し、専用プロトコルの操作も共通のcall()で公開する。 */
+    private async openRemote(nonce: number): Promise<RpcClient<RemoteRpcCalls>> {
+        const generation = this.generation;
+        const transport = new RpcTransport(await this.openRpc(), nonce);
+        return new RpcClient<RemoteRpcCalls>({
+            "registry.configure": (request, options) => transport.configure(request.config, rpcSignal(options)),
+            "request.read": () => transport.read(),
+            "request.acknowledge": request => transport.acknowledge(request.id),
+            "registry.end": () => transport.end(),
+        }, {}, () => this.generation === generation && this.state.phase === "connected" ? this.state.transport : undefined);
+    }
+
+    /**
      * 指定CHの有効化ACKがあり、指定時はモードも一致するかを調べる。
      *
      * @param channel 操作対象のサーボCH番号。
@@ -247,15 +339,21 @@ export class DeviceConnection {
      * @param channel 操作対象のサーボCH番号。
      */
     private checkChannel(channel: number): void {
-        if (!Number.isInteger(channel) || channel < 0 || channel > 15) throw new Error("チャンネルは0～15の整数で指定してください。");
+        if (!Number.isInteger(channel) || channel < 0 || channel > 15) {
+            throw new RpcError(RpcCode.InvalidArgument, "チャンネルは0～15の整数で指定してください。");
+        }
     }
 
     /**
      * 現在の機器接続とPCA9685の利用可否を検査する。
      */
     private checkServoConnection(): void {
-        if (this.state.phase !== "connected") throw new Error("機器接続ブロックでESP32へ接続してください。");
-        if (!this.state.pcaAvailable) throw new Error("PCA9685が見つかりません。");
+        if (this.state.phase !== "connected") {
+            throw new RpcError(RpcCode.Unavailable, "機器接続ブロックでESP32へ接続してください。");
+        }
+        if (!this.state.pcaAvailable) {
+            throw new RpcError(RpcCode.Device, "PCA9685が見つかりません。", 4);
+        }
     }
 
     /**
@@ -263,7 +361,7 @@ export class DeviceConnection {
      *
      * @param channel 操作対象のサーボCH番号。
      */
-    async armServo(channel: number, isCurrent = () => true, mode: ServoMode = "angle"): Promise<void> {
+    private async armServo(channel: number, isCurrent = () => true, mode: ServoMode = "angle"): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
         const version = ++this.servoVersions[channel];
@@ -277,11 +375,11 @@ export class DeviceConnection {
      * diagram-control/include/config.hのMIN_ANGLE/MAX_ANGLEと合わせる。
      * hardware/servo.tsは同じ範囲を表示し、ファームウェアの共有サーボドライバーでも検査する。
      */
-    async moveAngle(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
+    private async moveAngle(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
         if (!Number.isFinite(angle) || angle < 0 || angle > 180) {
-            throw new Error("角度は0～180°で指定してください。");
+            throw new RpcError(RpcCode.InvalidArgument, "角度は0～180°で指定してください。");
         }
         if (!Number.isInteger(duration) || duration < 0 || duration > 10000) throw new Error("移動時間は0～10000msの整数で指定してください。");
         if (!this.isServoArmed(channel, "angle")) throw new Error("先に角度モードで90°の有効化を行ってください。");
@@ -290,13 +388,8 @@ export class DeviceConnection {
             () => version === this.servoVersions[channel] && this.isServoArmed(channel, "angle") && isCurrent());
     }
 
-    /** 旧呼出元の互換窓口。新しい呼出元はmoveAngle()を使う。 */
-    async moveServo(channel: number, angle: number, duration: number, isCurrent = () => true): Promise<void> {
-        await this.moveAngle(channel, angle, duration, isCurrent);
-    }
-
     /** 速度は方向付きの指令%。0%はPWMを維持して中立パルスを送る。 */
-    async setSpeed(channel: number, percent: number, isCurrent = () => true): Promise<void> {
+    private async setSpeed(channel: number, percent: number, isCurrent = () => true): Promise<void> {
         this.checkChannel(channel);
         this.checkServoConnection();
         if (!Number.isFinite(percent) || percent < -100 || percent > 100) {
@@ -315,7 +408,7 @@ export class DeviceConnection {
      *
      * @param channel 操作対象のサーボCH番号。
      */
-    async disableServo(channel: number): Promise<void> {
+    private async disableServo(channel: number): Promise<void> {
         this.checkChannel(channel);
         // Cancel queued ARM/MOVE before placing DISABLE behind any in-flight write.
         this.servoVersions[channel]++;
@@ -335,7 +428,7 @@ export class DeviceConnection {
     /**
      * 全CHの操作世代を失効させ、通常経路で全サーボ停止を要求する。
      */
-    async stopServos(): Promise<void> {
+    private async stopServos(): Promise<void> {
         this.debugger?.invalidateSnapshot();
         this.resetServos();
         this.notify();
@@ -364,7 +457,7 @@ export class DeviceConnection {
      *
      * @param listener 変更通知を受け取る処理。
      */
-    subscribe(listener: (state: DeviceConnectionState) => void): () => void {
+    private subscribe(listener: (state: DeviceConnectionState) => void): () => void {
         this.listeners.add(listener);
         listener(this.state);
         return () => {
@@ -374,7 +467,7 @@ export class DeviceConnection {
     }
 
     /** 配置されたセンサーブロックの共有10Hz STREAM利用を登録し、解除関数を返す。 */
-    retainSensorStream(sensor: FunctionBlock): () => void {
+    private retainSensorStream(sensor: FunctionBlock): () => void {
         this.sensorStreamUsers.add(sensor);
         this.updateStream();
         let released = false;
@@ -494,6 +587,7 @@ export class DeviceConnection {
         this.generation++;
         this.control.close();
         this.wifiDialog?.close(); this.wifiDialog = undefined;
+        this.wifiSetup = undefined;
         this.provisioning = false;
         this.wifi?.close(); this.wifi = undefined; this.service = undefined;
         setCameraProvider();
@@ -513,18 +607,18 @@ export class DeviceConnection {
     }
 
     /** 明示切断と画面のライフサイクルによる切断の理由を表示・コンソールへ残す。 */
-    disconnect(reason = "切断要求"): void {
+    private disconnect(reason = "切断要求"): void {
         this.close("idle", reason);
     }
     /**
      * 現在のWi-Fi設定ダイアログと進行中の設定を終了する。
      */
-    cancelWifiSetup(): void { this.wifiDialog?.close(); }
+    private cancelWifiSetup(): void { this.wifiDialog?.close(); }
 
     /**
      * 利用者の機器選択からGATT接続・通知・機器登録を進め、現世代の接続を公開する。
      */
-    async connect(): Promise<void> {
+    private async connect(): Promise<void> {
         if (["selecting", "connecting", "connected"].includes(this.state.phase)) return;
         const unavailable = this.availabilityMessage();
         if (unavailable) { this.publish("unavailable", "", unavailable); return; }
@@ -668,7 +762,7 @@ export class DeviceConnection {
     /**
      * 現在のBLE機器から設定窓口を取得し、Wi-Fi設定・接続のダイアログを開く。
      */
-    async openWifi(): Promise<void> {
+    private async openWifi(): Promise<void> {
         if (this.bytecodeSending || this.debuggerSending) {
             return;
         }
@@ -688,19 +782,23 @@ export class DeviceConnection {
             const tx = await this.service.getCharacteristic(BLE_UUID.wifiConfig);
             const rx = await this.service.getCharacteristic(BLE_UUID.wifiResult);
             if (generation !== this.generation) return;
-            const setup = new BLEWifiSetup(tx as BLECharacteristic & { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView> }, rx as BLECharacteristic & { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView> });
+            this.wifiSetup = new BLEWifiSetup(tx as BLECharacteristic & { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView> }, rx as BLECharacteristic & { /** 現在のGATT特性値を読み取る。 */ readValue(): Promise<DataView> });
             const dialog = this.wifiDialog = new RobotWifiDialog(
-                (target, signal) => this.connectWifi(target, signal),
+                this.rpc,
                 () => {
-                    if (this.wifiDialog === dialog) this.wifiDialog = undefined;
+                    if (this.wifiDialog === dialog) {
+                        this.wifiDialog = undefined;
+                        this.wifiSetup = undefined;
+                    }
                     this.provisioning = false;
                     if (!this.closing && this.device?.gatt?.connected && this.state.phase === "connected") {
                         this.updateStream();
                         this.control.startHeartbeat();
                     }
-                }, setup);
+                });
             dialog.open();
         } catch {
+            this.wifiSetup = undefined;
             this.provisioning = false;
             if (this.device?.gatt?.connected && this.state.phase === "connected") {
                 this.updateStream();
@@ -750,7 +848,7 @@ export class DeviceConnection {
             }
             this.publish("connected", actual.name);
             this.provisioning = false;
-            if (actual.camera) setCameraProvider(cameraSignal => wifi.image(cameraSignal));
+            if (actual.camera) setCameraProvider(cameraSignal => this.rpc.call("camera.capture", { signal: cameraSignal }));
             this.updateStream();
             this.control.startHeartbeat();
         } catch (error) {
@@ -779,7 +877,7 @@ export class DeviceConnection {
      * const module = parsePython(source);
      * const analysis = await analyzePython(module, signal);
      * const bytes = generateBytecode(analysis);
-     * const receipt = await diagramDevice.sendBytecode(bytes, signal);
+     * const receipt = await diagramDevice.rpc.call("program.upload", { code: bytes }, { signal });
      * // receipt.byteLengthとreceipt.crc32はESP32が保持完了を返した内容。
      * ```
      *
@@ -789,7 +887,7 @@ export class DeviceConnection {
      * deployment指定時はPC一覧も送り、ESP32の検証・開始結果を待つ。通信契約はbytecode-transfer.tsのuploadBytecode()を参照する。
      * BLEの専用Characteristicは送信時に取得する。両経路の形式・Result照合・制約はbytecode-transfer.tsを参照する。
      */
-    async sendBytecode(bytes: Uint8Array, signal?: AbortSignal, deployment?: BytecodeDeployment): Promise<BytecodeReceipt> {
+    private async sendBytecode(bytes: Uint8Array, signal?: AbortSignal, deployment?: BytecodeDeployment): Promise<BytecodeReceipt> {
         if (this.bytecodeSending || this.debuggerSending) {
             throw new Error("バイトコードまたはブレークポイントを送信中です。");
         }
@@ -836,7 +934,7 @@ export class DeviceConnection {
      * 現BLE接続だけで使えるRPC窓口を取得する。各Read/Writeを通常指令と同じ待ち列へ入れる。
      * 取消はプロトコル処理の境界で行い、進行中のGATT操作は最大2.5秒の既存期限で終える。
      */
-    async openRpc(): Promise<RpcChannel> {
+    private async openRpc(): Promise<RpcChannel> {
         const generation = this.generation;
         const check = () => {
             if (generation !== this.generation || this.state.phase !== "connected" || this.state.transport !== "ble" || this.provisioning) {
@@ -851,7 +949,7 @@ export class DeviceConnection {
     }
 
     /** 停止値の購読。未取得・失効ではundefined、取得失敗ではerrorを渡す。図の保存には含めない。 */
-    subscribeDebugSnapshots(listener: (snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void): () => void {
+    private subscribeDebugSnapshots(listener: (snapshot?: DebugSnapshot, error?: Error, event?: DebugEvent) => void): () => void {
         this.debugListeners.add(listener);
         listener(this.debugSnapshot, this.debugError, this.debugEvent);
         return () => this.debugListeners.delete(listener);
@@ -896,16 +994,16 @@ export class DeviceConnection {
      * 完了後、同じ接続・同じ保持コードのPaused通知から停止値を自動取得し、購読者へ公開する。
      * 通信・フラグ・停止値の共通仕様はdebug-protocol.ts。旧ファームウェアの通常接続には影響しない。
      * ```typescript
-     * const receipt = await diagramDevice.sendBytecode(bytes, signal);
-     * const release = diagramDevice.subscribeDebugSnapshots((snapshot, error) => {
+     * const receipt = await diagramDevice.rpc.call("program.upload", { code: bytes }, { signal });
+     * const release = diagramDevice.rpc.subscribe("debug.state", ({ snapshot, error }) => {
      *     // snapshot?.globals / stack / pc / bp / spを後続の変数表示で使う。
      * });
-     * await diagramDevice.sendBreakpoints(receipt, instructionPcs, signal);
-     * await diagramDevice.startBytecode(receipt);
+     * await diagramDevice.rpc.call("debug.breakpoints", { receipt, pcs: instructionPcs }, { signal });
+     * await diagramDevice.rpc.call("program.start", { receipt });
      * // 利用終了時はrelease()で購読を解除する。
      * ```
      */
-    async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal,
+    private async sendBreakpoints(receipt: BytecodeReceipt, pcs: readonly number[], signal?: AbortSignal,
         stepPcs?: readonly number[], monitorOnly = false): Promise<void> {
         if (this.bytecodeSending || this.debuggerSending) {
             throw new Error("バイトコードまたはブレークポイントを送信中です。");
@@ -959,12 +1057,12 @@ export class DeviceConnection {
     }
 
     /** 一括転送で設定済みのPCを再送せず、現在の保持世代のVM状態を監視する。 */
-    async observeDeployment(receipt: BytecodeReceipt, signal?: AbortSignal): Promise<void> {
+    private async observeDeployment(receipt: BytecodeReceipt, signal?: AbortSignal): Promise<void> {
         await this.sendBreakpoints(receipt, [], signal, undefined, true);
     }
 
     /** 現接続・所有Receipt・全受信した最新Snapshotを照合し、停止ID付きの再開／ステップを送る。Stopは常に優先できる。 */
-    async executeDebug(receipt: BytecodeReceipt, snapshot: DebugSnapshot, action: DebugAction, signal?: AbortSignal): Promise<void> {
+    private async executeDebug(receipt: BytecodeReceipt, snapshot: DebugSnapshot, action: DebugAction, signal?: AbortSignal): Promise<void> {
         if (!this.debugger || this.bytecodeReceipt !== receipt || this.debugSnapshot !== snapshot || this.debugError
             || this.state.phase !== "connected" || this.provisioning || this.bytecodeSending || this.debuggerSending) {
             throw new Error("現在の機器・Pythonの停止情報だけを操作できます。");
@@ -980,9 +1078,9 @@ export class DeviceConnection {
 
     /** 保持済みコードを先頭から実行する。通信形式とPythonBlockとの分担はpython-block.tsを参照。
      * 同じ接続・最後の転送だけを許し、キュー待機中の上書き・取消も書込み直前に検査する。
-     * ACKはVM初期化の成否までを表し、HALT・実行時エラーはシリアルで確認する。
+     * ACKはVM初期化の成否までを表し、HALT・実行時エラーはdebug.stateのEventで確認する。
      */
-    async startBytecode(receipt: BytecodeReceipt, isCurrent = () => true): Promise<void> {
+    private async startBytecode(receipt: BytecodeReceipt, isCurrent = () => true): Promise<void> {
         const current = () => isCurrent() && this.bytecodeReceipt === receipt && !this.bytecodeSending && !this.debuggerSending
             && !this.provisioning && this.state.phase === "connected";
         if (!current()) {
@@ -993,7 +1091,7 @@ export class DeviceConnection {
     }
 
     /** VMとその所有する機器を停止する。保持コードは残す。全体STOPは既存のstopServos()も使う。 */
-    async stopBytecode(): Promise<void> {
+    private async stopBytecode(): Promise<void> {
         this.debugger?.invalidateSnapshot();
         this.resetServos();
         this.notify();
@@ -1035,6 +1133,9 @@ export class DeviceConnection {
         }
         this.sensors = sensors;
         this.actuators = actuators;
+        // 再登録は機器側のSTREAMを止めるので、接続中なら現在の利用者で改めて要求する。
+        this.requestedRate = 0;
+        this.updateStream();
     }
 }
 
@@ -1047,10 +1148,10 @@ export const diagramDevice = new DeviceConnection();
 export function initDeviceConnection(signal: AbortSignal): void {
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
-            diagramDevice.disconnect("画面が非表示になったため切断しました。");
+            diagramDevice.rpc.call("connection.disconnect", { reason: "画面が非表示になったため切断しました。" });
         }
     }, { signal });
-    window.addEventListener("pagehide", () => diagramDevice.disconnect("ページを離れたため切断しました。"), { signal });
+    window.addEventListener("pagehide", () => diagramDevice.rpc.call("connection.disconnect", { reason: "ページを離れたため切断しました。" }), { signal });
 }
 
 /**
@@ -1086,13 +1187,13 @@ export class DeviceConnectionBlock extends FunctionBlock {
         super(data);
         this.button = new Button({ text: "接続", click: () => {
             if (this.removed || this.inToolbox) return;
-            if (diagramDevice.state.phase === "connected") diagramDevice.disconnect();
-            else return diagramDevice.connect();
+            if (diagramDevice.state.phase === "connected") diagramDevice.rpc.call("connection.disconnect", {});
+            else return diagramDevice.rpc.call("connection.connect");
         } });
         this.wifiButton = new Button({ text: "Wi-Fi設定／接続", click: () => {
-            if (!this.removed && !this.inToolbox) return diagramDevice.openWifi();
+            if (!this.removed && !this.inToolbox) return diagramDevice.rpc.call("wifi.open");
         } });
-        if (!this.inToolbox) this.unsubscribe = diagramDevice.subscribe(() => {
+        if (!this.inToolbox) this.unsubscribe = diagramDevice.rpc.subscribe("device.state", () => {
             this.updateButton();
             theCanvas?.requestUpdateCanvas();
         });
@@ -1226,7 +1327,7 @@ export class DeviceConnectionBlock extends FunctionBlock {
      */
     clearBlock(): void {
         this.removed = true;
-        diagramDevice.cancelWifiSetup();
+        diagramDevice.rpc.call("wifi.close");
         this.button.disabled = true;
         this.button.pressed = false;
         this.wifiButton.disabled = true; this.wifiButton.pressed = false;

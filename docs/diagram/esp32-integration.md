@@ -75,6 +75,8 @@ pio run --project-dir app/diagram-control -e supermini_esp32s3
 
 ## 通常通信の共通層
 
+呼出しAPIは[device.proto](../../diagram/rpc/device.proto)を正本とし、[生成器](../../diagram/rpc/generate.mjs)から型・操作表・固定長配置を生成する。[device-connection.ts](../../diagram/ts/ble-wifi/device-connection.ts)が各既存処理へ接続する。生成・照合コマンドと検証範囲は[build-and-test.md](../build-and-test.md)を参照する。
+
 ブラウザー側の通常指令・ACK・通知検証は[control-connection.ts](../../diagram/ts/ble-wifi/control-connection.ts)、GATT配送は[ble-control-transport.ts](../../diagram/ts/ble-wifi/ble-control-transport.ts)、Wi-Fi配送は[robot-wifi.ts](../../diagram/ts/ble-wifi/robot-wifi.ts)を参照する。ESP32側の共通窓口は[control_transport.h](../../../esp32/app/diagram-control/include/control_transport.h)。担当範囲と通信契約は各ソースの仕様コメントを正本とする。
 
 ## 送受信のタイミング

@@ -1,6 +1,7 @@
 /**
  * Python編集・実行用ActionBlock。parser.ts、semantic.ts、bytecode.tsでビルドし、
- * ESP32はble-wifi/device-connection.tsが転送・VM指令、ブラウザはbrowser-runtime.tsがWorkerの実行を担当する。
+ * ESP32の転送・VM指令・デバッグはdevice.protoから生成したRPC APIを使い、device-connection.tsが配送する。
+ * ブラウザはbrowser-runtime.tsがWorkerの実行を担当する。
  * index.tsがツール、procedure.tsが復元を登録する。
  * 編集領域の色分け・スクロール追従はhighlight-editor.tsが担当し、ソースはtextareaに保持する。
  * 行ブレークポイントのF9操作・背景・解除の仕様はhighlight-editor.tsのtoggleBreakpoint()を参照する。
@@ -296,7 +297,7 @@ export class PythonBlock extends ActionBlock {
         Object.assign(this.browserOutput.style, { maxHeight: "140px", minHeight: "0", pointerEvents: "auto", overflow: "auto", whiteSpace: "pre-wrap", margin: "0", font: "13px monospace" });
         panel.append(heading, controls, this.workspace, this.statusView, this.browserOutput);
         (document.getElementById("layer-diagram") || document.body).appendChild(panel);
-        this.releaseConnection = diagramDevice.subscribe(state => {
+        this.releaseConnection = diagramDevice.rpc.subscribe("device.state", state => {
             if (state.phase !== "connected" && this.remoteSession) {
                 void this.stop().catch(() => undefined);
             }
@@ -318,7 +319,7 @@ export class PythonBlock extends ActionBlock {
         this.releaseStop = subscribeDiagramStop(() => {
             void this.stop().catch(() => undefined);
         });
-        this.releaseDebug = diagramDevice.subscribeDebugSnapshots((snapshot, error, event) => {
+        this.releaseDebug = diagramDevice.rpc.subscribe("debug.state", ({ snapshot, error, event }) => {
             if (this.removed || !this.vmReceipt || diagramDevice.bytecodeReceipt !== this.vmReceipt) {
                 return;
             }
@@ -806,13 +807,15 @@ export class PythonBlock extends ActionBlock {
                 });
                 const breakpoints = resolveBreakpoints(build.esp32.info, this.highlightEditor.getBreakpointLines());
                 this.debugInfo = build.esp32.info;
-                const receipt = await diagramDevice.sendBytecode(build.esp32.bytes, controller.signal,
-                    { breakpoints, stepPcs: build.esp32.info.stepPcs, start: true });
+                const receipt = await diagramDevice.rpc.call("program.upload", {
+                    code: build.esp32.bytes,
+                    deployment: { breakpoints, stepPcs: build.esp32.info.stepPcs, start: true },
+                }, { signal: controller.signal });
                 controller.signal.throwIfAborted();
                 this.ownsVM = true;
                 this.vmFinished = false;
                 this.vmReceipt = receipt;
-                await diagramDevice.observeDeployment(receipt, controller.signal);
+                await diagramDevice.rpc.call("debug.observe", { receipt }, { signal: controller.signal });
                 return;
             }
             if (this.executionTarget.value === "browser") {
@@ -852,13 +855,15 @@ export class PythonBlock extends ActionBlock {
             const breakpoints = resolveBreakpoints(build.info, this.highlightEditor.getBreakpointLines());
             this.debugInfo = build.info;
             this.showStatus("コードとデバッグ用PCを送信しています…");
-            const receipt = await diagramDevice.sendBytecode(build.bytes, controller.signal,
-                { breakpoints, stepPcs: build.info.stepPcs, start: true });
+            const receipt = await diagramDevice.rpc.call("program.upload", {
+                code: build.bytes,
+                deployment: { breakpoints, stepPcs: build.info.stepPcs, start: true },
+            }, { signal: controller.signal });
             controller.signal.throwIfAborted();
             this.ownsVM = true;
             this.vmFinished = false;
             this.vmReceipt = receipt;
-            await diagramDevice.observeDeployment(receipt, controller.signal);
+            await diagramDevice.rpc.call("debug.observe", { receipt }, { signal: controller.signal });
             controller.signal.throwIfAborted();
             // すでに取得したRunning/Paused/終了/エラーの表示を開始受付で上書きしない。
             if (!diagramDevice.debugEvent) {
@@ -914,7 +919,7 @@ export class PythonBlock extends ActionBlock {
         this.debugRequest = controller;
         this.showStatus(action === "continue" ? "VMを再開しています…" : "ステップを実行しています…");
         try {
-            await diagramDevice.executeDebug(receipt, snapshot, action, controller.signal);
+            await diagramDevice.rpc.call("debug.execute", { receipt, snapshot, action }, { signal: controller.signal });
         }
         catch (error) {
             if (!controller.signal.aborted && !this.removed) {
@@ -959,7 +964,7 @@ export class PythonBlock extends ActionBlock {
             return Promise.resolve();
         }
         // ESP32の停止をC計算の復帰待ちやRPC登録解除の成否に依存させない。
-        const task = Promise.allSettled([remoteStop ?? Promise.resolve(), diagramDevice.stopBytecode()]).then(results => {
+        const task = Promise.allSettled([remoteStop ?? Promise.resolve(), diagramDevice.rpc.call("program.stop")]).then(results => {
             const failed = results.find(result => result.status === "rejected");
             if (failed?.status === "rejected" && diagramDevice.state.phase === "connected") {
                 throw failed.reason;

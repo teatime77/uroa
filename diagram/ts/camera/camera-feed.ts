@@ -1,5 +1,6 @@
 /**
  * Wi-Fi機器からの画像取得を購読者間で共有する。最初の購読で取得を始め、最後の購読解除で要求と共有画像を破棄する。
+ * device-connection.tsがRPCのcamera.captureを取得先へ登録する。HTTP形式と認証はrobot-wifi.tsが担当する。
  */
 import { setCameraImage } from "../diagram_util";
 

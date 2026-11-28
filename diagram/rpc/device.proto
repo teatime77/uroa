@@ -1,0 +1,457 @@
+syntax = "proto3";
+package uroa.device;
+import "options.proto";
+
+// 機器通信APIと既存固定長パケットの中心契約。
+// generate.mjsがTypeScriptの型・API・メタデータ・固定長codecとC++の番号・配置を生成する。
+// device-connection.tsがAPIと既存通信を接続し、control-connection.tsが指令のACK・待ち列を扱う。
+// BLE/Wi-Fiの既存パケット、認証、転送、Snapshot、JPEGの形式は各既存アダプターを維持する。
+// host_type付きmessageは復号後の既存型やローカル所有者の参照であり、通信に直列化しない。
+// host_typeの実体・同一Receipt/Snapshotの所有検査は既存ソースが担当する。
+// wire_packetだけを宣言順・little endian・パディングなしで配置する。番号は位置ではない。
+// bitsを省略したuint32/sint32は32bit。可変長APIデータのUTF-8長・要素数はmax_length以下。
+// Call IDはローカル識別用。既存sequence/転送ID/stopId/nonceへはアダプターが対応付ける。
+// 応答喪失は未実行を保証しない。自動再送・再接続後の自動再実行は行わない。
+// AbortSignal/isCurrentはローカル呼出しコンテキスト。取消は既存処理の境界で検査し、動作の巻戻しはしない。
+// 同時呼出しは最大max_pending件。STOP/切断は制限を迂回し、通信では進行中の1操作後にSTOPを優先する。
+// io_timeout_msは1通信操作の期限。長い転送・検索全体へ同じ期限を掛けず、既存の受信/最終確認期限を使う。
+// 購読の解除は同期関数。最後のセンサー利用者だけが共有STREAMを停止する。
+// API指紋は生成物の整合に使う。既存INFOへ指紋交換を追加せず、相手機能は既存窓口・版検査で確認する。
+option (uroa.api_version) = 1;
+option (uroa.max_pending) = 32;
+
+// 現行Command v1の操作番号。RPCメソッド番号とは別の既存番号である。
+enum CommandOpcode {
+    COMMAND_UNSPECIFIED = 0;
+    ARM = 1;
+    MOVE = 2;
+    STOP = 3;
+    STREAM = 4;
+    PING = 5;
+    INFO = 6;
+    DISABLE = 7;
+    ARM_SPEED = 8;
+    SET_SPEED = 9;
+    VM_START = 10;
+    VM_STOP = 11;
+}
+
+// valueはSET_SPEEDだけ符号付き0.01%のビット列。角度は0.01度、durationはms。
+message CommandPacket {
+    option (uroa.wire_packet) = true;
+    uint32 version = 1 [(uroa.bits) = 8];
+    uint32 opcode = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 channel = 4 [(uroa.bits) = 8];
+    uint32 reserved = 5 [(uroa.bits) = 8];
+    uint32 value = 6 [(uroa.bits) = 16];
+    uint32 duration = 7 [(uroa.bits) = 16];
+}
+message StatusPacket {
+    option (uroa.wire_packet) = true;
+    uint32 version = 1 [(uroa.bits) = 8];
+    uint32 code = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 flags = 4 [(uroa.bits) = 8];
+    uint32 channel = 5 [(uroa.bits) = 8];
+    uint32 current = 6 [(uroa.bits) = 16];
+    uint32 target = 7 [(uroa.bits) = 16];
+    uint32 remaining = 8 [(uroa.bits) = 16];
+}
+message TelemetryHeader {
+    option (uroa.wire_packet) = true;
+    uint32 version = 1 [(uroa.bits) = 8];
+    uint32 flags = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 millis = 4;
+}
+message ImuRecord {
+    option (uroa.wire_packet) = true;
+    uint32 device_type = 1 [(uroa.bits) = 8];
+    sint32 acc_x = 2 [(uroa.bits) = 16];
+    sint32 acc_y = 3 [(uroa.bits) = 16];
+    sint32 acc_z = 4 [(uroa.bits) = 16];
+    sint32 gyro_x = 5 [(uroa.bits) = 16];
+    sint32 gyro_y = 6 [(uroa.bits) = 16];
+    sint32 gyro_z = 7 [(uroa.bits) = 16];
+}
+message DistanceRecord {
+    option (uroa.wire_packet) = true;
+    uint32 device_type = 1 [(uroa.bits) = 8];
+    uint32 distance_mm = 2 [(uroa.bits) = 16]; // 20〜4000mm、未測定・失敗は0xFFFF。
+}
+
+message Empty {}
+message Reason {
+    string reason = 1 [(uroa.max_length) = 256, (uroa.host_optional) = true];
+}
+message Channel {
+    uint32 channel = 1 [(uroa.bits) = 8];
+}
+message ArmRequest {
+    uint32 channel = 1 [(uroa.bits) = 8];
+    string mode = 2 [(uroa.max_length) = 5]; // angleまたはspeed。最終検査はサーボアダプター。
+}
+message MoveRequest {
+    uint32 channel = 1 [(uroa.bits) = 8];
+    double angle = 2; // APIは度。既存MOVEへ変換するとき0.01度の整数にする。
+    uint32 duration = 3 [(uroa.bits) = 16];
+}
+message SpeedRequest {
+    uint32 channel = 1 [(uroa.bits) = 8];
+    double percent = 2;
+}
+message Receipt {
+    option (uroa.host_type) = "BytecodeReceipt";
+    option (uroa.host_import) = "./bytecode-transfer";
+    uint32 byte_length = 1;
+    uint32 crc32 = 2;
+    uint32 revision = 3 [(uroa.host_optional) = true];
+}
+message Deployment {
+    option (uroa.host_type) = "BytecodeDeployment";
+    option (uroa.host_import) = "./bytecode-transfer";
+    repeated uint32 breakpoints = 1 [(uroa.bits) = 16, (uroa.max_length) = 4096];
+    repeated uint32 step_pcs = 2 [(uroa.bits) = 16, (uroa.max_length) = 65536];
+    bool start = 3;
+}
+message UploadRequest {
+    bytes code = 1 [(uroa.max_length) = 131072];
+    Deployment deployment = 2 [(uroa.host_optional) = true];
+}
+message ProgramRequest {
+    Receipt receipt = 1;
+}
+message BreakpointsRequest {
+    Receipt receipt = 1;
+    repeated uint32 pcs = 2 [(uroa.bits) = 16, (uroa.max_length) = 4096];
+    repeated uint32 step_pcs = 3 [(uroa.bits) = 16, (uroa.max_length) = 65536, (uroa.host_optional) = true];
+}
+// Snapshotの復号・値スロット・文字列の仕様はdebug-protocol.tsに保持する。
+message Snapshot {
+    option (uroa.host_type) = "DebugSnapshot";
+    option (uroa.host_import) = "./debug-protocol";
+}
+message DebugState {
+    option (uroa.host_type) = "DebugEvent";
+    option (uroa.host_import) = "./debug-protocol";
+}
+message HostError {
+    option (uroa.host_type) = "Error";
+}
+message DebugUpdate {
+    Snapshot snapshot = 1 [(uroa.host_optional) = true];
+    HostError error = 2 [(uroa.host_optional) = true];
+    DebugState event = 3 [(uroa.host_optional) = true];
+}
+message ExecuteRequest {
+    Receipt receipt = 1;
+    Snapshot snapshot = 2;
+    string action = 3 [(uroa.max_length) = 8]; // continue / over / in / out。
+}
+message ConnectionState {
+    option (uroa.host_type) = "DeviceConnectionState";
+    option (uroa.host_import) = "./device-connection";
+}
+// ローカルのブロック所有者。機器IDやポインターを新たに通信へ送る指定ではない。
+message SensorOwner {
+    option (uroa.host_type) = "FunctionBlock";
+    option (uroa.host_import) = "../block";
+}
+message SensorSample {
+    option (uroa.host_type) = "DeviceTelemetry";
+    option (uroa.host_import) = "./device-telemetry";
+}
+message Endpoint {
+    option (uroa.host_type) = "RobotEndpoint";
+    option (uroa.host_import) = "./robot-wifi";
+}
+message WifiInfo {
+    option (uroa.host_type) = "ProvisionInfo";
+    option (uroa.host_import) = "./robot-wifi";
+}
+message WifiNetwork {
+    option (uroa.host_type) = "WifiNetwork";
+    option (uroa.host_import) = "./robot-wifi";
+}
+message WifiNetworks {
+    repeated WifiNetwork networks = 1 [(uroa.max_length) = 256];
+}
+message WifiConfigureRequest {
+    string ssid = 1 [(uroa.max_length) = 32];
+    string password = 2 [(uroa.max_length) = 63]; // 資格情報はログ・図・呼出し履歴へ保存しない。
+}
+message Image {
+    option (uroa.host_type) = "Blob";
+} // 認証付きHTTPのimage/jpeg、上限1MiB。
+message Nonce {
+    uint32 nonce = 1;
+}
+message RemoteClient {
+    option (uroa.host_type) = "RpcClient<RemoteRpcCalls>";
+    option (uroa.host_import) = "./rpc-client";
+}
+message RegistryRequest {
+    bytes config = 1 [(uroa.max_length) = 420];
+}
+message RemoteRequest {
+    option (uroa.host_type) = "RpcRequest | undefined";
+    option (uroa.host_import) = "./rpc-protocol";
+}
+message RequestId {
+    uint32 id = 1;
+}
+
+service Connection {
+    option (uroa.service_id) = 1;
+    rpc Connect(Empty) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "connection.connect";
+        option (uroa.transport) = "local";
+        option (uroa.completion) = "connected";
+    }
+    rpc Disconnect(Reason) returns (Empty) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "connection.disconnect";
+        option (uroa.transport) = "local";
+        option (uroa.completion) = "invalidated";
+        option (uroa.synchronous) = true;
+        option (uroa.priority) = true;
+    }
+}
+service Device {
+    option (uroa.service_id) = 2;
+    rpc Register(Empty) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "device.register";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "write";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Info(Empty) returns (Empty) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "device.info";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Ping(Empty) returns (Empty) {
+        option (uroa.method_id) = 3;
+        option (uroa.api_name) = "device.ping";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Watch(Empty) returns (stream ConnectionState) {
+        option (uroa.method_id) = 4;
+        option (uroa.api_name) = "device.state";
+        option (uroa.transport) = "local";
+        option (uroa.subscription) = "listener";
+    }
+}
+service Servo {
+    option (uroa.service_id) = 3;
+    rpc Arm(ArmRequest) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "servo.arm";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Move(MoveRequest) returns (Empty) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "servo.move";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Speed(SpeedRequest) returns (Empty) {
+        option (uroa.method_id) = 3;
+        option (uroa.api_name) = "servo.speed";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Disable(Channel) returns (Empty) {
+        option (uroa.method_id) = 4;
+        option (uroa.api_name) = "servo.disable";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Stop(Empty) returns (Empty) {
+        option (uroa.method_id) = 5;
+        option (uroa.api_name) = "servo.stop";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+        option (uroa.priority) = true;
+    }
+}
+service Program {
+    option (uroa.service_id) = 4;
+    rpc Upload(UploadRequest) returns (Receipt) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "program.upload";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "verified-or-started";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Start(ProgramRequest) returns (Empty) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "program.start";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "initialized";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Stop(Empty) returns (Empty) {
+        option (uroa.method_id) = 3;
+        option (uroa.api_name) = "program.stop";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+        option (uroa.priority) = true;
+    }
+}
+service Debug {
+    option (uroa.service_id) = 5;
+    rpc Breakpoints(BreakpointsRequest) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "debug.breakpoints";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "verified";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Observe(ProgramRequest) returns (Empty) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "debug.observe";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "observing";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Execute(ExecuteRequest) returns (Empty) {
+        option (uroa.method_id) = 3;
+        option (uroa.api_name) = "debug.execute";
+        option (uroa.transport) = "both";
+        option (uroa.completion) = "ack";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Watch(Empty) returns (stream DebugUpdate) {
+        option (uroa.method_id) = 4;
+        option (uroa.api_name) = "debug.state";
+        option (uroa.transport) = "local";
+        option (uroa.subscription) = "listener";
+    }
+}
+service Wifi {
+    option (uroa.service_id) = 6;
+    rpc Open(Empty) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "wifi.open";
+        option (uroa.transport) = "local";
+        option (uroa.completion) = "dialog";
+    }
+    rpc Close(Empty) returns (Empty) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "wifi.close";
+        option (uroa.transport) = "local";
+        option (uroa.completion) = "invalidated";
+        option (uroa.synchronous) = true;
+        option (uroa.priority) = true;
+    }
+    rpc Info(Empty) returns (WifiInfo) {
+        option (uroa.method_id) = 3;
+        option (uroa.api_name) = "wifi.info";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "reply";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Scan(Empty) returns (WifiNetworks) {
+        option (uroa.method_id) = 4;
+        option (uroa.api_name) = "wifi.scan";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "scan-complete";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Configure(WifiConfigureRequest) returns (WifiInfo) {
+        option (uroa.method_id) = 5;
+        option (uroa.api_name) = "wifi.configure";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "configured";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Forget(Empty) returns (WifiInfo) {
+        option (uroa.method_id) = 6;
+        option (uroa.api_name) = "wifi.forget";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "reply";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Connect(Endpoint) returns (Empty) {
+        option (uroa.method_id) = 7;
+        option (uroa.api_name) = "wifi.connect";
+        option (uroa.transport) = "local";
+        option (uroa.completion) = "authenticated-control";
+    }
+}
+service Camera {
+    option (uroa.service_id) = 7;
+    rpc Capture(Empty) returns (Image) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "camera.capture";
+        option (uroa.transport) = "wifi";
+        option (uroa.completion) = "jpeg";
+        option (uroa.io_timeout_ms) = 4000;
+    }
+}
+service Remote {
+    option (uroa.service_id) = 8;
+    rpc Open(Nonce) returns (RemoteClient) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "remote.open";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "channel";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+}
+service RemoteSession {
+    option (uroa.service_id) = 9;
+    option (uroa.scope) = "remote";
+    rpc Configure(RegistryRequest) returns (Empty) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "registry.configure";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "registered";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Read(Empty) returns (RemoteRequest) {
+        option (uroa.method_id) = 2;
+        option (uroa.api_name) = "request.read";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "head";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc Acknowledge(RequestId) returns (Empty) {
+        option (uroa.method_id) = 3;
+        option (uroa.api_name) = "request.acknowledge";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "worker-accepted";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+    rpc End(Empty) returns (Empty) {
+        option (uroa.method_id) = 4;
+        option (uroa.api_name) = "registry.end";
+        option (uroa.transport) = "ble";
+        option (uroa.completion) = "unregistered";
+        option (uroa.io_timeout_ms) = 2500;
+    }
+}
+service Sensors {
+    option (uroa.service_id) = 10;
+    rpc Subscribe(SensorOwner) returns (stream SensorSample) {
+        option (uroa.method_id) = 1;
+        option (uroa.api_name) = "sensors.stream";
+        option (uroa.transport) = "local";
+        option (uroa.subscription) = "owner";
+    }
+}

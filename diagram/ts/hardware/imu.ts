@@ -1,5 +1,6 @@
 /**
- * ESP32のIMU通知から時刻・角速度・加速度を構造体ポートへ出力する。登録と共有STREAMはdevice-connection.tsへ委譲する。
+ * ESP32のIMU通知から時刻・角速度・加速度を構造体ポートへ出力する。
+ * 状態・共有STREAMはdevice.protoのRPC購読APIへ渡し、登録と配送はdevice-connection.tsへ委譲する。
  */
 import { assert, Vec2, Vec3 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
@@ -39,8 +40,8 @@ export class IMUBlock extends FunctionBlock {
         this.ports = [this.outputPort];
         this.setBoxSize();
         if (!this.inToolbox) {
-            this.releaseState = diagramDevice.subscribe(state => this.connectionChanged(state));
-            this.releaseStream = diagramDevice.retainSensorStream(this);
+            this.releaseState = diagramDevice.rpc.subscribe("device.state", state => this.connectionChanged(state));
+            this.releaseStream = diagramDevice.rpc.subscribe("sensors.stream", this);
         }
     }
 

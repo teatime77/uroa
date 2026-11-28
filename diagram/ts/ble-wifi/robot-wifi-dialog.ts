@@ -1,7 +1,9 @@
 /**
- * 現在のBLE接続先へWi-Fi設定と接続を行うダイアログ。資格情報は一時入力とブラウザー管理の保存候補だけに渡し、図の保存へ含めない。
+ * 現在のBLE接続先へWi-Fi設定と接続を行うダイアログ。通信はdevice-rpc.tsのRPC APIへ渡す。
+ * 資格情報は一時入力とブラウザー管理の保存候補だけに渡し、図の保存へ含めない。
  */
-import { BLEWifiSetup, endpoint, rememberWifiSSID, savedWifiSSIDs, savePassword, type RobotEndpoint } from "./robot-wifi";
+import { endpoint, rememberWifiSSID, savedWifiSSIDs, savePassword } from "./robot-wifi";
+import type { DeviceRpcClient } from "./device-rpc";
 
 /** Dialog owns temporary credentials and cancellation; the diagram JSON never owns them. */
 export class RobotWifiDialog {
@@ -20,11 +22,11 @@ export class RobotWifiDialog {
     /**
      * この型の状態と依存先を初期化する。
      */
-    constructor(/** 確認した機器情報を使ってWi-Fi制御経路へ接続する処理。 */ private connect: (target: RobotEndpoint, signal: AbortSignal) => Promise<void>,
+    constructor(/** 現BLE接続先の設定・検索・Wi-Fi接続を呼ぶ共通窓口。 */ private rpc: DeviceRpcClient,
         /**
          * ダイアログ終了を所有元へ通知する処理。
          */
-        private closed: () => void, /** 現在のBLE接続先へ設定・検索要求を送る窓口。 */ private setup: BLEWifiSetup) {}
+        private closed: () => void) {}
     /**
      * 現在のBLE機器向けのWi-Fi検索・SSID・パスワード設定と接続UIを表示する。
      */
@@ -60,7 +62,7 @@ export class RobotWifiDialog {
         noPassword.onchange = passwordChanged; passwordChanged();
         [ssid, wifiUser, password].forEach(element => { element.style.cssText = "display:block;box-sizing:border-box;width:100%;font:inherit;margin:8px 0"; element.spellcheck = false; element.autocapitalize = "none"; });
         ssid.oninput = () => { networks.value = ""; wifiUser.value = `wifi:${ssid.value}`; password.value = ""; };
-        let choices: { /** アクセスポイントのネットワーク名。 */ ssid: string; /** パスワードなしで接続するアクセスポイントか。 */ open: boolean }[] = [];
+        let choices: readonly { /** アクセスポイントのネットワーク名。 */ ssid: string; /** パスワードなしで接続するアクセスポイントか。 */ open: boolean }[] = [];
         const history = savedWifiSSIDs();
         const refreshNetworks = () => {
             networks.replaceChildren(manual);
@@ -82,7 +84,7 @@ export class RobotWifiDialog {
         const scan = document.createElement("button"); scan.type = "button"; scan.textContent = "Wi-Fiを検索";
         scan.onclick = () => { void work(async () => {
             status.textContent = "周囲の2.4GHz Wi-Fiを検索しています…";
-            choices = await this.setup.scan(signal); refreshNetworks();
+            choices = (await this.rpc.call("wifi.scan", { signal })).networks; refreshNetworks();
             status.textContent = "SSIDを選択するか手入力してください。PC／Androidも同じアクセスポイントへ接続します。";
         }); };
         const configure = document.createElement("button"); configure.type = "submit"; configure.textContent = "Wi-Fiへ接続";
@@ -90,7 +92,7 @@ export class RobotWifiDialog {
         const wifiSaveLabel = document.createElement("label"); wifiSaveLabel.append(wifiSave, " ChromeへWi-Fiパスワードの保存を要求する");
         const clear = document.createElement("button"); clear.type = "button"; clear.textContent = "ESP32の保存済みWi-Fi設定を消去";
         clear.onclick = () => { void work(async () => {
-            await this.setup.request({ op: "forget" }, signal); password.value = ""; status.textContent = "ESP32のWi-Fi設定を消去しました。基板IDと接続キーは維持します。";
+            await this.rpc.call("wifi.forget", { signal }); password.value = ""; status.textContent = "ESP32のWi-Fi設定を消去しました。基板IDと接続キーは維持します。";
         }); };
         wifiForm.append(scan, networks, ssid, wifiUser, password, openLabel, document.createElement("br"), wifiSaveLabel, document.createElement("br"), configure, clear);
         wifiForm.onsubmit = event => {
@@ -101,8 +103,8 @@ export class RobotWifiDialog {
                 let secret = noPassword.checked ? "" : password.value;
                 const networkName = ssid.value, storeWifiPassword = wifiSave.checked;
                 try {
-                    const info = await this.setup.configure(networkName, secret, signal);
-                    await this.connect(endpoint(info), signal);
+                    const info = await this.rpc.call("wifi.configure", { ssid: networkName, password: secret }, { signal });
+                    await this.rpc.call("wifi.connect", endpoint(info), { signal });
                     if (signal.aborted) return;
                     rememberWifiSSID(networkName);
                     if (storeWifiPassword && secret) savePassword(`wifi:${networkName}`, secret);
@@ -112,7 +114,7 @@ export class RobotWifiDialog {
         };
         dialog.appendChild(wifiForm);
         void work(async () => {
-            await this.setup.info(signal);
+            await this.rpc.call("wifi.info", { signal });
             status.textContent = "SSIDを履歴から選択するか入力し、パスワードを指定して「Wi-Fiへ接続」を押してください。";
         });
         const note = document.createElement("p"); note.textContent = "BLE接続中のESP32へWi-Fi設定を送ります。接続に成功したSSIDの履歴だけをこのブラウザーに保存します。Wi-Fi接続キーは教材用の固定値を使うため入力不要です。Wi-Fiパスワード・接続キーは図のJSONやlocalStorageへ保存しません。";

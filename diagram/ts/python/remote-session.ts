@@ -1,10 +1,13 @@
 /**
  * ブラウザ受付・BLE公開定義・ESP32の開始を1組として所有する。
- * rpc-protocol.tsが通信契約、BrowserRemoteRuntimeがメソッド実行、PythonBlockが編集と全体Stopを担当する。
+ * device-rpc.tsの共通APIから既存のBLE通信を呼ぶ。rpc-protocol.tsが通信契約、
+ * BrowserRemoteRuntimeがメソッド実行、PythonBlockが編集と全体Stopを担当する。
  * 第3段階は整数通知だけ。Worker受付後にACKし、メソッド失敗は表示と全体停止へ伝える。
  */
 import { diagramDevice } from "../ble-wifi/device-connection";
-import { encodeRpcConfiguration, RpcTransport, rpcProtocol } from "../ble-wifi/rpc-protocol";
+import { encodeRpcConfiguration, rpcProtocol } from "../ble-wifi/rpc-protocol";
+import type { RpcClient } from "../ble-wifi/rpc-client";
+import type { RemoteRpcCalls } from "../ble-wifi/device-rpc";
 import { BrowserRemoteRuntime } from "./browser-runtime";
 import type { RemoteProgramBuild } from "./remote";
 
@@ -18,7 +21,7 @@ export class RemoteBleSession {
     /** 設定・メソッド受付の生存期間。 */
     private readonly controller = new AbortController();
     /** BLEの現接続へ限定したRPC窓口。 */
-    private transport?: RpcTransport;
+    private transport?: RpcClient<RemoteRpcCalls>;
     /** 配送ループ。通常のESP32終了後も未ACK要求を配送する。 */
     private pump?: Promise<void>;
     /** 開始・設定の途中でもStopが完了を待てるよう保持する。 */
@@ -57,12 +60,12 @@ export class RemoteBleSession {
             if (diagramDevice.state.phase !== "connected" || diagramDevice.state.transport !== "ble") {
                 throw new Error("第3段階のRPCにはBLE接続が必要です");
             }
-            await diagramDevice.stopBytecode();
+            await diagramDevice.rpc.call("program.stop");
             this.controller.signal.throwIfAborted();
             await this.runtime.start(build, this.controller.signal, status, output);
             this.controller.signal.throwIfAborted();
-            this.transport = new RpcTransport(await diagramDevice.openRpc(), nonce);
-            await this.transport.configure(config, this.controller.signal);
+            this.transport = await diagramDevice.rpc.call("remote.open", { nonce });
+            await this.transport.call("registry.configure", { config }, { signal: this.controller.signal });
             this.controller.signal.throwIfAborted();
             // ブラウザの異常終了は、ESP32が終了している場合も一組の終了として扱う。
             void this.runtime.closed.then(() => {
@@ -84,7 +87,7 @@ export class RemoteBleSession {
     private async deliver(): Promise<void> {
         let lastId = 0;
         while (!this.stopping) {
-            const request = await this.transport!.read();
+            const request = await this.transport!.call("request.read");
             if (this.stopping) {
                 return;
             }
@@ -104,7 +107,7 @@ export class RemoteBleSession {
                 if (this.stopping) {
                     return;
                 }
-                await this.transport!.acknowledge(request.id);
+                await this.transport!.call("request.acknowledge", { id: request.id });
             }
             else {
                 await new Promise<void>(resolve => {

@@ -1,8 +1,8 @@
 # ESP32 VM → ブラウザVMのRPC：段階別実装計画
 
-作成日：2026-11-27（日本時間）。第0段階の方針はユーザー承認済み。第1段階の独立した解析・生成、第2段階のブラウザVM受付、第3段階のBLE整数通知と2ソースの開始UIを実装した。第4〜7段階は未着手。Future更新・配列・Wi-Fi配送は未対応で、ブラウザ・実通信・実機での動作確認は未実施。
+作成日：2026-11-27、更新日：2026-11-28（日本時間）。第0段階の方針はユーザー承認済み。第1段階の独立した解析・生成、第2段階のブラウザVM受付、第3段階のBLE整数通知と2ソースの開始UIを実装した。2026-11-28に追加した共通RPC APIへ、このPython RPCの呼出しも接続した。第4〜7段階は未着手であり、今回のAPI統一で進捗段階を繰り上げない。Future更新・配列・Python RPCのWi-Fi配送は未対応で、ブラウザ・実通信・実機での動作確認は未実施。
 
-対象はuroaと、別リポジトリーの`D:\usr\prj\esp32\app\diagram-control`。本書は作業順、変更候補、決定が必要な事項、完了条件を整理する。実装済み仕様の正本はソースのコメントとし、各段階で実装と同時に記述する。本書へパケットのバイト配置や命令の詳細仕様を追加・重複記載しない。
+対象はuroaと、別リポジトリーの`D:\usr\prj\esp32\app\diagram-control`。本書は作業順、変更候補、決定が必要な事項、完了条件を整理する。実装済み仕様の正本はソースの定義とコメントとし、共通APIは`.proto`、Python RPCの既存配送は`rpc-protocol.ts`等を参照する。各段階で実装と同時に正本を更新し、本書へパケットのバイト配置や命令の詳細仕様を追加・重複記載しない。
 
 ## 1. 今回の到達目標
 
@@ -55,11 +55,28 @@ RPC完了後の別作業とするもの：
 - Three.jsによる3D表示、シーン・オブジェクト操作。
 - それらのDOM操作・描画APIをPythonへ公開するホスト接続。
 
-また、ブラウザからESP32への逆向きRPC、動的なRemoteオブジェクトの生成・破棄、一般的なクラス継承、object配列・循環オブジェクトの転送、永続化、自動再接続による実行再開は今回の対象外とする。
+また、ブラウザ上のPythonからESP32上のPythonを呼ぶ逆向きRPC、動的なRemoteオブジェクトの生成・破棄、一般的なクラス継承、object配列・循環オブジェクトの転送、永続化、自動再接続による実行再開は今回の対象外とする。ブラウザのTypeScriptからサーボ等を操作する既存機器APIと、その共通RPC API化は、この逆向きPython RPCとは区別する。
 
-## 2. 現行ソースから確認した出発点
+### 共通RPC APIとの関係（2026-11-28）
 
-以下は2026-11-27の静的確認であり、ブラウザ・通信・実機での動作確認ではない。
+機器制御・センサー購読・プログラム転送・デバッグ・Wi-Fi設定・カメラ取得の呼出しAPIを共通化した。Python RPCの公開定義抽出・VM実行・専用BLE配送は、この共通APIへ接続した既存実装として残る。
+
+| 対象 | 現在の分担と参照先 |
+|---|---|
+| 共通の操作・型・生成対象の固定長配置 | [device.proto](../../../diagram/rpc/device.proto)・[options.proto](../../../diagram/rpc/options.proto)を正本とし、[generate.mjs](../../../diagram/rpc/generate.mjs)がTypeScriptとC++を生成する。既存ホスト型へ参照を渡す定義もあり、すべての既存転送形式を`.proto`のcodecへ置き換えたものではない。 |
+| 呼出しAPIと既存通信への接続 | [rpc-client.ts](../../../diagram/ts/ble-wifi/rpc-client.ts)・[device-rpc.ts](../../../diagram/ts/ble-wifi/device-rpc.ts)・[device-connection.ts](../../../diagram/ts/ble-wifi/device-connection.ts)が担当する。既存のBLE／Wi-Fi形式と認証を維持する。 |
+| Python公開定義とVMの呼出し | [remote.ts](../../../diagram/ts/python/remote.ts)がPythonソースから公開オブジェクト・署名・代理APIを生成する。これらの利用者定義を共通`.proto`へ手作業で重複記述しない。 |
+| Python RPCの実行ごとの配送 | [remote-session.ts](../../../diagram/ts/python/remote-session.ts)が共通APIから専用窓口を取得し、[rpc-protocol.ts](../../../diagram/ts/ble-wifi/rpc-protocol.ts)の登録・要求読出し・Worker受付確認を利用する。実行可能な範囲は第3段階のまま。 |
+
+共通APIが返すJavaScriptの`Promise`と、本計画で追加するESP32 VM上の`Future`は別の値・寿命を持つ。API統一だけではFutureの生成・完了反映・GC管理は実装されず、機器APIのWi-Fi対応もPython RPCの第6段階完了を意味しない。
+
+共通APIのサービス／メソッド番号と、Pythonの公開オブジェクト／メソッド・動的nativeの番号は別の識別体系である。同様に、`.proto`から生成する指紋は生成物の整合用であり、Pythonの登録情報・合成APIの指紋と区別する。今回、共通定義の指紋を相手機器と交換する処理は追加しておらず、従来のPython RPCの指紋照合を削除・代替したものでもない。
+
+共通API化のビルド結果と未確認範囲は[2026-11-28の検証記録](../../build-and-test.md)を参照する。本計画の残る第4〜7段階では、共通APIと既存アダプターを拡張し、Python固有のFuture・値転送・VM寿命の処理を接続する。
+
+## 2. 計画開始時の出発点
+
+以下は第1〜3段階へ着手する前に2026-11-27のソースから整理した出発点であり、現在も未実装という意味ではない。その後の到達点は各段階の実施内容と進捗記録、共通API化後の分担は前節と次節を参照する。ブラウザ・通信・実機での動作確認とは区別する。
 
 | 対象 | 現在地とRPCで必要になる変更 |
 |---|---|
@@ -73,21 +90,25 @@ RPC完了後の別作業とするもの：
 | [bytecode_heap.h](../../../../esp32/app/diagram-control/include/bytecode_heap.h)・[bytecode_heap.cpp](../../../../esp32/app/diagram-control/src/bytecode_heap.cpp) | 移動しないマーク＆スイープGC。根と再帰マークはVM側。非同期処理へVM内部の借用ポインターを持ち越さない規約がある。 |
 | [control-connection.ts](../../../diagram/ts/ble-wifi/control-connection.ts)・[control_transport.h](../../../../esp32/app/diagram-control/include/control_transport.h) | BLE／Wi-Fiの経路・接続世代・制御権を共通化している。RPCの双方向配送窓口は追加が必要。 |
 
-現在の機器API、センサー通知、コード一括転送、デバッグ通信の仕様は、それぞれの既存ソースコメントを参照する。RPC要求を最新値だけ保持する通知領域へ上書きする方式は採らず、要求を識別して処理する窓口を計画する。
+共通APIと生成対象の固定長配置は`.proto`、機器操作・センサー通知・コード一括転送・デバッグの既存アダプターは各ソースのコメントを参照する。Python RPC要求を最新値だけ保持するセンサー通知領域へ上書きせず、要求を識別して処理する方針は維持する。
 
 ## 3. 実装時の分担と仕様コメントの記述先
 
-「新規候補」は未作成のファイルであり、存在するAPIや確定した構成を意味しない。分割は各段階で必要な範囲にとどめる。
+以下は2026-11-28時点の担当先を基準にした後続段階の変更先である。「新規候補」と明記したものだけが未作成であり、既存ファイルを新規候補として扱わない。分割は各段階で必要な範囲にとどめる。
 
 | 担当 | 変更候補・仕様コメントの記述先 |
 |---|---|
-| 独立したソースの解析とRemote署名の受渡し | 新規候補`diagram/ts/python/remote.ts`を横断的な入口とし、`syntax.ts`、`parser.ts`、`semantic.ts`、`bytecode.ts`との役割を記述する。ブラウザからのRPC登録情報生成と、ESP32側での外部API解決を接続する。個別の型・生成規則は該当処理の直前へ置く。 |
-| Futureの値・完了・エラー・保持 | `semantic.ts`の型処理、ESP32の`bytecode_vm.h/.cpp`のFuture処理。必要なら新規候補`include/bytecode_rpc.h`・`src/bytecode_rpc.cpp`へ要求管理を分離する。 |
-| RPCメッセージ、配送、識別・上限 | 新規候補`diagram/ts/ble-wifi/rpc-protocol.ts`に両リポジトリー間の中心契約を記述する。C++側の対応候補は`include/rpc_protocol.h`。既存の転送・デバッグ形式とは区別する。 |
-| ブラウザの公開オブジェクトと要求実行 | `browser-runtime.ts`、`browser-vm-worker.ts`、`browser-abi.ts`、ESP32リポジトリーの`browser/host.cpp`。必要なら新規候補`browser-rpc.ts`へ仲介を分離する。 |
-| 開始・停止・接続の所有者 | `python-block.ts`、`device-connection.ts`、ESP32の`main.cpp`。全体Stopとの接続は既存の`diagram/ts/runtime.ts`を利用する。 |
+| 独立したソースの解析とRemote署名の受渡し | 既存の`diagram/ts/python/remote.ts`を入口とし、`syntax.ts`、`parser.ts`、`semantic.ts`、`bytecode.ts`の実行先別解析・生成を使う。Pythonの公開定義変更を代理APIへ反映する。個別の型・生成規則は該当処理の直前へ置く。 |
+| Futureの値・完了・エラー・保持 | `semantic.ts`とESP32の`bytecode_vm.h/.cpp`を拡張する。既存の`include/bytecode_rpc.h`・`src/bytecode_rpc.cpp`が所有する登録・要求管理へ、後続段階のFuture完了反映を接続する。 |
+| 共通RPC API・生成物 | `diagram/rpc/device.proto`・`options.proto`と`generate.mjs`。TypeScriptの`device-rpc.generated.ts`、ESP32の`lib/protocol/include/uroa_rpc.generated.h`・`src/uroa_rpc.generated.cpp`は生成元から更新し、手編集しない。 |
+| 共通の呼出し・購読とアダプター | `rpc-client.ts`・`device-rpc.ts`・`device-connection.ts`。引数・結果・対応経路の拡張は共通APIと既存処理への対応付けへ反映する。 |
+| Python RPCメッセージ、配送、識別・上限 | 既存の`rpc-protocol.ts`が専用配送の中心契約、ESP32の`bytecode_rpc.h/.cpp`が受信・登録・要求管理を担当する。共通APIの管理用IDとPython呼出しのIDを混同しない。 |
+| ブラウザの公開オブジェクトと要求実行 | `browser-runtime.ts`、`browser-vm-worker.ts`、`browser-abi.ts`、ESP32リポジトリーの`browser/host.cpp`。`remote-session.ts`が共通APIとブラウザVMの仲介を担当する。 |
+| 開始・停止・接続の所有者 | `python-block.ts`・`remote-session.ts`、`device-connection.ts`、ESP32の`main.cpp`。全体Stopとの接続は既存の`diagram/ts/runtime.ts`を利用する。 |
 | BLE／Wi-Fiへの接続 | Webの`control-connection.ts`、`ble-control-transport.ts`、`robot-wifi.ts`。ESP32の`control_transport.h/.cpp`、`network.cpp`、`lib/ble/include/uroa_ble.h`・`src/uroa_ble.cpp`、`lib/wifi/include/uroa_wifi.h`・`src/uroa_wifi.cpp`。 |
 | 形式変更の反映 | `bytecode.ts`、`bytecode-transfer.ts`、ESP32の`bytecode_format.h/.cpp`、`bytecode_receiver.cpp`、`bytecode_debugger.cpp`。必要な場合だけ機器API宣言・生成器へ反映する。 |
+
+後続段階で共通APIの型や対応経路を変える場合は、`.proto`と生成物・アダプターを同じ段階で揃える。Python固有の配送形式・VMの値と寿命に関する仕様は担当ソースへ記述し、本書には変更先と完了条件を残す。
 
 ## 4. 段階別計画
 
@@ -186,6 +207,8 @@ RPC完了後の別作業とするもの：
 
 目的：`result = browser.calc(value)`でESP32を止めず、完了後に`result.value`を使えるようにする。まず整数の戻り値と同時未完了1件に限定する。
 
+共通API化後の作業方針：未実装の結果配送・完了通知に必要な定義を`.proto`へ追加し、生成API・`device-connection.ts`・`remote-session.ts`から既存のPython RPC配送へ接続する。JavaScriptの`Promise`が完了することと、ESP32 VMのFutureが完了することを別々に扱い、現在のWorker受付ACKをメソッドの完了応答として流用しない。
+
 主な作業：
 
 - 呼出し時に要求を一度だけ発行してFutureを返す。`done`の読取りやVMのtickで同じRPCを再発行しない。NativePendingで応答まで呼出し命令を止める実装にはしない。
@@ -200,6 +223,8 @@ RPC完了後の別作業とするもの：
 ### 第5段階：数値配列・スカラー型・複数要求への拡張
 
 目的：当初の`calc(data)`に必要なデータと、上限内の複数Futureを扱う。
+
+共通API化後の作業方針：引数・結果の型、長さの上限、分割転送に必要なAPIを生成元へ反映し、共通クライアントとPython RPCのアダプターを拡張する。現在のホスト型参照や既存コード転送の利用だけで、VM間の配列配送が実装済みとは扱わない。共通クライアントの同時呼出し上限、ESP32の要求キュー、VMの未完了Future数はそれぞれ別に管理する。
 
 主な作業：
 
@@ -216,11 +241,13 @@ RPC完了後の別作業とするもの：
 
 目的：BLEとWi-Fiで同じRemote／Futureの契約を利用する。
 
+共通API化後の作業方針：現在の`Remote`・`RemoteSession`の生成APIと、`RemoteBleSession`に残るBLE専用の経路選択を両経路へ接続する。Wi-Fiの実配送を実装してから、`.proto`の対応経路・生成物とAPI側の利用条件を揃える。定義の対応経路だけを書き換えて完了とはしない。
+
 主な作業：
 
 - `robot-wifi.ts`、ESP32の`network.cpp`・`lib/wifi`へRPCの配送を追加する。HMAC認証・制御権・接続世代の照合を既存経路と揃える。
 - WebSocket経路と、既存のHTTP経路を使う場合の要求取得・応答送信を接続する。HTTPで必要な継続取得は未処理要求を取りこぼさない方式とする。
-- 共通のRPC復号・要求ID・キュー・期限・エラー処理を利用する。経路ごとにRemoteやFutureの意味を変えない。
+- 共通のRPC API・既存アダプターを使い、Python RPCの復号・要求ID・キュー・期限・エラー処理を両経路へ接続する。共通APIのエラーをFutureの結果へ対応付ける箇所を明確にし、経路ごとにRemoteやFutureの意味を変えない。
 - BLE／Wi-Fi切替で旧要求を失効させ、同じ要求を新経路へ暗黙に再送しない。再接続後は新しい実行として明示的に準備する。
 - カメラHTTP、Plotly.js、Three.jsには変更を加えない。
 
@@ -235,7 +262,7 @@ RPC完了後の別作業とするもの：
 - Stop、通常終了、実行エラー、再実行、どちらかのソース変更、ブロック削除、Clear、図読込、非表示、pagehide・破棄で、Remote・要求・Future・Worker・転送データの終了を揃える。ソース変更時には該当成果物とRPC登録情報の対応を再確認する。
 - ESP32のトップレベル終了時に未完了要求がある場合と、ブラウザのトップレベル初期化終了後の受付寿命を区別する。古い応答で新しい実行を変更しない。
 - 通知呼出しの実行失敗をブラウザ側の表示へ届ける。取消は新たな結果反映を止めるもので、実行済みの副作用を巻き戻す保証にはしない。
-- 新旧のバイトコード・RPC版・指紋の不一致を開始前に拒否する。VM用JS／Wasmと`assets.json`を同じ生成物として更新し、古い資産の混用を防ぐ。
+- 新旧のバイトコード・Python RPC版・登録情報とAPIの指紋の不一致を開始前に拒否する。共通`.proto`の生成物の指紋照合は別に行い、現状は相手機器との指紋交換を実装していないことを維持して記述する。VM用JS／Wasmと`assets.json`を同じ生成物として更新し、古い資産の混用を防ぐ。
 - 通常のESP32実行、ブラウザ単独実行、print、NumPy、数値カーネル、F9・ステップ・停止表示への影響を確認する。
 - `public/diagram/python/`へ戻り値なし・整数Future・数値配列・失敗処理の教材用サンプルを、ブラウザ用とESP32用の2ソースの組で追加し、既存の一覧登録方式へ接続する。2ソースの対応は保存・復元でも維持し、実行中のFutureや接続IDは図へ保存しない。
 - 各リポジトリーのビルド記録・README等は操作と検証結果を更新し、実装仕様はソースコメントを参照させる。
@@ -251,6 +278,7 @@ RPC完了後の別作業とするもの：
 | 確認区分 | 対象・記録する境界 |
 |---|---|
 | 文書・ソースの静的確認 | コメントと実装の一致、リンク、型・ID対応、生成物の整合、`git diff --check`。 |
+| 共通RPC APIの生成・照合 | `.proto`を変更した場合は生成器を実行し、Webと変更対象のESP32生成物を照合する。具体的なコマンドは[生成・検証記録](../../build-and-test.md)を参照する。生成物を手編集せず、配列やFutureの実配送確認とは区別する。 |
 | Webビルド | uroaで`npm.cmd run verify`。型・公開ビルド・資産の静的確認であり、RPCの実行確認ではない。 |
 | ブラウザ用VMビルド | 共通VM・`browser/host.cpp`・C公開関数を変更した段階で[ブラウザVMのビルド手順](../../../../esp32/app/diagram-control/browser/README.md)に従いJS／Wasmとマニフェストを再生成する。生成済みJS／Wasmを手編集しない。 |
 | ESP32ビルド | 実行直前に`platformio.ini`の`default_envs`を読み、diagram-controlで下記コマンドを実行する。`-e`で別環境へ上書きしない。 |
@@ -274,15 +302,20 @@ Set-Location D:\usr\prj\esp32\app\diagram-control
 
 ## 6. 進捗記録
 
+各行の「未接続」はその段階を完了した時点の範囲を示す。現在のPython RPCの到達点は第3段階であり、その後の共通API化は補足行へ記録する。
+
 | 段階 | 状態 | 実施結果 |
 |---|---|---|
 | 第0段階：境界・公開方法 | 完了 | 推奨案の採用をユーザーが承認。実行・配送の詳細は対応段階で具体化する。 |
 | 第1段階：構文・独立解析・生成 | 実装・ビルド完了 | スカラーの専用解析・未実行成果物まで。RPC実行と2ソースUIは未接続。解析／生成の実行試験は未実施。 |
 | 第2段階：ブラウザ受付・メソッド入口 | 実装・ビルド完了 | 専用Runtimeのスカラー受付、順次実行、要求間GCと停止まで。ブラウザ実行・実通信は未確認。 |
 | 第3段階：BLE通知呼出し | 実装・ビルド完了 | 整数0〜1引数・None戻り値、専用BLE窓口と2ソース開始・停止を接続。サンプル1組を追加。実配送・実機は未確認。 |
+| 補足：共通RPC API化（2026-11-28） | 実装・ビルド完了 | `.proto`からのAPI生成と既存BLE／Wi-Fi処理への対応付けを追加し、第3段階のPython RPCも接続した。型・Web公開ビルド・生成物照合・既定環境のESP32ビルドが成功。実行・実通信・実機は未確認。第4〜7段階の完了には含めない。 |
 | 第4段階：整数Future | 未着手 | — |
 | 第5段階：数値配列・複数要求 | 未着手 | — |
 | 第6段階：Wi-Fi配送 | 未着手 | — |
 | 第7段階：終了・互換性・仕上げ | 未着手 | — |
+
+2026-11-28の本書更新では、共通APIの位置付け・担当先・後続段階の接続方針を現行ソースへ合わせた。文書内のリンク・記述・差分を確認し、ソース変更・生成・ビルド・実行確認は行っていない。補足行のビルド結果は共通API実装時の記録であり、この文書更新で再実行した結果ではない。
 
 関連する現行の作業案内・ビルド・終了処理は、[ESP32連携ガイド](../esp32-integration.md)、[Webのビルドと確認](../../build-and-test.md)、[起動・終了](../../app-lifecycle.md)、[オブジェクト・配列対応の経緯](object-array-change-map.md)を参照する。過去のビルド・実機結果を今回のRPCの検証結果として扱わない。

@@ -6,11 +6,17 @@
  * Command/Status v1、Telemetry v3のバイト形式と既存UUID・HTTP形式は変更しない。
  * 機器一覧・Python転送・VM指令・デバッグを両経路へ配送する。カメラ画像は本層を通さない。
  * RPCはBLE専用の遅延窓口を用意する。各GATT操作は通常指令と同じ待ち列で直列化する。
+ * 操作番号と固定長配置はdevice.protoから生成する。STOP/VM_STOPは進行中の1操作後に優先し、
+ * 待ち列は32件まで。満杯時のSTOPは未開始の通常操作を1件取り消して場所を確保する。
+ * 全件が優先操作なら混雑を返す。GATTを並行実行せず、切断時に未開始操作を失効させる。
  */
 import { DeviceInfoMaxLength, parseDeviceTelemetry, type DeviceTelemetry } from "./device-telemetry";
 import { bytecodeTransfer, checkBytecodeTransfer, uploadBytecode, type BytecodeChannel, type BytecodeReceipt, type BytecodeProgress, type BytecodeDeployment } from "./bytecode-transfer";
 import type { DebugChannel } from "./debug-protocol";
 import type { RpcChannel } from "./rpc-protocol";
+import { CommandOpcode as ControlOpcode, packetLayouts, rpcMaxPending } from "./device-rpc.generated";
+import { decodeRpcPacket, encodeRpcPacket } from "./rpc-codec";
+import { RpcCode, RpcError } from "./rpc-client";
 
 /** 通常通信の通知先。BLEはCharacteristicから指定し、Wi-Fiは共通層で版・長さを検証する。 */
 export type ControlPacketKind = "status" | "telemetry";
@@ -56,34 +62,15 @@ export interface ControlTransport {
 }
 
 /** diagram-controlのProtocol::Opと共有する番号。VM操作の利用条件はdevice-connection.tsが検査する。 */
-export enum ControlOpcode {
-    ARM = 1,
-    MOVE = 2,
-    STOP = 3,
-    STREAM = 4,
-    PING = 5,
-    INFO = 6,
-    DISABLE = 7,
-    ARM_SPEED = 8,
-    SET_SPEED = 9,
-    VM_START = 10,
-    VM_STOP = 11,
-}
+export { CommandOpcode as ControlOpcode } from "./device-rpc.generated";
 
 /** Command v1は10バイト、little endian。Status v1は12バイトでsequenceをACKへ使う。 */
 export const ControlCommand = {
-    byteLength: 10,
+    byteLength: packetLayouts.CommandPacket.byteLength,
     version: 1,
     allChannels: 255,
     maxSequence: 65535,
-    offset: {
-        version: 0,
-        opcode: 1,
-        sequence: 2,
-        channel: 4,
-        value: 6,
-        duration: 8,
-    },
+    offset: packetLayouts.CommandPacket.offset,
 } as const;
 
 /**
@@ -165,7 +152,9 @@ export class ControlConnection {
     /**
      * 通信要求を直列化する待ち列の末尾Promise。
      */
-    private tail: Promise<unknown> = Promise.resolve();
+    private operations: { run: () => Promise<void>; reject: (error: Error) => void; priority: boolean }[] = [];
+    /** 通信操作は経路によらず同時に1件だけ開始する。 */
+    private operationRunning = false;
     /**
      * 受付結果を待つ指令をsequenceで管理する対応表。
      */
@@ -205,19 +194,53 @@ export class ControlConnection {
         this.unsubscribe?.();
         this.unsubscribe = undefined;
         this.transport = undefined;
+        for (const operation of this.operations) {
+            operation.reject(new RpcError(RpcCode.Unavailable, message));
+        }
+        this.operations = [];
         for (const pending of this.pending.values()) {
             clearTimeout(pending.timer);
-            pending.reject(new Error(message));
+            pending.reject(new RpcError(RpcCode.Unavailable, message));
         }
         this.pending.clear();
     }
 
     /** 通常指令と各転送の共通待ち列。各処理が開始時と完了時に所有元を照合する。 */
-    enqueue<T>(operation: () => Promise<T>): Promise<T> {
-        const task = this.tail.catch(() => {
-        }).then(operation);
-        this.tail = task;
-        return task;
+    enqueue<T>(operation: () => Promise<T>, priority = false): Promise<T> {
+        if (this.operations.length >= rpcMaxPending) {
+            const replace = priority ? this.operations.findIndex(entry => !entry.priority) : -1;
+            if (replace < 0) {
+                return Promise.reject(new RpcError(RpcCode.Busy, "機器の送信待ちが混雑しています。"));
+            }
+            const [cancelled] = this.operations.splice(replace, 1);
+            cancelled.reject(new DOMException("STOPを優先するため送信待ちを取り消しました。", "AbortError"));
+        }
+        return new Promise<T>((resolve, reject) => {
+            this.operations.push({ priority, reject, run: async () => {
+                try {
+                    resolve(await operation());
+                }
+                catch (error) {
+                    reject(error);
+                }
+                finally {
+                    this.operationRunning = false;
+                    this.runNextOperation();
+                }
+            } });
+            this.runNextOperation();
+        });
+    }
+
+    /** 優先操作同士はFIFO。進行中のネイティブ通信は重ねず、次の境界でSTOPを先行させる。 */
+    private runNextOperation(): void {
+        if (this.operationRunning || this.operations.length === 0) {
+            return;
+        }
+        const priority = this.operations.findIndex(operation => operation.priority);
+        const [operation] = this.operations.splice(priority < 0 ? 0 : priority, 1);
+        this.operationRunning = true;
+        void operation.run();
     }
 
     /**
@@ -231,7 +254,7 @@ export class ControlConnection {
         const current = () => {
             signal?.throwIfAborted();
             if (!transport || transport !== this.transport || generation !== this.generation || !transport.connected) {
-                throw new Error("機器の接続が切れました。");
+                throw new RpcError(RpcCode.Unavailable, "機器の接続が切れました。");
             }
             check();
         };
@@ -241,7 +264,7 @@ export class ControlConnection {
             let abort: (() => void) | undefined;
             try {
                 const timeout = new Promise<never>((_, reject) => {
-                    timer = setTimeout(() => reject(new Error("機器の通信応答がありません。再接続してください。")),
+                    timer = setTimeout(() => reject(new RpcError(RpcCode.DeadlineExceeded, "機器の通信応答がありません。再接続してください。")),
                         bytecodeTransfer.timeoutMs);
                     abort = () => reject(signal?.reason ?? new DOMException("転送を取り消しました。", "AbortError"));
                     signal?.addEventListener("abort", abort, { once: true });
@@ -295,11 +318,11 @@ export class ControlConnection {
         const check = () => {
             signal?.throwIfAborted();
             if (!transport || generation !== this.generation || transport !== this.transport || !transport.connected) {
-                throw new Error("プログラム転送中に接続が変わりました。");
+                throw new RpcError(RpcCode.Unavailable, "プログラム転送中に接続が変わりました。");
             }
         };
         if (this.bytecodeTransferId === 65535) {
-            throw new Error("転送IDの上限です。再接続してください。");
+            throw new RpcError(RpcCode.Busy, "転送IDの上限です。再接続してください。");
         }
         this.bytecodeTransferId++;
         const transferId = this.bytecodeTransferId;
@@ -422,7 +445,7 @@ export class ControlConnection {
         const transport = this.transport;
         return this.runOperation(() => {
             if (!transport?.openRpc) {
-                throw new Error("現在の通信経路はRPCに対応していません");
+                throw new RpcError(RpcCode.Unsupported, "現在の通信経路はRPCに対応していません");
             }
             return transport.openRpc();
         }, check);
@@ -441,14 +464,14 @@ export class ControlConnection {
      */
     sendDeviceInfo(input: Uint8Array): Promise<void> {
         if (input.byteLength > DeviceInfoMaxLength) {
-            throw new Error(`機器情報は${DeviceInfoMaxLength}バイト以内で送信してください。`);
+            throw new RpcError(RpcCode.InvalidArgument, `機器情報は${DeviceInfoMaxLength}バイト以内で送信してください。`);
         }
         const bytes = input.slice();
         const transport = this.transport;
         const generation = this.generation;
         const check = () => {
             if (!transport || transport !== this.transport || generation !== this.generation || !transport.connected) {
-                throw new Error("機器情報の送信を取り消しました。接続を確認してください。");
+                throw new RpcError(RpcCode.Unavailable, "機器情報の送信を取り消しました。接続を確認してください。");
             }
         };
         return this.enqueue(async () => {
@@ -457,7 +480,7 @@ export class ControlConnection {
             try {
                 const timeout = new Promise<never>((_, reject) => {
                     timer = setTimeout(() => {
-                        reject(new Error("機器情報の書き込みがタイムアウトしました。"));
+                        reject(new RpcError(RpcCode.DeadlineExceeded, "機器情報の書き込みがタイムアウトしました。"));
                     }, 2500);
                 });
                 await Promise.race([transport!.writeDeviceInfo(bytes), timeout]);
@@ -492,21 +515,22 @@ export class ControlConnection {
                 this.callbacks.telemetry(data, telemetry);
                 return;
             }
-            if (data.byteLength !== 12 || data.getUint8(0) !== 1) {
+            const status = decodeRpcPacket("StatusPacket", data);
+            if (status.version !== 1) {
                 throw new Error("状態データの形式が正しくありません。");
             }
             this.callbacks.status(data);
             if (generation !== this.generation) {
                 return;
             }
-            const sequence = data.getUint16(2, true);
+            const sequence = status.sequence;
             const pending = this.pending.get(sequence);
             if (pending) {
                 clearTimeout(pending.timer);
                 this.pending.delete(sequence);
-                const code = data.getUint8(1);
+                const code = status.code;
                 if (code) {
-                    pending.reject(new Error(errors[code] ?? `機器エラー ${code}`));
+                    pending.reject(new RpcError(RpcCode.Device, errors[code] ?? `機器エラー ${code}`, code));
                 }
                 else {
                     pending.resolve();
@@ -529,34 +553,25 @@ export class ControlConnection {
         const transport = this.transport;
         const check = () => {
             if (generation !== this.generation || !transport || transport !== this.transport || !transport.connected) {
-                throw new Error("機器の接続が切れました。");
+                throw new RpcError(RpcCode.Unavailable, "機器の接続が切れました。");
             }
             if (!isCurrent()) {
-                throw new Error("機器操作を取り消しました。");
+                throw new DOMException("機器操作を取り消しました。", "AbortError");
             }
         };
         return this.enqueue(async () => {
             check();
             const sequence = this.sequence = this.sequence % ControlCommand.maxSequence + 1;
-            const bytes = new Uint8Array(ControlCommand.byteLength);
-            const packet = new DataView(bytes.buffer);
-            bytes[ControlCommand.offset.version] = ControlCommand.version;
-            bytes[ControlCommand.offset.opcode] = opcode;
-            bytes[ControlCommand.offset.channel] = channel;
-            packet.setUint16(ControlCommand.offset.sequence, sequence, true);
-            if (opcode === ControlOpcode.SET_SPEED) {
-                packet.setInt16(ControlCommand.offset.value, value, true);
-            }
-            else {
-                packet.setUint16(ControlCommand.offset.value, value, true);
-            }
-            packet.setUint16(ControlCommand.offset.duration, duration, true);
+            const bytes = encodeRpcPacket("CommandPacket", {
+                version: ControlCommand.version, opcode, sequence, channel, reserved: 0,
+                value: opcode === ControlOpcode.SET_SPEED ? value & 0xFFFF : value, duration,
+            });
             const operation = servoOperations[opcode];
             const details = { operation, sequence, channel, value, duration, transport: transport!.kind };
             const ack = new Promise<void>((resolve, reject) => {
                 const timer = setTimeout(() => {
                     this.pending.delete(sequence);
-                    const error = new Error("ESP32の応答がありません。再接続してください。");
+                    const error = new RpcError(RpcCode.DeadlineExceeded, "ESP32の応答がありません。再接続してください。");
                     reject(error);
                     if (generation === this.generation) {
                         this.callbacks.failed(error);
@@ -596,7 +611,7 @@ export class ControlConnection {
                 console.log("Device servo ACK", details);
             }
             accepted?.();
-        });
+        }, opcode === ControlOpcode.STOP || opcode === ControlOpcode.VM_STOP);
     }
 
     /** 1.5秒周期で共通待ち列へPINGを追加する。経路交換・切断ではタイマーを解除する。 */

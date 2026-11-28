@@ -1,5 +1,6 @@
 /**
  * ESP32の距離通知をmmの数値へ変換する。未測定・失敗・切断時の出力はundefinedにする。
+ * 接続状態・共有STREAMはdevice.protoから生成したRPC購読APIを使う。
  */
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
@@ -35,8 +36,8 @@ export class UltrasonicDistanceSensorBlock extends FunctionBlock {
         this.ports = [this.outputPort];
         this.setBoxSize();
         if (!this.inToolbox) {
-            this.releaseState = diagramDevice.subscribe(state => this.connectionChanged(state));
-            this.releaseStream = diagramDevice.retainSensorStream(this);
+            this.releaseState = diagramDevice.rpc.subscribe("device.state", state => this.connectionChanged(state));
+            this.releaseStream = diagramDevice.rpc.subscribe("sensors.stream", this);
         }
     }
 

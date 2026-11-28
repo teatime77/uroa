@@ -1,5 +1,25 @@
 # ビルドと回帰テスト
 
+## .protoからの機器RPC API生成（2026-11-28）
+
+呼出し契約の正本を[device.proto](../diagram/rpc/device.proto)と[options.proto](../diagram/rpc/options.proto)へ置き、[generate.mjs](../diagram/rpc/generate.mjs)でTypeScriptの型・32操作/購読・5固定長配置とC++の番号・配置・書込みを生成する。仕様本文と既存形式への対応範囲は定義と各ソースのコメントを参照する。[機器接続](../diagram/ts/ble-wifi/device-connection.ts)が既存処理へ対応付け、サーボ・センサー・Python・Wi-Fi設定・カメラの呼出元を共通APIへ移した。
+
+uroaルートで実行する。通常のWebビルドは生成物を照合し、不一致なら生成し直すまで失敗する。隣接するESP32への書込みは`--esp32`で明示する。生成済みC++を保存するため、ESP32だけを取得したビルドではNode.jsやProtobufは不要。
+
+```powershell
+npm.cmd run generate:rpc
+npm.cmd run check:rpc
+node diagram/rpc/generate.mjs --esp32
+node diagram/rpc/generate.mjs --check --esp32
+npm.cmd run verify
+```
+
+既存のprotobuf.js 7.6.6を生成時の依存として明示した。今回のオフラインnpm installはキャッシュ不足で失敗したため、既存の同版とlockfileのパッケージ記録を維持してルートの直接依存を追加した。`npm.cmd ls protobufjs --depth=0`で一致を確認した。新規のクリーンインストールは未確認。
+
+生成物の両リポジトリー照合、Webの型・公開ビルド・成果物確認に成功。既存のgame import混在2件とBinaryenのNode分岐外部化の警告は継続。ESP32のビルド結果は[別リポジトリーの記録](../../esp32/docs/build-and-test.md)を参照する。
+
+従来のテスト不要指定に従い、テストは作成・実行していない。生成codecの実行比較、RPCの取消・期限・満杯・優先順・再登録、ブラウザ操作、実BLE/Wi-Fi、JPEG、Upload・実機確認は未実施。指紋は生成物の整合用で、既存INFOへ相手との指紋交換を追加したものではない。Python RemoteのFuture・配列・Wi-Fi配送は引き続き未対応。
+
 ## RPC 第3段階：BLE整数通知と2ソース開始（2026-11-27）
 
 [PythonBlock](../diagram/ts/python/python-block.ts)からブラウザ用・ESP32用の各1個を選び、独立した診断と生成、ブラウザ準備、公開定義の登録、ESP32の一括送信・開始へ接続した。ESP32は戻り値なし・整数0〜1引数の要求を所有キューへコピーして次へ進み、[remote-session.ts](../diagram/ts/python/remote-session.ts)がWorkerの受付後に確認する。通常終了後も通知を配送し、停止・切断・開始失敗では一組を片付ける。通信の正本は[rpc-protocol.ts](../diagram/ts/ble-wifi/rpc-protocol.ts)。Future・配列・Wi-Fi配送、Plotly.js・Three.jsは後続段階。
