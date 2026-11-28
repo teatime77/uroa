@@ -1,3 +1,5 @@
+import * as jsonwire from "./device-json.generated";
+import * as wire from "./device-wire.generated";
 /**
  * BLEによるWi-Fi設定と、LAN内機器とのHMAC認証付きHTTP/WebSocket通信を担当する。カメラ画像の取得は通常の制御パケットから分離する。
  */
@@ -89,7 +91,7 @@ function validHost(value: unknown): value is string {
  * @param value 検証または反映する値。
  */
 export function endpoint(value: unknown): RobotEndpoint {
-    const data = value as Partial<RobotEndpoint> | undefined;
+    const data = jsonwire.readEndpointFields(value);
     if (!data || typeof data.id !== "string" || !/^uroa-[a-f0-9]{12}$/.test(data.id) ||
         typeof data.name !== "string" || !validHost(data.host) || (data.ip !== "" && !validHost(data.ip)) ||
         ![data.port, data.wsPort, data.cameraPort].every(p => Number.isInteger(p) && p! > 0 && p! <= 65535))
@@ -160,12 +162,12 @@ export class BLEWifiSetup {
             let bytes = encoder.encode(JSON.stringify(data));
             if (bytes.length > 380) throw new Error("Wi-Fi設定が長すぎます。");
             try {
-                await deadline(this.tx.writeValueWithResponse(Uint8Array.of(0)), signal, 90000);
+                await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 0 })), signal, 90000);
                 for (let offset = 0; offset < bytes.length; offset += 19) {
                     signal.throwIfAborted();
-                    await deadline(this.tx.writeValueWithResponse(Uint8Array.of(1, ...bytes.slice(offset, offset + 19))), signal);
+                    await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 1 }, bytes.subarray(offset, offset + 19))), signal);
                 }
-                await deadline(this.tx.writeValueWithResponse(Uint8Array.of(2)), signal);
+                await deadline(this.tx.writeValueWithResponse(wire.encodeProvisionFrame({ op: 2 })), signal);
                 const value = await deadline(this.rx.readValue(), signal);
                 const reply = JSON.parse(decoder.decode(value));
                 if (typeof reply.error === "string" && reply.error) throw new Error("Wi-Fi設定に失敗しました。入力または機器の接続状態を確認してください。");
@@ -185,7 +187,7 @@ export class BLEWifiSetup {
      * @param signal 処理を取り消すシグナル。
      */
     async info(signal: AbortSignal): Promise<ProvisionInfo> {
-        const data = await this.request({ op: "info" }, signal); endpoint(data);
+        const data = await this.request(jsonwire.makeProvisionQuery({ op: jsonwire.provisionOps.info }), signal); endpoint(data);
         if (data.key !== teachingConnectionKey) throw new Error("教材用の固定接続キーに対応したファームウェアを書き込んでください。");
         return data;
     }
@@ -195,14 +197,14 @@ export class BLEWifiSetup {
      * @param signal 処理を取り消すシグナル。
      */
     async scan(signal: AbortSignal): Promise<WifiNetwork[]> {
-        await this.request({ op: "scan" }, signal); await wait(500, signal);
+        await this.request(jsonwire.makeProvisionQuery({ op: jsonwire.provisionOps.scan }), signal); await wait(500, signal);
         const until = Date.now() + 20000;
         while ((await this.info(signal)).state === "scanning") {
             if (Date.now() > until) throw new Error("Wi-Fi検索が時間切れです。"); await wait(500, signal);
         }
         const networks = new Map<string, WifiNetwork>();
         for (let page = 0; page < 65; ++page) {
-            const result = await this.request({ op: "list", page }, signal);
+            const result = await this.request(jsonwire.makeProvisionList({ page }), signal);
             for (const item of result.networks || []) if (typeof item.ssid === "string" && item.ssid && encoder.encode(item.ssid).length <= 32)
                 if (!networks.has(item.ssid) || item.rssi > networks.get(item.ssid)!.rssi) networks.set(item.ssid, item);
             if (page + 1 >= (result.pages || 0)) break;
@@ -217,7 +219,7 @@ export class BLEWifiSetup {
     async configure(ssid: string, password: string, signal: AbortSignal): Promise<ProvisionInfo> {
         const n = encoder.encode(ssid).length, p = encoder.encode(password).length;
         if (!n || n > 32 || (p && p < 8) || p > 63) throw new Error("SSIDは1～32バイト、パスワードは8～63バイトで指定してください。");
-        await this.request({ op: "configure", ssid, password }, signal); await wait(500, signal);
+        await this.request(jsonwire.makeProvisionConfigure({ ssid, password }), signal); await wait(500, signal);
         const until = Date.now() + 30000;
         while (Date.now() < until) {
             const result = await this.info(signal);
@@ -343,7 +345,7 @@ export class RobotWifi implements ControlTransport {
                 signal: request.signal, credentials: "omit", redirect: "error", cache: "no-store" });
             if (!response.ok) throw new Error("Wi-Fi機器から応答を得られません。接続先・ファームウェア・ネットワークのアクセス許可を確認してください。");
             const reply = await response.json();
-            if (["/events", "/bytecode-result", "/debug-result", "/debug-event", "/debug-data"].includes(path) &&
+            if (jsonwire.signedReadPaths.includes(path) &&
                 reply.counter !== String(requestCount)) {
                 throw new Error("応答の番号が一致しません。");
             }
@@ -366,7 +368,7 @@ export class RobotWifi implements ControlTransport {
                 if (this.closed) throw new DOMException("中断しました。", "AbortError");
                 this.base = `http://${host}:${target.port}`; this.cameraBase = `http://${host}:${target.cameraPort}`;
                 try {
-                    information = await this.json("/info");
+                    information = await this.json(jsonwire.transportRoutes.Info.path);
                     const actual = endpoint(information); if (actual.id !== target.id) throw new Error("別の基板が応答しました。BLEで接続先を取得し直してください。");
                     this.endpoint = actual; break;
                 } catch (error) { if (host === hosts.at(-1)) throw error; }
@@ -378,9 +380,9 @@ export class RobotWifi implements ControlTransport {
                 catch { this.socket?.close(); this.socket = undefined; this.session = ""; }
             }
             if (!this.session) {
-                information = await this.json("/info");
+                information = await this.json(jsonwire.transportRoutes.Info.path);
                 const proof = await this.mac(`claim|${target.id}|${information.challenge}|${location.origin}`);
-                const reply = await this.json("/claim", JSON.stringify({ challenge: information.challenge, proof }));
+                const reply = await this.json(jsonwire.transportRoutes.Claim.path, JSON.stringify(jsonwire.makeHttpClaim({ challenge: information.challenge, proof })));
                 await this.acceptSession(reply, information.challenge, target.id); this.polling = true;
                 void this.poll();
             }
@@ -412,18 +414,20 @@ export class RobotWifi implements ControlTransport {
             ws.onmessage = event => {
                 this.inbound = this.inbound.then(async () => {
                     if (this.closed || ws !== this.socket) return;
-                    const reply = JSON.parse(String(event.data));
+                    const rawReply = JSON.parse(String(event.data));
+                    const reply = rawReply;
                     if (!nonce) {
                         if (endpoint(reply).id !== target.id || typeof reply.challenge !== "string") throw new Error("別の機器が応答しました。");
                         nonce = reply.challenge;
                         const proof = await this.mac(`claim|${target.id}|${nonce}|${location.origin}`);
-                        ws.send(JSON.stringify({ op: "claim", challenge: nonce, proof, origin: location.origin }));
+                        ws.send(JSON.stringify(jsonwire.makeSocketClaim({ challenge: nonce, proof, origin: location.origin })));
                     } else if (!this.session) { await this.acceptSession(reply, nonce, target.id); resolve(); }
                     else {
-                        if (!Number.isSafeInteger(reply.counter) || reply.counter <= this.outputCounter) throw new Error("古い通知を受信しました。");
-                        await this.verify(`${this.session}|packet|${reply.counter}|${reply.data}`, reply.proof);
-                        this.outputCounter = reply.counter;
-                        this.receive(reply.data);
+                        const packet = jsonwire.readSocketPacket(reply);
+                        if (!Number.isSafeInteger(packet.counter) || packet.counter <= this.outputCounter) throw new Error("古い通知を受信しました。");
+                        await this.verify(`${this.session}|packet|${packet.counter}|${packet.data}`, reply.proof);
+                        this.outputCounter = packet.counter;
+                        this.receive(packet.data);
                     }
                 }).catch(error => { if (!this.session) reject(error); else this.fail("Wi-Fi応答を確認できません。"); });
             };
@@ -449,7 +453,7 @@ export class RobotWifi implements ControlTransport {
     private async poll(): Promise<void> {
         try {
             while (!this.closed && this.polling) {
-                const reply = await this.json("/events", undefined, true);
+                const reply = jsonwire.readEventsReply(await this.json(jsonwire.transportRoutes.Events.path, undefined, true));
                 if (reply.session !== this.session || !Array.isArray(reply.packets)) throw new Error("接続世代が変わりました。");
                 await this.verify(`${this.session}|events|${reply.counter}|${JSON.stringify(reply.packets)}`, reply.proof);
                 reply.packets.forEach((data: unknown) => this.receive(data));
@@ -458,7 +462,7 @@ export class RobotWifi implements ControlTransport {
         } catch { if (!this.closed) this.fail("Wi-Fiの応答が途切れました。再接続してください。"); }
     }
     /** 通常指令と機器一覧を同じ認証・要求番号の窓で送る。受付と内容検証の区別は共通層を参照。 */
-    private async writeControl(op: "command" | "device-info" | "bytecode" | "debug-control", bytes: Uint8Array): Promise<void> {
+    private async writeControl(op: string, bytes: Uint8Array): Promise<void> {
         if (!this.connected) {
             throw new Error("Wi-Fi接続が切れました。");
         }
@@ -470,7 +474,7 @@ export class RobotWifi implements ControlTransport {
             if (!this.connected) {
                 throw new Error("Wi-Fi接続が切れました。");
             }
-            this.socket.send(JSON.stringify({ op, session: this.session, counter: count, data, mac }));
+            this.socket.send(JSON.stringify(jsonwire.makeSocketCommand({ op, session: this.session, counter: count, data, mac })));
         }
         else {
             const reply = await this.json(path, data, true);
@@ -482,7 +486,7 @@ export class RobotWifi implements ControlTransport {
 
     /** Command v1を認証付きで送る。機器のStatus ACKは共通層が照合する。 */
     async write(bytes: Uint8Array): Promise<void> {
-        await this.writeControl("command", bytes);
+        await this.writeControl(jsonwire.transportRoutes.Command.op, bytes);
     }
 
     /**
@@ -495,7 +499,7 @@ export class RobotWifi implements ControlTransport {
         if (bytes.byteLength > DeviceInfoMaxLength) {
             throw new Error("機器情報の送信サイズが上限を超えています。");
         }
-        await this.writeControl("device-info", bytes);
+        await this.writeControl(jsonwire.transportRoutes.DeviceInfo.op, bytes);
     }
 
     /**
@@ -507,26 +511,21 @@ export class RobotWifi implements ControlTransport {
             throw new Error("Wi-Fi接続が切れました。");
         }
         const session = this.session;
-        return {
-            packetLength: bytecodeTransfer.packetLength,
-            write: async bytes => {
-                if (!this.connected || session !== this.session || bytes.length < bytecodeTransfer.headerLength ||
-                    bytes.length > bytecodeTransfer.packetLength) {
-                    throw new Error("プログラム転送の接続またはフレーム長が不正です。");
-                }
-                await this.writeControl("bytecode", bytes);
-            },
-            readResult: () => this.readControlValue("bytecode-result", 20, 20, session),
-        };
+        return jsonwire.createBytecodeChannel(() => {
+            if (!this.connected || session !== this.session) {
+                throw new Error("機器の接続が変わりました。");
+            }
+        }, (route, bytes) => this.writeControl(route.op, bytes),
+            route => this.readControlValue(route.path.slice(1), route.min_bytes, route.max_bytes, session));
     }
 
     /** 同じ接続・要求番号・窓口の署名付きRead値だけを復号する。契約はbytecode-transfer.ts/debug-protocol.ts。 */
-    private async readControlValue(resource: "bytecode-result" | "debug-result" | "debug-event" | "debug-data",
+    private async readControlValue(resource: string,
         minLength: number, maxLength: number, session: string): Promise<DataView> {
         if (!this.connected || session !== this.session) {
             throw new Error("機器の接続が変わりました。");
         }
-        const reply = await this.json(`/${resource}`, undefined, true);
+        const reply = jsonwire.readReadReply(await this.json(`/${resource}`, undefined, true));
         if (!this.connected || session !== this.session || reply.session !== session || typeof reply.data !== "string") {
             throw new Error("機器の応答の接続が一致しません。");
         }
@@ -544,17 +543,12 @@ export class RobotWifi implements ControlTransport {
             throw new Error("Wi-Fi接続が切れました。");
         }
         const session = this.session;
-        return {
-            writeControl: async bytes => {
-                if (!this.connected || session !== this.session || bytes.length < 8 || bytes.length > 20) {
-                    throw new Error("デバッグ要求の接続または長さが不正です。");
-                }
-                await this.writeControl("debug-control", bytes);
-            },
-            readResult: () => this.readControlValue("debug-result", 20, 20, session),
-            readEvent: () => this.readControlValue("debug-event", 20, 20, session),
-            readData: () => this.readControlValue("debug-data", 1, 20, session),
-        };
+        return jsonwire.createDebugChannel(() => {
+            if (!this.connected || session !== this.session) {
+                throw new Error("機器の接続が変わりました。");
+            }
+        }, (route, bytes) => this.writeControl(route.op, bytes),
+            route => this.readControlValue(route.path.slice(1), route.min_bytes, route.max_bytes, session));
     }
     /**
      * 現在セッションでJPEGを認証付き取得し、通常制御とは別のBlobとして返す。
@@ -563,17 +557,17 @@ export class RobotWifi implements ControlTransport {
      */
     async image(signal: AbortSignal): Promise<Blob> {
         if (!this.connected || !this.endpoint?.camera) throw new Error("カメラを利用できません。");
-        const count = ++this.counter, mac = await this.mac(`${this.session}|${count}|/capture|`);
+        const count = ++this.counter, mac = await this.mac(`${this.session}|${count}|${jsonwire.transportRoutes.Capture.path}|`);
         const controller = this.latestImageController = new AbortController();
         const cancel = () => controller.abort(); signal.addEventListener("abort", cancel, { once: true });
         const timer = setTimeout(cancel, 4000);
         try {
             signal.throwIfAborted();
-            const response = await fetch(this.cameraBase + "/capture", { headers: {
+            const response = await fetch(this.cameraBase + jsonwire.transportRoutes.Capture.path, { headers: {
                 "X-Uroa-Session": this.session, "X-Uroa-Counter": String(count), "X-Uroa-Mac": mac },
                 signal: controller.signal, credentials: "omit", redirect: "error", cache: "no-store" });
-            if (!response.ok || !response.headers.get("content-type")?.startsWith("image/jpeg")) throw new Error("カメラ画像を取得できません。");
-            const image = await response.blob(); if (image.size > 1024 * 1024) throw new Error("カメラ画像が大きすぎます。");
+            if (!response.ok || !response.headers.get("content-type")?.startsWith(jsonwire.transportRoutes.Capture.mime)) throw new Error("カメラ画像を取得できません。");
+            const image = await response.blob(); if (image.size > jsonwire.transportRoutes.Capture.max_bytes) throw new Error("カメラ画像が大きすぎます。");
             return image;
         } finally { clearTimeout(timer); signal.removeEventListener("abort", cancel); this.latestImageController = undefined; }
     }
@@ -590,8 +584,8 @@ export class RobotWifi implements ControlTransport {
         if (this.closed) return;
         if (this.session && this.polling && this.cryptoKey) {
             const session = this.session, count = ++this.counter, base = this.base, key = this.cryptoKey;
-            void crypto.subtle.sign("HMAC", key, encoder.encode(`${session}|${count}|/release|`)).then(signature =>
-                fetch(base + "/release", { method: "POST", headers: { "X-Uroa-Session": session,
+            void crypto.subtle.sign("HMAC", key, encoder.encode(`${session}|${count}|${jsonwire.transportRoutes.Release.path}|`)).then(signature =>
+                fetch(base + jsonwire.transportRoutes.Release.path, { method: "POST", headers: { "X-Uroa-Session": session,
                     "X-Uroa-Counter": String(count), "X-Uroa-Mac": packetHex(new Uint8Array(signature)) },
                     body: "", credentials: "omit", redirect: "error", keepalive: true, signal: AbortSignal.timeout(1000) })
             ).catch(() => {});

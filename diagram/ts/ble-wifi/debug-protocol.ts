@@ -1,3 +1,4 @@
+import * as wire from "./device-wire.generated";
 /**
  * Python BLE／Wi-Fiデバッグ通信の中心契約。Control/Resultはversion=1、Eventはversion=2。
  * device-connection.tsが接続世代、control-connection.tsが通常指令と共有する待ち列を所有する。
@@ -203,26 +204,27 @@ type RunTransport = <T>(operation: () => Promise<T>) => Promise<T>;
  * @throws {Error} 版・値・予約領域・停止情報の範囲が不正な場合。
  */
 function parseEvent(view: DataView): DebugEvent {
-    if (view.byteLength !== 20 || view.getUint8(0) !== debugProtocol.eventVersion || view.getUint8(1) > 5 || view.getUint8(2) > 9) {
+    const packet = wire.readDebugEvent(view);
+    if (view.byteLength !== 20 || packet.version !== debugProtocol.eventVersion || packet.state > 5 || packet.code > 9) {
         throw new Error("デバッグ停止通知の形式が不正です。");
     }
-    const state = view.getUint8(1);
+    const state = packet.state;
     const paused = state === 5;
     const progress = !paused;
-    const vmError = view.getUint8(3);
+    const vmError = packet.error;
     if ((!progress && vmError !== 0) || (progress && (vmError > 23 || state !== 4 && vmError !== 0))
-        || (progress && state !== 4 && view.getUint32(4, true) !== 0)) {
+        || (progress && state !== 4 && packet.stopId !== 0)) {
         throw new Error("デバッグ通知のVMエラー情報が不正です。");
     }
     const event: DebugEvent = {
-        state, code: view.getUint8(2), revision: view.getUint32(8, true),
-        stopId: progress ? 0 : view.getUint32(4, true),
-        byteLength: progress ? 0 : view.getUint32(12, true),
-        crc32: progress ? 0 : view.getUint32(16, true),
-        instructions: progress ? view.getUint32(12, true) : undefined,
-        pc: progress ? view.getUint32(16, true) : undefined,
+        state, code: packet.code, revision: packet.revision,
+        stopId: progress ? 0 : packet.stopId,
+        byteLength: progress ? 0 : packet.size,
+        crc32: progress ? 0 : packet.crc,
+        instructions: progress ? packet.size : undefined,
+        pc: progress ? packet.crc : undefined,
         vmError: progress ? vmError : undefined,
-        errorPc: progress && state === 4 ? view.getUint32(4, true) : undefined,
+        errorPc: progress && state === 4 ? packet.stopId : undefined,
     };
     if (paused && event.code === 0 && (event.stopId === 0 || event.revision === 0
         || event.byteLength < 28 || event.byteLength > debugProtocol.maxSnapshotLength)
@@ -254,14 +256,15 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         throw new Error("デバッグ停止データのCRCが一致しません。");
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const pc = view.getUint32(4, true);
-    const bp = view.getUint32(8, true);
-    const sp = view.getUint32(12, true);
-    const globals = view.getUint32(16, true);
-    const stack = view.getUint32(20, true);
+    const header = wire.readSnapshotHeader(view);
+    const pc = header.pc;
+    const bp = header.bp;
+    const sp = header.sp;
+    const globals = header.globals;
+    const stack = header.stack;
     const valuesEnd = 24 + 8 * (globals + stack);
-    const reason = view.getUint8(1);
-    if (view.getUint8(0) !== debugProtocol.snapshotVersion || (reason !== 1 && reason !== 2) || view.getUint16(2, true) !== 8
+    const reason = header.reason;
+    if (header.version !== debugProtocol.snapshotVersion || (reason !== 1 && reason !== 2) || header.slotBytes !== 8
         || pc > 65535 || globals > 1024 || sp > 1024 || stack !== sp || bp > sp
         || bytes.length < valuesEnd + 4) {
         throw new Error("デバッグ停止データのヘッダーが不正です。");
@@ -274,17 +277,18 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
      * @throws {Error} タグ・予約値・型ID・数値が不正な場合。
      */
     const readValue = (offset: number, management: boolean): DebugValue => {
-        const tag = view.getUint8(offset);
-        const classId = view.getUint16(offset + 2, true);
-        const payload = view.getUint32(offset + 4, true);
-        if (tag > 8 || view.getUint8(offset + 1) !== 0 || (tag === 7 || tag === 8 ? classId === 0 : classId !== 0)
+        const record = wire.readSnapshotValue(view, offset);
+        const tag = record.tag;
+        const classId = record.classId;
+        const payload = record.payload;
+        if (tag > 8 || record.reserved !== 0 || (tag === 7 || tag === 8 ? classId === 0 : classId !== 0)
             || tag === 8 && payload !== 0
             || (tag === 0 || tag === 3) && payload !== 0 || !management && (tag === 4 || tag === 5)
             || tag === 4 && payload > 65535 || tag === 5 && payload > sp) {
             throw new Error("デバッグ停止データの値が不正です。");
         }
-        const value = tag === 0 ? undefined : tag === 3 ? null : tag === 1 ? view.getInt32(offset + 4, true)
-            : tag === 2 ? view.getFloat32(offset + 4, true) : payload;
+        const value = tag === 0 ? undefined : tag === 3 ? null : tag === 1 ? wire.wireInt32(record.payload)
+            : tag === 2 ? wire.wireFloat32(record.payload) : payload;
         if (typeof value === "number" && !Number.isFinite(value)) {
             throw new Error("デバッグ停止データの数値が不正です。");
         }
@@ -295,7 +299,7 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         values.push(readValue(24 + index * 8, index >= globals));
     }
     const strings = new Map<number, string>();
-    const count = view.getUint32(valuesEnd, true);
+    const count = wire.readWord32(view, valuesEnd).value;
     if (count > Math.floor((bytes.length - valuesEnd - 4) / 8)) {
         throw new Error("停止データの文字列数が不正です。");
     }
@@ -305,11 +309,12 @@ function decodeSnapshot(bytes: Uint8Array, event: DebugEvent): DebugSnapshot {
         if (offset + 8 > bytes.length) {
             throw new Error("停止データの文字列IDが不正です。");
         }
-        const id = view.getUint32(offset, true);
+        const record = wire.readStringHeader(view, offset);
+        const id = record.id;
         if (strings.has(id)) {
             throw new Error("停止データの文字列IDが重複しています。");
         }
-        const length = view.getUint32(offset + 4, true);
+        const length = record.length;
         offset += 8;
         if (length > bytes.length - offset) {
             throw new Error("停止データの文字列長が不正です。");
@@ -448,13 +453,7 @@ export class PythonDebugTransport {
         const task = this.tail.catch(() => {}).then(async () => {
             this.check(signal);
             const id = this.nextRequestId();
-            const packet = new Uint8Array(8 + body.length);
-            const view = new DataView(packet.buffer);
-            view.setUint8(0, 1);
-            view.setUint8(1, op);
-            view.setUint16(2, id, true);
-            view.setUint32(4, revision, true);
-            packet.set(body, 8);
+            const packet = wire.encodeDebugHeader({ version: 1, op, request: id, revision }, body);
             const write = () => {
                 this.check(signal);
                 return this.channel.writeControl(packet);
@@ -466,8 +465,9 @@ export class PythonDebugTransport {
                 this.check(signal);
                 const reply = await this.run(() => this.channel.readResult());
                 this.check(signal);
-                if (reply.byteLength !== 20 || reply.getUint8(0) !== 1 || reply.getUint8(5) > 5
-                    || reply.getUint16(6, true) !== 0) {
+                const result = wire.readDebugResult(reply);
+                if (reply.byteLength !== 20 || result.version !== 1 || result.state > 5
+                    || result.reserved !== 0) {
                     throw new Error("デバッグ受付結果の形式が不正です。");
                 }
                 if (performance.now() >= retryAt) {
@@ -475,13 +475,13 @@ export class PythonDebugTransport {
                     await this.run(write);
                     retryAt = performance.now() + 400;
                 }
-                if (reply.getUint16(2, true) === id && reply.getUint8(1) === op) {
-                    const code = reply.getUint8(4);
+                if (result.request === id && result.op === op) {
+                    const code = result.code;
                     if (code !== 0) {
                         throw new Error(`デバッグ通信: ${debugProtocol.errors[code] ?? `不明な結果 ${code}`}`);
                     }
-                    const response = { revision: reply.getUint32(8, true), value: reply.getUint32(12, true),
-                        extra: reply.getUint32(16, true), data: undefined as Uint8Array | undefined };
+                    const response = { revision: result.revision, value: result.value,
+                        extra: result.extra, data: undefined as Uint8Array | undefined };
                     if (op !== 4 && response.revision !== revision) {
                         throw new Error("デバッグ対象のプログラムが変わりました。");
                     }
@@ -515,19 +515,13 @@ export class PythonDebugTransport {
         const base = points ? 6 : 0;
         const bytes = new Uint8Array(sorted.length * 2);
         const values = new DataView(bytes.buffer);
-        sorted.forEach((pc, index) => values.setUint16(index * 2, pc, true));
-        const begin = new Uint8Array(12);
-        const header = new DataView(begin.buffer);
-        header.setUint32(0, sorted.length, true);
-        header.setUint32(4, bytecodeCrc32(bytes), true);
-        header.setUint32(8, receipt.crc32, true);
+        sorted.forEach((pc, index) => wire.writePc(values, index * 2, { value: pc }));
+        const begin = wire.encodeDebugListBody({ count: sorted.length, crc: bytecodeCrc32(bytes), imageCrc: receipt.crc32 });
         await this.request(base + 1, this.revision, begin, signal);
         try {
             for (let index = 0; index < sorted.length; index += 4) {
                 const part = bytes.slice(index * 2, Math.min(index + 4, sorted.length) * 2);
-                const body = new Uint8Array(4 + part.length);
-                new DataView(body.buffer).setUint32(0, index, true);
-                body.set(part, 4);
+                const body = wire.encodeWord32({ value: index }, part);
                 const ack = await this.request(base + 2, this.revision, body, signal);
                 if (ack.value !== index + part.length / 2) {
                     throw new Error("ブレークポイントの受付件数が不正です。");
@@ -603,8 +597,7 @@ export class PythonDebugTransport {
         }
         this.executing = true;
         this.invalidateSnapshot();
-        const body = new Uint8Array(4);
-        new DataView(body.buffer).setUint32(0, snapshot.stopId, true);
+        const body = wire.encodeWord32({ value: snapshot.stopId });
         try {
             const ack = await this.request(debugActions[action], this.revision, body, signal);
             if (ack.value !== snapshot.stopId) {
@@ -721,10 +714,7 @@ export class PythonDebugTransport {
             if (epoch !== this.epoch) {
                 return;
             }
-            const body = new Uint8Array(8);
-            const view = new DataView(body.buffer);
-            view.setUint32(0, event.stopId, true);
-            view.setUint32(4, offset, true);
+            const body = wire.encodeDebugChunkBody({ stopId: event.stopId, offset });
             const reply = await this.request(5, event.revision, body, undefined, true);
             const expected = Math.min(20, bytes.length - offset);
             if (reply.value !== offset || reply.extra !== expected || reply.data?.length !== expected) {

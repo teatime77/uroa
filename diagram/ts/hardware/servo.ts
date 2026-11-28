@@ -1,3 +1,4 @@
+import * as wire from "../ble-wifi/device-wire.generated";
 /**
  * CHごとの角度・連続回転速度の明示的な有効化と指令UIを提供する。
  * 通信はdevice.protoから生成したRPC APIへ渡し、ACKと機器固有の入力検査はdevice-connection.tsへ委譲する。
@@ -162,11 +163,8 @@ export class ServoMotorBlock extends FunctionBlock {
      * @param offset バイト列内の開始位置。
      */
     writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
-        bytes[offset]     = this.deviceType!;
-        bytes[offset + 1] = this.configuredChannel;
-        bytes[offset + 2] = (this.mode == "angle" ? 0 : 1);
-
-        return offset + 3;
+        return wire.writeDeviceInfoRecordsRecord(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), offset,
+            { deviceType: this.deviceType!, channel: this.configuredChannel, mode: this.mode === "angle" ? 0 : 1 });
     }
 
     /**

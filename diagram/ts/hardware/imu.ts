@@ -1,3 +1,4 @@
+import * as wire from "../ble-wifi/device-wire.generated";
 /**
  * ESP32のIMU通知から時刻・角速度・加速度を構造体ポートへ出力する。
  * 状態・共有STREAMはdevice.protoのRPC購読APIへ渡し、登録と配送はdevice-connection.tsへ委譲する。
@@ -59,9 +60,8 @@ export class IMUBlock extends FunctionBlock {
      * @param offset バイト列内の開始位置。
      */
     writeDeviceInfo(bytes : Uint8Array, offset : number) : number {
-        bytes[offset] = this.deviceType!;
-
-        return offset + 1;
+        return wire.writeDeviceInfoRecordsRecord(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), offset,
+            { deviceType: this.deviceType! });
     }
 
     /**
@@ -72,27 +72,28 @@ export class IMUBlock extends FunctionBlock {
      * @returns 次のレコードの開始位置。
      */
     readStatus(time: number, data: DataView, offset: number): number {
-        assert(data.getInt8(offset) == this.deviceType);
+        const record = wire.readImuRecord(data, offset);
+        assert(record.deviceType == this.deviceType);
 
         const value = {
             time: time,
             acc:{
-                x: data.getInt16(offset + 1, true) / 16384 * 9.80665, 
-                y: data.getInt16(offset + 3, true) / 16384 * 9.80665, 
-                z: data.getInt16(offset + 5, true) / 16384 * 9.80665
+                x: record.accX / 16384 * 9.80665, 
+                y: record.accY / 16384 * 9.80665, 
+                z: record.accZ / 16384 * 9.80665
             }
             , 
             gyro:{
-                x: data.getInt16(offset + 7, true)  / 131, 
-                y: data.getInt16(offset + 9, true)  / 131, 
-                z: data.getInt16(offset + 11, true) / 131
+                x: record.gyroX  / 131, 
+                y: record.gyroY  / 131, 
+                z: record.gyroZ / 131
             }
         } as IMUValue;
 
         this.setIMU(value);
 
         // return the offset of the next status.
-        return offset + 13;
+        return offset + wire.wireLayouts.ImuRecord.byteLength;
     }
 
     /**

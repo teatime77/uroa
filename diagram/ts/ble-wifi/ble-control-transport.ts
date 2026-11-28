@@ -1,3 +1,4 @@
+import * as wire from "./device-wire.generated";
 /** GATTの通常指令・機器一覧・通知をcontrol-connection.tsの共通通信経路へ接続する。 */
 import type { ControlPacketKind, ControlTransport } from "./control-connection";
 import type { BytecodeChannel } from "./bytecode-transfer";

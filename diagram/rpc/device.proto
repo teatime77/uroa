@@ -1,6 +1,8 @@
 syntax = "proto3";
 package uroa.device;
 import "options.proto";
+import "wire.proto";
+import "transport.proto";
 
 // 機器通信APIと既存固定長パケットの中心契約。
 // generate.mjsがTypeScriptの型・API・メタデータとC++の番号・配置・値型を生成する。
@@ -98,14 +100,15 @@ message StatusPacket {
 }
 message TelemetryHeader {
     option (uroa.wire_packet) = true;
-    option (uroa.cpp_codec) = "encode";
-    uint32 version = 1 [(uroa.bits) = 8];
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.fixed_value) = 3];
     uint32 flags = 2 [(uroa.bits) = 8];
     uint32 sequence = 3 [(uroa.bits) = 16];
     uint32 millis = 4;
 }
 message ImuRecord {
     option (uroa.wire_packet) = true;
+    option (uroa.extended_codec) = true;
     uint32 device_type = 1 [(uroa.bits) = 8];
     sint32 acc_x = 2 [(uroa.bits) = 16];
     sint32 acc_y = 3 [(uroa.bits) = 16];
@@ -116,8 +119,9 @@ message ImuRecord {
 }
 message DistanceRecord {
     option (uroa.wire_packet) = true;
+    option (uroa.extended_codec) = true;
     uint32 device_type = 1 [(uroa.bits) = 8];
-    uint32 distance_mm = 2 [(uroa.bits) = 16]; // 20〜4000mm、未測定・失敗は0xFFFF。
+    uint32 distance_mm = 2 [(uroa.bits) = 16, (uroa.min_value) = 20, (uroa.max_value) = 4000, (uroa.sentinel) = 65535];
 }
 
 message Empty {}

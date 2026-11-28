@@ -1,0 +1,316 @@
+syntax = "proto3";
+package uroa.wire;
+import "options.proto";
+
+// 既存のBLE/Wi-Fiのバイト契約。Protobuf wire形式は使わない。
+// ヘッダー・レコードは宣言順、little endian、パディングなし。可変長本体は直後に続く。
+// codecは部分領域を扱い、bytesは借用する。所有・全長・順序・CRC・接続世代は各転送処理が検査する。
+// DebugEventのsize/crcはPausedでSnapshot長/CRC、非Pausedでは命令数/PC。stop_idはError時に失敗PC。
+// Snapshotのpayloadはタグ別の生ビット。GC参照の本体・アドレスを送信する変更はしない。
+// Registryの3指紋は固定32バイト。動的Python署名の生成・照合は既存のRemote/VMが担当する。
+
+message TransferHeader {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 2];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 transfer = 3 [(uroa.bits) = 16];
+    uint32 sequence = 4 [(uroa.bits) = 16];
+    uint32 position = 5 [(uroa.bits) = 32];
+}
+
+message TransferBegin {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 2];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 transfer = 3 [(uroa.bits) = 16];
+    uint32 sequence = 4 [(uroa.bits) = 16];
+    uint32 position = 5 [(uroa.bits) = 32];
+    uint32 crc = 6 [(uroa.bits) = 32];
+}
+
+message TransferResult {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 2];
+    uint32 code = 2 [(uroa.bits) = 8];
+    uint32 transfer = 3 [(uroa.bits) = 16];
+    uint32 frame = 4 [(uroa.bits) = 16];
+    uint32 op = 5 [(uroa.bits) = 8];
+    uint32 state = 6 [(uroa.bits) = 8];
+    uint32 received = 7 [(uroa.bits) = 32];
+    uint32 revision = 8 [(uroa.bits) = 32];
+    uint32 crc = 9 [(uroa.bits) = 32];
+}
+
+message BundleHeader {
+    option (uroa.extended_codec) = true;
+    uint32 signature = 1 [(uroa.bits) = 32];
+    uint32 version = 2 [(uroa.bits) = 16, (uroa.wire_default) = 1];
+    uint32 flags = 3 [(uroa.bits) = 16];
+    uint32 length = 4 [(uroa.bits) = 32];
+    uint32 breakpoints = 5 [(uroa.bits) = 32];
+    uint32 points = 6 [(uroa.bits) = 32];
+    uint32 crc = 7 [(uroa.bits) = 32];
+}
+
+message DebugHeader {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 request = 3 [(uroa.bits) = 16];
+    uint32 revision = 4 [(uroa.bits) = 32];
+}
+
+message DebugBegin {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 request = 3 [(uroa.bits) = 16];
+    uint32 revision = 4 [(uroa.bits) = 32];
+    uint32 count = 5 [(uroa.bits) = 32];
+    uint32 crc = 6 [(uroa.bits) = 32];
+    uint32 image_crc = 7 [(uroa.bits) = 32];
+}
+
+message DebugData {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 request = 3 [(uroa.bits) = 16];
+    uint32 revision = 4 [(uroa.bits) = 32];
+    uint32 index = 5 [(uroa.bits) = 32];
+}
+
+message DebugChunk {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 request = 3 [(uroa.bits) = 16];
+    uint32 revision = 4 [(uroa.bits) = 32];
+    uint32 stop_id = 5 [(uroa.bits) = 32];
+    uint32 offset = 6 [(uroa.bits) = 32];
+}
+
+message DebugExecute {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 request = 3 [(uroa.bits) = 16];
+    uint32 revision = 4 [(uroa.bits) = 32];
+    uint32 stop_id = 5 [(uroa.bits) = 32];
+}
+
+message DebugResult {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 request = 3 [(uroa.bits) = 16];
+    uint32 code = 4 [(uroa.bits) = 8];
+    uint32 state = 5 [(uroa.bits) = 8];
+    uint32 reserved = 6 [(uroa.bits) = 16];
+    uint32 revision = 7 [(uroa.bits) = 32];
+    uint32 value = 8 [(uroa.bits) = 32];
+    uint32 extra = 9 [(uroa.bits) = 32];
+}
+
+message DebugEvent {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 2];
+    uint32 state = 2 [(uroa.bits) = 8];
+    uint32 code = 3 [(uroa.bits) = 8];
+    uint32 error = 4 [(uroa.bits) = 8];
+    uint32 stop_id = 5 [(uroa.bits) = 32];
+    uint32 revision = 6 [(uroa.bits) = 32];
+    uint32 size = 7 [(uroa.bits) = 32];
+    uint32 crc = 8 [(uroa.bits) = 32];
+}
+
+message SnapshotHeader {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 6];
+    uint32 reason = 2 [(uroa.bits) = 8];
+    uint32 slot_bytes = 3 [(uroa.bits) = 16];
+    uint32 pc = 4 [(uroa.bits) = 32];
+    uint32 bp = 5 [(uroa.bits) = 32];
+    uint32 sp = 6 [(uroa.bits) = 32];
+    uint32 globals = 7 [(uroa.bits) = 32];
+    uint32 stack = 8 [(uroa.bits) = 32];
+}
+
+message SnapshotValue {
+    option (uroa.extended_codec) = true;
+    uint32 tag = 1 [(uroa.bits) = 8];
+    uint32 reserved = 2 [(uroa.bits) = 8];
+    uint32 class_id = 3 [(uroa.bits) = 16];
+    uint32 payload = 4 [(uroa.bits) = 32];
+}
+
+message StringHeader {
+    option (uroa.extended_codec) = true;
+    uint32 id = 1 [(uroa.bits) = 32];
+    uint32 length = 2 [(uroa.bits) = 32];
+}
+
+message Word32 {
+    option (uroa.extended_codec) = true;
+    uint32 value = 1 [(uroa.bits) = 32];
+}
+
+message Pc {
+    option (uroa.extended_codec) = true;
+    uint32 value = 1 [(uroa.bits) = 16];
+}
+
+message RemoteHeader {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 nonce = 4 [(uroa.bits) = 32];
+}
+
+message RemoteBegin {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 nonce = 4 [(uroa.bits) = 32];
+    uint32 total = 5 [(uroa.bits) = 16];
+    uint32 crc = 6 [(uroa.bits) = 32];
+}
+
+message RemoteData {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 nonce = 4 [(uroa.bits) = 32];
+    uint32 offset = 5 [(uroa.bits) = 16];
+}
+
+message RemoteAck {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 nonce = 4 [(uroa.bits) = 32];
+    uint32 id = 5 [(uroa.bits) = 32];
+}
+
+message RemoteResult {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 op = 2 [(uroa.bits) = 8];
+    uint32 sequence = 3 [(uroa.bits) = 16];
+    uint32 nonce = 4 [(uroa.bits) = 32];
+    uint32 code = 5 [(uroa.bits) = 8];
+    uint32 state = 6 [(uroa.bits) = 8];
+    uint32 received = 7 [(uroa.bits) = 16];
+    uint32 reserved = 8 [(uroa.bits) = 32];
+    uint32 extra = 9 [(uroa.bits) = 32];
+}
+
+message RemoteEvent {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 kind = 2 [(uroa.bits) = 8];
+    uint32 nonce = 3 [(uroa.bits) = 32];
+    uint32 id = 4 [(uroa.bits) = 32];
+    uint32 object = 5 [(uroa.bits) = 16];
+    uint32 method = 6 [(uroa.bits) = 16];
+    uint32 argc = 7 [(uroa.bits) = 8];
+    uint32 error = 8 [(uroa.bits) = 8];
+    sint32 value = 9 [(uroa.bits) = 32];
+}
+
+message RegistryHeader {
+    option (uroa.extended_codec) = true;
+    uint32 version = 1 [(uroa.bits) = 8, (uroa.wire_default) = 1];
+    uint32 count = 2 [(uroa.bits) = 8];
+    uint32 reserved = 3 [(uroa.bits) = 16];
+    bytes base_hash = 4 [(uroa.fixed_length) = 32, (uroa.max_length) = 32];
+    bytes rpc_hash = 5 [(uroa.fixed_length) = 32, (uroa.max_length) = 32];
+    bytes registry_hash = 6 [(uroa.fixed_length) = 32, (uroa.max_length) = 32];
+}
+
+message RegistryRecord {
+    option (uroa.extended_codec) = true;
+    uint32 native = 1 [(uroa.bits) = 16];
+    uint32 object = 2 [(uroa.bits) = 16];
+    uint32 method = 3 [(uroa.bits) = 16];
+    uint32 class_id = 4 [(uroa.bits) = 16];
+    uint32 argc = 5 [(uroa.bits) = 8];
+    uint32 reserved = 6 [(uroa.bits) = 8];
+}
+
+message ProvisionFrame {
+    option (uroa.extended_codec) = true;
+    uint32 op = 1 [(uroa.bits) = 8];
+}
+
+message DeviceTag {
+    option (uroa.extended_codec) = true;
+    uint32 device_type = 1 [(uroa.bits) = 8];
+}
+
+message DeviceServo {
+    option (uroa.extended_codec) = true;
+    uint32 device_type = 1 [(uroa.bits) = 8];
+    uint32 channel = 2 [(uroa.bits) = 8, (uroa.max_value) = 15];
+    uint32 mode = 3 [(uroa.bits) = 8, (uroa.max_value) = 1];
+}
+
+message RemoteBeginBody {
+    option (uroa.extended_codec) = true;
+    uint32 total = 1 [(uroa.bits) = 16];
+    uint32 crc = 2 [(uroa.bits) = 32];
+}
+
+message Offset16 {
+    option (uroa.extended_codec) = true;
+    uint32 value = 1 [(uroa.bits) = 16];
+}
+
+message DebugListBody {
+    option (uroa.extended_codec) = true;
+    uint32 count = 1 [(uroa.bits) = 32];
+    uint32 crc = 2 [(uroa.bits) = 32];
+    uint32 image_crc = 3 [(uroa.bits) = 32];
+}
+
+message DebugChunkBody {
+    option (uroa.extended_codec) = true;
+    uint32 stop_id = 1 [(uroa.bits) = 32];
+    uint32 offset = 2 [(uroa.bits) = 32];
+}
+
+// 一覧は版・件数なし、Telemetryはversion 3ヘッダー後に登録順のレコード列。
+message DeviceInfoRecords {
+    option (uroa.record_set) = { tag_field: "deviceType" max_records: 20 max_bytes: 20
+        variants: { tag: 0 type: "DeviceTag" } variants: { tag: 1 type: "DeviceTag" }
+        variants: { tag: 2 type: "DeviceTag" } variants: { tag: 3 type: "DeviceTag" }
+        variants: { tag: 128 type: "DeviceServo" } };
+}
+message TelemetryRecords {
+    option (uroa.record_set) = { header: "TelemetryHeader" tag_field: "deviceType" max_records: 20 max_bytes: 268
+        variants: { tag: 0 type: "ImuRecord" } variants: { tag: 2 type: "DistanceRecord" } };
+}
+
+// UUIDは発見・配送先の定義であり、新たなRPC番号として送信しない。
+enum GattUuid {
+    SERVICE = 0 [(uroa.json_name) = "f3641400-00b0-4240-ba50-05ca45bf8abc"];
+    COMMAND = 1 [(uroa.json_name) = "f3641401-00b0-4240-ba50-05ca45bf8abc"];
+    TELEMETRY = 2 [(uroa.json_name) = "f3641402-00b0-4240-ba50-05ca45bf8abc"];
+    STATUS = 3 [(uroa.json_name) = "f3641403-00b0-4240-ba50-05ca45bf8abc"];
+    WIFI_CONFIG = 4 [(uroa.json_name) = "f3641404-00b0-4240-ba50-05ca45bf8abc"];
+    WIFI_RESULT = 5 [(uroa.json_name) = "f3641405-00b0-4240-ba50-05ca45bf8abc"];
+    DEVICE_INFO = 6 [(uroa.json_name) = "f3641406-00b0-4240-ba50-05ca45bf8abc"];
+    BYTECODE = 7 [(uroa.json_name) = "f3641407-00b0-4240-ba50-05ca45bf8abc"];
+    BYTECODE_RESULT = 8 [(uroa.json_name) = "f3641408-00b0-4240-ba50-05ca45bf8abc"];
+    DEBUG_CONTROL = 9 [(uroa.json_name) = "f3641409-00b0-4240-ba50-05ca45bf8abc"];
+    DEBUG_RESULT = 10 [(uroa.json_name) = "f364140a-00b0-4240-ba50-05ca45bf8abc"];
+    DEBUG_EVENT = 11 [(uroa.json_name) = "f364140b-00b0-4240-ba50-05ca45bf8abc"];
+    DEBUG_DATA = 12 [(uroa.json_name) = "f364140c-00b0-4240-ba50-05ca45bf8abc"];
+    RPC_CONTROL = 13 [(uroa.json_name) = "f364140d-00b0-4240-ba50-05ca45bf8abc"];
+    RPC_RESULT = 14 [(uroa.json_name) = "f364140e-00b0-4240-ba50-05ca45bf8abc"];
+    RPC_EVENT = 15 [(uroa.json_name) = "f364140f-00b0-4240-ba50-05ca45bf8abc"];
+}

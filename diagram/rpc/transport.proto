@@ -1,0 +1,186 @@
+syntax = "proto3";
+package uroa.network;
+import "options.proto";
+
+// 既存のJSONとHTTP/WSの外側の契約。HMACは現在の表現・区切り・counter型を維持する。
+// codecは宣言したフィールドを写し、機器ID・LAN制約・署名・世代・資格情報の寿命は通信所有者が検査する。
+// JSONの文字列はnativeではDocumentの寿命内だけ借用し、出力ではStringとしてDocumentへ複写する。
+// JPEGはHTTPの生image/jpeg。JSONやProtobufへの包み直しは行わない。
+
+message EndpointFields {
+    option (uroa.json_codec) = true;
+    string id = 1 [(uroa.max_length) = 64];
+    string name = 2 [(uroa.max_length) = 64];
+    string host = 3 [(uroa.max_length) = 128];
+    string ip = 4 [(uroa.max_length) = 64];
+    uint32 port = 5 [(uroa.bits) = 16];
+    uint32 ws_port = 6 [(uroa.bits) = 16];
+    uint32 camera_port = 7 [(uroa.bits) = 16];
+    bool camera = 8;
+}
+
+message ProvisionStatus {
+    option (uroa.json_codec) = true;
+    string state = 1 [(uroa.max_length) = 32];
+    string error = 2 [(uroa.max_length) = 256];
+}
+
+message SecretField {
+    option (uroa.json_codec) = true;
+    string key = 1 [(uroa.max_length) = 64];
+}
+
+message ProvisionQuery {
+    option (uroa.json_codec) = true;
+    string op = 1 [(uroa.max_length) = 16];
+    sint32 page = 2 [(uroa.host_optional) = true];
+}
+
+message ProvisionList {
+    option (uroa.json_codec) = true;
+    string op = 1 [(uroa.max_length) = 16, (uroa.json_literal) = "list"];
+    uint32 page = 2 [(uroa.bits) = 32];
+}
+
+message ProvisionConfigure {
+    option (uroa.json_codec) = true;
+    string op = 1 [(uroa.max_length) = 16, (uroa.json_literal) = "configure"];
+    string ssid = 2 [(uroa.max_length) = 32];
+    string password = 3 [(uroa.max_length) = 63];
+}
+
+message WifiNetworkRow {
+    option (uroa.json_codec) = true;
+    string ssid = 1 [(uroa.max_length) = 32];
+    sint32 rssi = 2;
+    bool open = 3;
+}
+
+message HttpClaim {
+    option (uroa.json_codec) = true;
+    string challenge = 1 [(uroa.max_length) = 64];
+    string proof = 2 [(uroa.max_length) = 64];
+}
+
+message SocketClaim {
+    option (uroa.json_codec) = true;
+    string op = 1 [(uroa.max_length) = 16, (uroa.json_literal) = "claim"];
+    string challenge = 2 [(uroa.max_length) = 64];
+    string proof = 3 [(uroa.max_length) = 64];
+    string origin = 4 [(uroa.max_length) = 512];
+}
+
+message ReadyFields {
+    option (uroa.json_codec) = true;
+    string session = 1 [(uroa.max_length) = 32];
+    string proof = 2 [(uroa.max_length) = 64];
+}
+
+message SocketCommand {
+    option (uroa.json_codec) = true;
+    string op = 1 [(uroa.max_length) = 32];
+    string session = 2 [(uroa.max_length) = 32];
+    uint32 counter = 3 [(uroa.bits) = 32];
+    string data = 4 [(uroa.max_length) = 2048];
+    string mac = 5 [(uroa.max_length) = 64];
+}
+
+message ReadReply {
+    option (uroa.json_codec) = true;
+    string session = 1 [(uroa.max_length) = 32];
+    string counter = 2 [(uroa.max_length) = 32];
+    string data = 3 [(uroa.max_length) = 2048];
+    string proof = 4 [(uroa.max_length) = 64];
+}
+
+message SignedFields {
+    option (uroa.json_codec) = true;
+    string session = 1 [(uroa.max_length) = 32];
+    string counter = 2 [(uroa.max_length) = 32];
+    string proof = 3 [(uroa.max_length) = 64];
+}
+
+message SocketPacket {
+    option (uroa.json_codec) = true;
+    string data = 1 [(uroa.max_length) = 2048];
+    uint32 counter = 2 [(uroa.bits) = 32];
+    string proof = 3 [(uroa.max_length) = 64];
+}
+
+message EventsReply {
+    option (uroa.json_codec) = true;
+    repeated string packets = 1 [(uroa.max_length) = 2048];
+    string session = 2 [(uroa.max_length) = 32];
+    string counter = 3 [(uroa.max_length) = 32];
+    string proof = 4 [(uroa.max_length) = 64];
+}
+
+message Accepted {
+    option (uroa.json_codec) = true;
+    bool accepted = 1 [(uroa.json_bool_literal) = true];
+}
+
+message RawBytes {
+    option (uroa.json_codec) = true;
+    string data = 1 [(uroa.max_length) = 2048];
+}
+
+enum ProvisionOperation {
+    PROVISION_UNKNOWN = 0;
+    PROVISION_INFO = 1 [(uroa.json_name) = "info"];
+    PROVISION_SCAN = 2 [(uroa.json_name) = "scan"];
+    PROVISION_LIST = 3 [(uroa.json_name) = "list"];
+    PROVISION_CONFIGURE = 4 [(uroa.json_name) = "configure"];
+    PROVISION_FORGET = 5 [(uroa.json_name) = "forget"];
+}
+
+service Http {
+    rpc Info(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/info" verb: "GET" server_method: "info" };
+    }
+    rpc Claim(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/claim" verb: "POST" server_method: "claimHTTP" };
+    }
+    rpc Command(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/command" op: "command" verb: "POST" authenticated: true min_bytes: 10 max_bytes: 10 callback: "command" required: true stack_buffer: true server_method: "controlHTTP" };
+    }
+    rpc DeviceInfo(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/device-info" op: "device-info" verb: "POST" authenticated: true min_bytes: 0 max_bytes: 20 callback: "deviceInfo" server_method: "controlHTTP" };
+    }
+    rpc Bytecode(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/bytecode" op: "bytecode" verb: "POST" authenticated: true min_bytes: 10 max_bytes: 1024 callback: "bytecode" channel: "Bytecode" client_method: "write" server_method: "controlHTTP" };
+    }
+    rpc BytecodeResult(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/bytecode-result" verb: "GET" authenticated: true min_bytes: 20 max_bytes: 20 storage: "bytecodeResult_" channel: "Bytecode" client_method: "readResult" server_method: "controlValueHTTP" };
+    }
+    rpc DebugControl(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/debug-control" op: "debug-control" verb: "POST" authenticated: true min_bytes: 8 max_bytes: 20 callback: "debug" channel: "Debug" client_method: "writeControl" server_method: "controlHTTP" };
+    }
+    rpc DebugResult(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/debug-result" verb: "GET" authenticated: true min_bytes: 20 max_bytes: 20 storage: "debugResult_" channel: "Debug" client_method: "readResult" server_method: "controlValueHTTP" };
+    }
+    rpc DebugEvent(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/debug-event" verb: "GET" authenticated: true min_bytes: 20 max_bytes: 20 storage: "debugEvent_" channel: "Debug" client_method: "readEvent" server_method: "controlValueHTTP" };
+    }
+    rpc DebugData(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/debug-data" verb: "GET" authenticated: true min_bytes: 1 max_bytes: 20 storage: "debugData_" channel: "Debug" client_method: "readData" server_method: "controlValueHTTP" };
+    }
+    rpc Events(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/events" verb: "GET" authenticated: true server_method: "eventsHTTP" };
+    }
+    rpc Release(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/release" verb: "POST" authenticated: true server_method: "releaseHTTP" };
+    }
+    rpc Capture(RawBytes) returns (RawBytes) {
+        option (uroa.route) = { path: "/capture" verb: "GET" authenticated: true min_bytes: 0 max_bytes: 1048576 mime: "image/jpeg" camera: true server_method: "imageHTTP" };
+    }
+}
+
+message ChallengeFields {
+    option (uroa.json_codec) = true;
+    string challenge = 1 [(uroa.max_length) = 64];
+}
+message ListPaging {
+    option (uroa.json_codec) = true;
+    uint32 pages = 1;
+}

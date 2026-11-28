@@ -32,7 +32,7 @@ export const rpcApiVersion = 1;
 
 export const rpcMaxPending = 32;
 
-export const rpcSchemaFingerprint = "024c72760355b575cbd0458dd0d85fa550880ef04bc5c685d07c17574b68e4ed";
+export const rpcSchemaFingerprint = "99d8eab721a50d2deda1e415c268665dc3730d66c80a19104a87439d890d8730";
 
 
 
@@ -531,7 +531,9 @@ export const packetLayouts = {
             "sequence": 2,
             "millis": 4
         },
-        "fixed": {},
+        "fixed": {
+            "version": 3
+        },
         "fields": [
             {
                 "name": "version",
@@ -540,6 +542,7 @@ export const packetLayouts = {
                 "signed": false,
                 "minimum": 0,
                 "maximum": 255,
+                "fixed": 3,
                 "min": 0
             },
             {
@@ -572,7 +575,7 @@ export const packetLayouts = {
         ],
         "directions": {
             "ts": "",
-            "cpp": "encode"
+            "cpp": ""
         }
     },
     "ImuRecord": {
@@ -681,7 +684,7 @@ export const packetLayouts = {
                 "signed": false,
                 "minimum": 0,
                 "maximum": 65535,
-                "min": 0
+                "min": 20
             }
         ],
         "directions": {

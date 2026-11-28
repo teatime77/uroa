@@ -24,6 +24,34 @@ message StatusBinding {
     uint32 speed_flag = 2;
     uint32 speed_scale = 3;
 }
+message RecordVariant {
+    uint32 tag = 1;
+    string type = 2;
+}
+message RecordSet {
+    string header = 1;
+    string tag_field = 2;
+    repeated RecordVariant variants = 3;
+    uint32 max_records = 4;
+    uint32 max_bytes = 5;
+}
+message TransportRoute {
+    string path = 1;
+    string op = 2;
+    string verb = 3;
+    bool authenticated = 4;
+    uint32 min_bytes = 5;
+    uint32 max_bytes = 6;
+    string callback = 7;
+    bool required = 8;
+    bool stack_buffer = 9;
+    string storage = 10;
+    string channel = 11;
+    string client_method = 12;
+    string mime = 13;
+    bool camera = 14;
+    string server_method = 15;
+}
 message CommandCase {
     string equals = 1;
     string opcode = 2;
@@ -53,6 +81,9 @@ extend google.protobuf.MessageOptions {
     string cpp_codec = 51105; // 未指定なら生成しない。encodeまたはdecode。
     string result_enum = 51106; // 結果番号とメッセージを持つenum。
     StatusBinding status_binding = 51107;
+    bool extended_codec = 51108; // 部分領域・固定bytesを扱う共通wire codec。
+    RecordSet record_set = 51109;
+    bool json_codec = 51110;
 }
 extend google.protobuf.FieldOptions {
     uint32 bits = 51201;
@@ -61,6 +92,11 @@ extend google.protobuf.FieldOptions {
     uint32 fixed_value = 51204; // 固定値。受信の形式検査にも使う。
     uint32 min_value = 51205; // 整数・enumの受理下限。未指定なら型の下限。
     uint32 wire_default = 51206; // 要求へ明示指定しない場合の既存値。
+    uint32 fixed_length = 51207; // bytesの固定長。可変長本体の所有権は転送側に残す。
+    uint32 max_value = 51208;
+    uint32 sentinel = 51209; // 範囲外で許す予約値。
+    string json_literal = 51210;
+    bool json_bool_literal = 51211;
 }
 extend google.protobuf.ServiceOptions {
     uint32 service_id = 51301;
@@ -76,8 +112,10 @@ extend google.protobuf.MethodOptions {
     bool priority = 51407;
     string subscription = 51408;
     CommandBinding command = 51409;
+    TransportRoute route = 51410;
 }
 extend google.protobuf.EnumValueOptions {
     string result_message = 51501;
     bool command_trace = 51502;
+    string json_name = 51503;
 }

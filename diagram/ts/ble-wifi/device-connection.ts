@@ -5,6 +5,7 @@
  * 経路別通信はBLEControlTransportとRobotWifi、共通の待ち列とACK照合はControlConnectionへ委譲する。
  * 通常StatusはControlConnectionが生成codecで復号・検査した値を使い、生バイトの再解釈を行わない。
  */
+import { gattUuids as BLE_UUID } from "./device-wire.generated";
 import { Vec2 } from "@i18n";
 import { DeviceType, FunctionBlock, registerFunctionBlock } from "../block";
 import { Button, type Attr, type UI } from "../ui";
@@ -41,24 +42,8 @@ import { StatusCode, type StatusPacket } from "./device-rpc.generated";
  * Command・Status・Telemetry・DeviceInfoとは別の窓口。Writeは合意ATT MTU-3以下・最大244バイトで必ずresponse付きにする。GATTの受付だけではプログラムの受信完了とせず、一括転送のCOMMIT後に専用ResultをReadして、ESP32のloop()による検証・必要な開始の結果を確認する。
  * デバッグ通信の完全な形式・停止値・一覧確定の仕様はdebug-protocol.tsを参照する。
  */
-export const BLE_UUID = {
-    service: "f3641400-00b0-4240-ba50-05ca45bf8abc",
-    command: "f3641401-00b0-4240-ba50-05ca45bf8abc",
-    telemetry: "f3641402-00b0-4240-ba50-05ca45bf8abc",
-    status: "f3641403-00b0-4240-ba50-05ca45bf8abc",
-    wifiConfig: "f3641404-00b0-4240-ba50-05ca45bf8abc",
-    wifiResult: "f3641405-00b0-4240-ba50-05ca45bf8abc",
-    deviceInfo: "f3641406-00b0-4240-ba50-05ca45bf8abc",
-    bytecode: "f3641407-00b0-4240-ba50-05ca45bf8abc",
-    bytecodeResult: "f3641408-00b0-4240-ba50-05ca45bf8abc",
-    debugControl: "f3641409-00b0-4240-ba50-05ca45bf8abc",
-    debugResult: "f364140a-00b0-4240-ba50-05ca45bf8abc",
-    debugEvent: "f364140b-00b0-4240-ba50-05ca45bf8abc",
-    debugData: "f364140c-00b0-4240-ba50-05ca45bf8abc",
-    rpcControl: "f364140d-00b0-4240-ba50-05ca45bf8abc",
-    rpcResult: "f364140e-00b0-4240-ba50-05ca45bf8abc",
-    rpcEvent: "f364140f-00b0-4240-ba50-05ca45bf8abc",
-} as const;
+export { gattUuids as BLE_UUID } from "./device-wire.generated";
+
 
 // Structural types keep this browser-only module independent of the robot build.
 type BLECharacteristic = ControlCharacteristic;

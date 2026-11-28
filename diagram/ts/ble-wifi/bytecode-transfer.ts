@@ -1,3 +1,4 @@
+import * as wire from "./device-wire.generated";
 /**
  * Python一括転送version=2の中心契約。バイナリversion=7だけを扱う。形式はpython/bytecode.tsを参照する。
  * control-connection.tsがキュー・期限・計測、device-connection.tsが所有権・表示・監視、
@@ -259,29 +260,18 @@ export async function uploadBytecode(
     const pcOffset = 24 + bytes.byteLength + bytes.byteLength % 2;
     const bundle = new Uint8Array(pcOffset + (breakpoints.length + stepPcs.length) * 2);
     const header = new DataView(bundle.buffer);
-    header.setUint32(0, 0x32525055, true);
-    header.setUint16(4, 1, true);
-    header.setUint16(6, deployment?.start ? 1 : 0, true);
-    header.setUint32(8, bytes.byteLength, true);
-    header.setUint32(12, breakpoints.length, true);
-    header.setUint32(16, stepPcs.length, true);
-    header.setUint32(20, crc32, true);
+    wire.writeBundleHeader(header, 0, { signature: 0x32525055, version: 1, flags: deployment?.start ? 1 : 0,
+        length: bytes.byteLength, breakpoints: breakpoints.length, points: stepPcs.length, crc: crc32 });
     bundle.set(bytes, 24);
-    [...breakpoints, ...stepPcs].forEach((pc, index) => header.setUint16(pcOffset + index * 2, pc, true));
+    [...breakpoints, ...stepPcs].forEach((pc, index) => wire.writePc(header, pcOffset + index * wire.wireLayouts.Pc.byteLength, { value: pc }));
     const frameLength = channel.packetLength;
     if (!Number.isInteger(frameLength) || frameLength < 20 || frameLength > bytecodeTransfer.packetLength) {
         throw new Error("転送サイズが不正です。ファームウェアを更新して再接続してください。");
     }
     let sequence = 0;
     const send = async (operation: number, position: number, payload = new Uint8Array()): Promise<void> => {
-        const packet = new Uint8Array(10 + payload.length);
-        const view = new DataView(packet.buffer);
-        packet[0] = 2;
-        packet[1] = operation;
-        view.setUint16(2, transferId, true);
-        view.setUint16(4, ++sequence, true);
-        view.setUint32(6, position, true);
-        packet.set(payload, 10);
+        const packet = wire.encodeTransferHeader({ version: 2, op: operation, transfer: transferId,
+            sequence: ++sequence, position }, payload);
         await run(async () => {
             check();
             await channel.write(packet);
@@ -302,8 +292,7 @@ export async function uploadBytecode(
             bytesPerSecond: elapsedMs > 0 ? sentBytes * 1000 / elapsedMs : 0, phase });
     };
     report(0, "sending", true);
-    const crc = new Uint8Array(4);
-    new DataView(crc.buffer).setUint32(0, bytecodeCrc32(bundle), true);
+    const crc = wire.encodeWord32({ value: bytecodeCrc32(bundle) });
     await send(bytecodeTransfer.begin, bundle.length, crc);
     const chunkLength = frameLength - 10;
     for (let offset = 0; offset < bundle.length; offset += chunkLength) {
@@ -318,24 +307,25 @@ export async function uploadBytecode(
         check();
         const reply = await run(() => channel.readResult());
         check();
-        if (reply.byteLength !== 20 || reply.getUint8(0) !== 2) {
+        const result = wire.readTransferResult(reply);
+        if (reply.byteLength !== 20 || result.version !== 2) {
             throw new Error("一括転送Resultが不正です。ファームウェアを更新してください。");
         }
-        if (reply.getUint16(2, true) === transferId) {
-            const code = reply.getUint8(1);
+        if (result.transfer === transferId) {
+            const code = result.code;
             if (code !== 0) {
                 const errors = ["成功", "形式不正", "順序・位置不正", "範囲外", "メモリ不足", "CRC不一致",
                     "コード・PC不正", "受信期限切れ", "混雑", "開始失敗・取消"];
                 throw new Error(`ESP32のPython転送: ${errors[code] ?? `code=${code}`}`);
             }
             const expected = deployment?.start ? bytecodeTransfer.started : bytecodeTransfer.ready;
-            if (reply.getUint8(7) === expected && reply.getUint8(6) === bytecodeTransfer.commit) {
-                if (reply.getUint32(8, true) !== bundle.length || reply.getUint32(12, true) === 0
-                    || reply.getUint32(16, true) !== crc32) {
+            if (result.state === expected && result.op === bytecodeTransfer.commit) {
+                if (result.received !== bundle.length || result.revision === 0
+                    || result.crc !== crc32) {
                     throw new Error("ESP32のPython保持結果が一致しません。");
                 }
                 report(bytes.byteLength, "complete", true);
-                return { byteLength: bytes.byteLength, crc32, revision: reply.getUint32(12, true) };
+                return { byteLength: bytes.byteLength, crc32, revision: result.revision };
             }
         }
         await new Promise<void>(resolve => setTimeout(resolve, 20));

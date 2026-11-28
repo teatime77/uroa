@@ -1,3 +1,4 @@
+import * as wire from "../ble-wifi/device-wire.generated";
 /**
  * ESP32の距離通知をmmの数値へ変換する。未測定・失敗・切断時の出力はundefinedにする。
  * 接続状態・共有STREAMはdevice.protoから生成したRPC購読APIを使う。
@@ -53,8 +54,8 @@ export class UltrasonicDistanceSensorBlock extends FunctionBlock {
      * @returns 次の書込位置。
      */
     writeDeviceInfo(bytes: Uint8Array, offset: number): number {
-        bytes[offset] = DeviceType.UltrasonicDistanceSensor;
-        return offset + 1;
+        return wire.writeDeviceInfoRecordsRecord(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), offset,
+            { deviceType: this.deviceType! });
     }
 
     /**
@@ -65,7 +66,7 @@ export class UltrasonicDistanceSensorBlock extends FunctionBlock {
      * @returns 次のレコード位置。
      */
     readStatus(time: number, data: DataView, offset: number): number {
-        const distanceMm = data.getUint16(offset + 1, true);
+        const distanceMm = wire.readDistanceRecord(data, offset).distanceMm;
         this.setDistance(distanceMm === InvalidDistanceMm ? undefined : distanceMm);
         return offset + UltrasonicRecordLength;
     }

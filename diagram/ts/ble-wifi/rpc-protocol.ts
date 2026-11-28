@@ -1,3 +1,4 @@
+import * as wire from "./device-wire.generated";
 /**
  * ESP32→ブラウザRPC第3段階の中心契約。BLE専用で、戻り値なし・整数0〜1引数を扱う。
  * bytecode_rpc.h/.cppが設定・要求キュー、uroa_ble.h/.cppがGATT、device-connection.tsが接続世代と
@@ -59,11 +60,8 @@ export function encodeRpcConfiguration(build: RemoteProgramBuild): Uint8Array {
     }
     const data = new Uint8Array(100 + bindings.length * 10);
     const view = new DataView(data.buffer);
-    data[0] = rpcProtocol.version;
-    data[1] = bindings.length;
-    data.set(hashBytes(build.baseApiHash), 4);
-    data.set(hashBytes(build.apiHash), 36);
-    data.set(hashBytes(build.registry.fingerprint), 68);
+    wire.writeRegistryHeader(view, 0, { version: rpcProtocol.version, count: bindings.length, reserved: 0,
+        baseHash: hashBytes(build.baseApiHash), rpcHash: hashBytes(build.apiHash), registryHash: hashBytes(build.registry.fingerprint) });
     for (const [index, binding] of bindings.entries()) {
         const object = build.registry.objects.find(item => item.id === binding.objectId)!;
         const owner = build.esp32.info.api.classes.find(item => item.name === `$remote.${object.name}`)!;
@@ -73,11 +71,8 @@ export function encodeRpcConfiguration(build: RemoteProgramBuild): Uint8Array {
             throw new Error("第3段階のRPCはdef・None戻り値・整数引数0〜1個に対応しています");
         }
         const offset = 100 + index * 10;
-        view.setUint16(offset, binding.nativeId, true);
-        view.setUint16(offset + 2, binding.objectId, true);
-        view.setUint16(offset + 4, binding.methodId, true);
-        view.setUint16(offset + 6, owner.id, true);
-        data[offset + 8] = method?.parameters.length ?? 0;
+        wire.writeRegistryRecord(view, offset, { native: binding.nativeId, object: binding.objectId,
+            method: binding.methodId, classId: owner.id, argc: method?.parameters.length ?? 0, reserved: 0 });
     }
     return data;
 }
@@ -97,23 +92,18 @@ export class RpcTransport {
             throw new Error("RPCの操作連番が上限に達しました");
         }
         const sequence = ++this.sequence;
-        const bytes = new Uint8Array(8 + payload.length);
-        const view = new DataView(bytes.buffer);
-        bytes[0] = rpcProtocol.version;
-        bytes[1] = op;
-        view.setUint16(2, sequence, true);
-        view.setUint32(4, this.nonce, true);
-        bytes.set(payload, 8);
+        const bytes = wire.encodeRemoteHeader({ version: rpcProtocol.version, op, sequence, nonce: this.nonce }, payload);
         await this.channel.writeControl(bytes);
         const deadline = performance.now() + rpcProtocol.timeoutMs;
         do {
-            const result = await this.channel.readResult();
-            if (result.byteLength !== 20 || result.getUint8(0) !== rpcProtocol.version) {
+            const value = await this.channel.readResult();
+            const result = wire.readRemoteResult(value);
+            if (value.byteLength !== 20 || result.version !== rpcProtocol.version) {
                 throw new Error("RPCの受付結果の形式が不正です");
             }
-            if (result.getUint8(1) === op && result.getUint16(2, true) === sequence && result.getUint32(4, true) === this.nonce) {
-                if (result.getUint8(8) !== rpcProtocol.ok) {
-                    throw new Error(`ESP32がRPC操作を拒否しました (${result.getUint8(8)})`);
+            if (result.op === op && result.sequence === sequence && result.nonce === this.nonce) {
+                if (result.code !== rpcProtocol.ok) {
+                    throw new Error(`ESP32がRPC操作を拒否しました (${result.code})`);
                 }
                 return;
             }
@@ -124,18 +114,13 @@ export class RpcTransport {
 
     /** 全体CRCと順序を付けて公開定義を登録する。 */
     async configure(data: Uint8Array, signal: AbortSignal): Promise<void> {
-        const begin = new Uint8Array(6);
-        const view = new DataView(begin.buffer);
-        view.setUint16(0, data.length, true);
-        view.setUint32(2, bytecodeCrc32(data), true);
+        const begin = wire.encodeRemoteBeginBody({ total: data.length, crc: bytecodeCrc32(data) });
         signal.throwIfAborted();
         await this.send(rpcProtocol.begin, begin);
         for (let offset = 0; offset < data.length; offset += 10) {
             signal.throwIfAborted();
             const chunk = data.subarray(offset, offset + 10);
-            const payload = new Uint8Array(2 + chunk.length);
-            new DataView(payload.buffer).setUint16(0, offset, true);
-            payload.set(chunk, 2);
+            const payload = wire.encodeOffset16({ value: offset }, chunk);
             await this.send(rpcProtocol.data, payload);
         }
         signal.throwIfAborted();
@@ -145,30 +130,30 @@ export class RpcTransport {
     /** キュー先頭を読む。同じ先頭はACKまで変わらず、障害・旧実行は拒否する。 */
     async read(): Promise<RpcRequest | undefined> {
         const value = await this.channel.readEvent();
-        if (value.byteLength !== 20 || value.getUint8(0) !== rpcProtocol.version || value.getUint32(2, true) !== this.nonce) {
+        const event = wire.readRemoteEvent(value);
+        if (value.byteLength !== 20 || event.version !== rpcProtocol.version || event.nonce !== this.nonce) {
             throw new Error("RPCの接続または実行世代が変わりました");
         }
-        const kind = value.getUint8(1);
+        const kind = event.kind;
         if (kind === rpcProtocol.idle) {
             return undefined;
         }
         if (kind !== rpcProtocol.request) {
-            throw new Error(`ESP32がRPC配送を停止しました (${value.getUint8(15)})`);
+            throw new Error(`ESP32がRPC配送を停止しました (${event.error})`);
         }
-        const id = value.getUint32(6, true);
-        const object = value.getUint16(10, true);
-        const method = value.getUint16(12, true);
-        const count = value.getUint8(14);
-        if (!id || !object || !method || count > 1 || value.getUint8(15)) {
+        const id = event.id;
+        const object = event.object;
+        const method = event.method;
+        const count = event.argc;
+        if (!id || !object || !method || count > 1 || event.error) {
             throw new Error("RPC要求の形式が不正です");
         }
-        return { id, object, method, arguments: count ? [value.getInt32(16, true)] : [] };
+        return { id, object, method, arguments: count ? [event.value] : [] };
     }
 
     /** Workerの受付後にだけ先頭要求を取り除く。メソッド終了の通知ではない。 */
     acknowledge(id: number): Promise<void> {
-        const data = new Uint8Array(4);
-        new DataView(data.buffer).setUint32(0, id, true);
+        const data = wire.encodeWord32({ value: id });
         return this.send(rpcProtocol.ack, data);
     }
 

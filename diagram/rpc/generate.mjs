@@ -15,6 +15,8 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import protobuf from "protobufjs";
+import { generateWire } from "./wire-generator.mjs";
+import { generateJson } from "./json-generator.mjs";
 
 /** 生成元と明示的な出力先。作業ディレクトリーには依存しない。 */
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -284,7 +286,7 @@ requireCondition(Object.entries(opcodeEnum.values).filter(([, value]) => value >
     "サーバーで未対応のCommand操作があります");
 
 /** 定義の指紋はコメント・絶対パスを含めず、型・配置・番号・契約から生成する。 */
-const fingerprint = createHash("sha256").update(JSON.stringify({ schema: schema.toJSON(), packets, methods })).digest("hex");
+const fingerprint = createHash("sha256").update(JSON.stringify({ schema: schema.toJSON(), wire: root.lookup("uroa.wire").toJSON(), transport: root.lookup("uroa.network").toJSON(), packets, methods })).digest("hex");
 const declarations = messages.map(message => {
     const host = messageType(message);
     if (host) {
@@ -649,12 +651,20 @@ const serverSource = ["/**", " * @file control_rpc.generated.cpp", " * @brief de
     "            switch (static_cast<CommandOpcode>(command.opcode)) {", ...serverCases.flatMap(serverCaseText), "                default:",
     `                    publishControlStatus(services.reply, static_cast<uint8_t>(StatusCode::CODE_FORMAT), command.sequence, ${commandLayout.fields.find(field => field.name === "channel").default});`,
     "                    return;", "            }", "        }", "    }", "}", ""].join("\n");
+const wire = generateWire(root);
+const json = generateJson(root);
 const outputs = [[resolve(directory, "../ts/ble-wifi/device-rpc.generated.ts"), ts],
+    [resolve(directory, "../ts/ble-wifi/device-wire.generated.ts"), wire.ts],
+    [resolve(directory, "../ts/ble-wifi/device-json.generated.ts"), json.ts],
     [resolve(directory, "../ts/ble-wifi/device-rpc-codec.generated.ts"), tsCodecSource],
     [resolve(directory, "../ts/ble-wifi/device-control.generated.ts"), controlSource]];
 if (flags.has("--esp32")) {
     outputs.push([resolve(directory, "../../../esp32/lib/protocol/include/uroa_rpc.generated.h"), cpp]);
     outputs.push([resolve(directory, "../../../esp32/lib/protocol/src/uroa_rpc.generated.cpp"), cppSource]);
+    outputs.push([resolve(directory, "../../../esp32/lib/protocol/include/uroa_wire.generated.h"), wire.cppHeader]);
+    outputs.push([resolve(directory, "../../../esp32/lib/protocol/src/uroa_wire.generated.cpp"), wire.cpp]);
+    outputs.push([resolve(directory, "../../../esp32/lib/wifi/include/uroa_json.generated.h"), json.cppHeader]);
+    outputs.push([resolve(directory, "../../../esp32/lib/wifi/src/uroa_json.generated.cpp"), json.cpp]);
     outputs.push([resolve(directory, "../../../esp32/app/diagram-control/include/control_rpc.generated.h"), serverHeader]);
     outputs.push([resolve(directory, "../../../esp32/app/diagram-control/src/control_rpc.generated.cpp"), serverSource]);
 }
